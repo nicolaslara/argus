@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build output
+dist/
+build/
+out/
+.next/
+.vite/
+*.tsbuildinfo
+
+# argus scratch / generated / captured sample data (may contain run content)
+.argus/
+tmp/
+
+# Local env / secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Editor / OS
+.DS_Store
+*.swp
+.idea/
+# (.vscode/ left tracked intentionally if we add shared settings)
+
+# Test / coverage
+coverage/
+.playwright/
+test-results/
+playwright-report/
