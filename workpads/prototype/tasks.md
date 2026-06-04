@@ -367,11 +367,17 @@ hover.
     cosmetic nits (fitView centering / empty band; card density). Record the unified
     visual-language spec in `knowledge.md`. Acceptance: side-by-side screenshots of Plan
     vs Execution for `plan-research` look visibly consistent; tsc/lint/test/build green.
-- [ ] **PX-fit — Better + expandable/fitting captions.** Iterate the PX captions:
-  improve explanation quality, and either **expand** them (hover/click → full text in a
-  popover or the node detail panel) or **guarantee they fit** the node (consistent clamp
-  + sizing). Iterate later; keep in the list. Acceptance: a long caption is fully
-  readable (expand) and never overflows/breaks the card; screenshot.
+- [~] **PX-fit — Better + expandable/fitting captions.** EXPAND + FIT DONE 2026-06-05.
+  **Fit:** the node caption clamps to 2 lines + a native `title` (M5) — never overflows.
+  **Expand:** the node DETAIL PANEL (I1) is the canonical expand surface — clicking any
+  node shows the FULL (un-clamped) caption, now in a labeled "explanation" block that
+  surfaces provenance: a `baseline` (deterministic) vs `✨ llm` chip + the optional
+  `patternName` (overlayExplanations stamps captionSource/captionPattern onto node.data).
+  Verified on the modal-rust 14-agent run (all 14 captions llm-ready, cached) — screenshot
+  `.argus/screenshots/pxfit-detail-explanation.png`, 0 console errors.
+  **Remaining (future iterate):** explanation QUALITY — the `claude -p` prompt in
+  explain.ts could give richer, pattern-named captions (e.g. "fan-out verifier"); most
+  current captions are still the label-echo baseline-quality even when llm-sourced.
 
 ## knowledge
 

@@ -80,6 +80,12 @@ export const DetailPanel = memo(function DetailPanel({
   const title =
     str(d.labelRaw) ?? str(d.label) ?? str(d.title) ?? str(d.conditionLabel) ?? type;
   const caption = str(d.caption) ?? str(d.subtitle);
+  // PX-fit: the panel is the canonical EXPAND surface — it shows the FULL caption (the
+  // node clamps to 2 lines). Surface its provenance: a baseline (deterministic) caption vs
+  // an LLM-enriched one (overlayExplanations stamps captionSource:'llm' + an optional
+  // short patternName) so "✨ llm" reads as a real explanation, not just the label echo.
+  const captionLlm = str(d.captionSource) === 'llm';
+  const captionPattern = str(d.captionPattern);
 
   // A run agent (execution) vs a plan node — both filled from node.data.
   const isExecAgent = type === 'agentCard';
@@ -101,7 +107,18 @@ export const DetailPanel = memo(function DetailPanel({
       <div className="detail-title" title={str(d.labelRaw) ?? title}>
         {title}
       </div>
-      {caption ? <div className="detail-caption">{caption}</div> : null}
+      {caption ? (
+        <div className="detail-explain">
+          <div className="detail-block-label">
+            explanation
+            {captionPattern ? <span className="detail-pattern">{captionPattern}</span> : null}
+            <span className={`detail-cap-source detail-cap-${captionLlm ? 'llm' : 'baseline'}`}>
+              {captionLlm ? '✨ llm' : 'baseline'}
+            </span>
+          </div>
+          <div className="detail-caption">{caption}</div>
+        </div>
+      ) : null}
 
       <div className="detail-rows">
         {isExecAgent ? (
