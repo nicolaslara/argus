@@ -37,6 +37,7 @@ import {
   OutputTerminal,
   UnparsedPlaceholder,
 } from './nodes/PlanNodes.tsx';
+import { Rail, type RailSection } from './shell/Rail.tsx';
 
 // Stable identity (a fresh object each render would make React Flow warn + re-mount).
 // Execution-view types (M3, unchanged) + the P1b Plan-AST types — one shared registry.
@@ -55,20 +56,20 @@ type ViewMode = 'execution' | 'plan';
 
 const EMPTY_GRAPH: GraphResult = { nodes: [], edges: [] };
 
-/** Dogfood: prefer the modal-rust project; otherwise the first discovered project. */
-function pickProject(projects: ProjectRef[] | undefined): ProjectRef | undefined {
+/** Dogfood DEFAULT (M4: overridable): prefer modal-rust; else the first project. */
+function defaultProject(projects: ProjectRef[] | undefined): ProjectRef | undefined {
   if (!projects || projects.length === 0) return undefined;
   return projects.find((p) => p.projectPath.includes('modal-rust')) ?? projects[0];
 }
 
-/** Execution mode auto-selects the richest run (the 14-agent plan-research run). */
-function pickRun(runs: RunSummary[] | undefined): RunSummary | undefined {
+/** Execution DEFAULT (M4: overridable): the richest run (the 14-agent plan-research run). */
+function defaultRun(runs: RunSummary[] | undefined): RunSummary | undefined {
   if (!runs || runs.length === 0) return undefined;
   return [...runs].sort((a, b) => b.agentCount - a.agentCount)[0];
 }
 
-/** Plan mode auto-selects plan-research; otherwise the first declared workflow. */
-function pickWorkflow(workflows: WorkflowMeta[] | undefined): WorkflowMeta | undefined {
+/** Plan DEFAULT (M4: overridable): plan-research; else the first declared workflow. */
+function defaultWorkflow(workflows: WorkflowMeta[] | undefined): WorkflowMeta | undefined {
   if (!workflows || workflows.length === 0) return undefined;
   return workflows.find((w) => w.name.includes('plan-research')) ?? workflows[0];
 }
@@ -76,16 +77,32 @@ function pickWorkflow(workflows: WorkflowMeta[] | undefined): WorkflowMeta | und
 export function App() {
   const [view, setView] = useState<ViewMode>('execution');
 
-  const projectsQ = useQuery({ queryKey: ['projects'], queryFn: fetchProjects });
-  const project = pickProject(projectsQ.data);
+  // --- M4: selection lifted into shared app state. Each is null until the user
+  //     picks; while null we fall back to the dogfood default for that scope. So the
+  //     app opens on the same modal-rust / richest-run / plan-research picks as before
+  //     but ANY discovered project / run / workflow can override them, and the choice
+  //     survives the Plan⟷Execution toggle (state lives here, above the view). ---
+  const [railCollapsed, setRailCollapsed] = useState(true); // collapsed-by-default
+  const [railSection, setRailSection] = useState<RailSection>('projects');
+  const [selectedProjectPath, setSelectedProjectPath] = useState<string | null>(null);
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [selectedWorkflowName, setSelectedWorkflowName] = useState<string | null>(null);
 
-  // --- Execution (M3) path — UNCHANGED: list runs, auto-select the 14-agent run. ---
+  const projectsQ = useQuery({ queryKey: ['projects'], queryFn: fetchProjects });
+  const projects = projectsQ.data;
+  const project =
+    projects?.find((p) => p.projectPath === selectedProjectPath) ?? defaultProject(projects);
+
+  // --- Runs for the SELECTED project (queries already key on project.slug, so a new
+  //     project re-scopes its runs/workflows automatically). ---
   const runsQ = useQuery({
     queryKey: ['runs', project?.slug],
     queryFn: () => fetchProjectRuns(project!.slug),
     enabled: !!project,
   });
-  const summary = pickRun(runsQ.data);
+  const runs = useMemo(() => runsQ.data ?? [], [runsQ.data]);
+  const summary =
+    runs.find((r) => r.ref.runId === selectedRunId) ?? defaultRun(runs);
 
   const runQ = useQuery({
     queryKey: ['run', summary?.ref.slug, summary?.ref.sessionId, summary?.ref.runId],
@@ -93,16 +110,17 @@ export function App() {
     enabled: !!summary && view === 'execution',
   });
 
-  // --- Plan path — run-free: list declared workflows, auto-select plan-research. ---
+  // --- Workflows for the selected project (run-free Plan source). Loaded whenever a
+  //     project is known so the rail's Plan-workflow list is reachable from BOTH views;
+  //     the heavier /plan AST fetch stays gated on the Plan view. ---
   const workflowsQ = useQuery({
     queryKey: ['workflows', project?.slug],
     queryFn: () => fetchProjectWorkflows(project!.slug),
-    enabled: !!project && view === 'plan',
+    enabled: !!project,
   });
-  const [selectedWorkflow, setSelectedWorkflow] = useState<string | null>(null);
-  const workflows = workflowsQ.data ?? [];
+  const workflows = useMemo(() => workflowsQ.data ?? [], [workflowsQ.data]);
   const workflow =
-    workflows.find((w) => w.name === selectedWorkflow) ?? pickWorkflow(workflowsQ.data);
+    workflows.find((w) => w.name === selectedWorkflowName) ?? defaultWorkflow(workflows);
 
   // P1b: the rich PlanModel for the selected workflow (the AST plan over /plan).
   const planQ = useQuery({
@@ -201,6 +219,26 @@ export function App() {
     return () => cancelAnimationFrame(raf);
   }, [fitSignature, graph.nodes.length]);
 
+  // --- M4 selection handlers (mutate the shared state, not the canvas). ---
+  // Picking a project re-scopes everything: clear the dependent run + workflow choice
+  // so the new project's defaults take over via its (re-keyed) queries.
+  function handleSelectProject(p: ProjectRef) {
+    setSelectedProjectPath(p.projectPath);
+    setSelectedRunId(null);
+    setSelectedWorkflowName(null);
+  }
+  // Picking a run lands it in the Execution view (today's view auto-picks the richest
+  // run; M4 lets you choose ANY of them).
+  function handleSelectRun(r: RunSummary) {
+    setSelectedRunId(r.ref.runId);
+    setView('execution');
+  }
+  // Picking a workflow lands it in the Plan view.
+  function handleSelectWorkflow(w: WorkflowMeta) {
+    setSelectedWorkflowName(w.name);
+    setView('plan');
+  }
+
   const error = projectsQ.error ?? runsQ.error ?? runQ.error ?? workflowsQ.error;
   const loading =
     projectsQ.isPending ||
@@ -237,6 +275,25 @@ export function App() {
         <Controls showInteractive={false} />
       </ReactFlow>
 
+      {/* M4: the collapsible left icon-rail (project switcher + run picker + settings). */}
+      <Rail
+        collapsed={railCollapsed}
+        onToggleCollapsed={() => setRailCollapsed((c) => !c)}
+        section={railSection}
+        onSelectSection={setRailSection}
+        projects={projects ?? []}
+        selectedProjectPath={project?.projectPath}
+        onSelectProject={handleSelectProject}
+        projectsLoading={projectsQ.isPending}
+        runs={runs}
+        selectedRunId={summary?.ref.runId}
+        onSelectRun={handleSelectRun}
+        runsLoading={!!project && runsQ.isPending}
+        workflows={workflows}
+        selectedWorkflowName={workflow?.name}
+        onSelectWorkflow={handleSelectWorkflow}
+      />
+
       {/* Minimal Plan ⟷ Execution view toggle (this view IS review-the-workflow mode). */}
       <div className="view-toggle" role="group" aria-label="view mode">
         <button
@@ -263,7 +320,7 @@ export function App() {
             <select
               className="wf-picker"
               value={workflow.name}
-              onChange={(e) => setSelectedWorkflow(e.target.value)}
+              onChange={(e) => setSelectedWorkflowName(e.target.value)}
               aria-label="workflow"
             >
               {workflows.map((w) => (

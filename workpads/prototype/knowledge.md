@@ -577,3 +577,162 @@ read as the same graph.
   Plan-view meta (no run/transcript/secret per the P0 assessment), so privacy severity is low,
   but the tracked-artifact policy is violated. **Recommend `git rm verify-p0-plan.png` before
   any U1 commit.** (Out of U1 scope — does not block the U1 verdict.)
+
+### M4 (2026-06-04) — Shell: collapsible left icon-rail (project switcher + run picker + settings)
+
+**Capability:** a user can navigate ANY discovered project and ANY of its runs from a
+collapsed-by-default left icon-rail — not just the hardcoded modal-rust default / the
+auto-selected richest run — with selection lifted into shared app state so the
+Plan⟷Execution toggle preserves the same project/workflow context, while the canvas keeps
+>90% of the viewport when collapsed.
+
+- **Built (smallest correct change; ONLY `apps/web/src/` touched — no adapter/contract/server
+  change):**
+  - **`apps/web/src/shell/Rail.tsx` (new):** a CONTROLLED, presentational rail. Three
+    sections — Project switcher, Run picker, Settings stub — plus a collapse/expand toggle.
+    It never fetches a run model or mutates the canvas; it only reports the user's
+    project/run/workflow choice up via callbacks. All labels/values are React text nodes
+    (no `dangerouslySetInnerHTML`); imports ONLY `@argus/contract` types + the local format
+    helpers (no `node:*` / adapter).
+  - **`apps/web/src/shell/format.ts` (new):** pure presentation helpers — `formatDuration`
+    (`1.4s`/`48s`/`3m 12s`/`1h 04m`, `null`→em-dash), `formatRelativeTime` (`5m ago`/`3h
+    ago`/`2d ago`→absolute `Mon D`; `now` injectable), `statusGlyph` (●completed / ◐
+    completed-with-partialFailure / ✕ failed / ◼ killed / ◌ running — carries state by SHAPE,
+    color via a `status-<status>` class so saturation stays reserved for state). Pure +
+    deterministic; no on-disk format knowledge.
+  - **`apps/web/src/App.tsx`:** selection LIFTED into shared state. Replaced the implicit
+    `pickProject`/`pickRun`/`pickWorkflow` auto-selection with explicit
+    `selectedProjectPath` / `selectedRunId` / `selectedWorkflowName` state (each `null` until
+    the user picks; while null it falls back to the renamed `defaultProject`/`defaultRun`/
+    `defaultWorkflow` dogfood picks). So the app opens on the SAME modal-rust → richest-run →
+    plan-research picks as before, but ANY discovered project/run/workflow overrides them and
+    the choice survives the Plan⟷Execution toggle. Plus the rail collapse state
+    (`railCollapsed`, default **true**) + the active section (`railSection`).
+
+- **Decision — rail IA (collapsed-by-default icon strip → expandable panel).** The rail is an
+  **overlay** absolutely positioned over the fullscreen canvas; the canvas never reflows. The
+  container is `pointer-events:none` so it never steals a pan from the canvas; only its
+  interactive children (the strip + the expanded panel) opt back into pointer events.
+  Collapsed = a **52px icon strip** (toggle `»`/`«`, projects `▤`, runs `≣`, settings `⚙`
+  pinned to the strip bottom). **Measured collapsed footprint = 52px = 3.61% of a 1440
+  viewport → canvas keeps 96.39%** (well over the >90% acceptance). The expanded panel is a
+  264px column beside the strip (still an overlay). Clicking a section icon while collapsed
+  opens that section AND expands (`openSection`); the panel is only mounted when expanded
+  (collapsed = zero panel width, verified `panelMounted:false`).
+
+- **Decision — shared-state lift (default-but-overridable, query-keyed re-scope).** The
+  TanStack Query keys already key on `project?.slug` (runs, workflows) and the run ref (run
+  model), so selecting a new project **re-scopes its runs + workflows automatically** — no
+  manual invalidation. Picking a project clears the dependent run + workflow choice
+  (`setSelectedRunId(null)` / `setSelectedWorkflowName(null)`) so the new project's defaults
+  take over via the re-keyed queries (verified live: modal-rust 26 runs → capo **30 runs**,
+  execution re-defaults to capo's richest `capo-workpad-execute`). Picking a run sets
+  `selectedRunId` + switches the view to `'execution'` (today's view auto-picks the richest
+  run; M4 lets you pick ANY). Picking a workflow sets `selectedWorkflowName` + switches to
+  `'plan'`. The in-canvas `.wf-picker` `<select>` is **kept reachable** (still in the Plan
+  run-header) AND the Plan-workflow list is **also** surfaced in the rail's Settings section,
+  so the workflow context is reachable from both views.
+
+- **Decision — collapse mechanic + chrome positioning.** Single `railCollapsed` boolean
+  toggled by the `»`/`«` button (`aria-expanded`); 150–200ms eases on hover/active per the
+  design system; mono identifiers; 4px-grid spacing; saturation reserved for state
+  (status glyphs). The run-header was moved from `left:16px` → **`left:68px`** so it clears
+  the 52px icon-rail even when collapsed (previously the workflow name was clipped by the
+  rail), and given **`z-index:4`** (below the rail's `z-index:10`) so the opaque expanded
+  panel cleanly covers it rather than colliding with it. The centered view-toggle (`z-index:5`)
+  is unaffected. An earlier "nudge the header right when the panel is open" approach was
+  REMOVED — it collided the long header into the centered toggle; letting the opaque panel
+  overlay the header is the cleaner behavior users expect.
+
+- **No new on-disk reads.** Uses ONLY the existing `GET /api/projects`,
+  `GET /api/projects/:slug/runs`, `GET /api/projects/:slug/workflows` (+ the run snapshot
+  `/api/runs/...` already used by Execution). No new endpoint, no adapter/contract/server
+  change (verified `git diff --name-only` shows only `apps/web/src/App.tsx`,
+  `apps/web/src/index.css`, and the new `apps/web/src/shell/`).
+
+- **Privacy / Stance-4 (honored).** Grep over the M4-touched web source: no `node:fs` /
+  `child_process` / `spawn` / `writeFile` / `require(`; the only `.claude` matches are
+  user-facing copy strings (`no runs found in ~/.claude`); the only `dangerouslySetInnerHTML`
+  match is a comment stating it is NOT used. All rail text is rendered as React text nodes.
+  Read-only; nothing written into any `.claude` tree.
+
+- **Test-count note (deliberate).** Per the M4 acceptance ("baseline 95 tests … no
+  contract/adapter/server change expected, so the count should hold"), no new test file was
+  added — the count stays **95/95**. The new `format.ts` helpers are pure and trivially
+  testable; a focused `format.test.ts` is a reasonable low-risk follow-up if we want the count
+  to grow, but it is intentionally omitted here to honor the stated invariant.
+
+- **Evidence (toolchain green):** `tsc --noEmit` clean; `eslint .` clean; `vitest run`
+  **95 passed** (6 files, unchanged); `vite build` ok (434 KB app JS + the pre-existing elk
+  chunk-size warning from P1b).
+
+- **UI smoke (Playwright, 1440×900, real `~/.claude`, dev servers on server:4321/web:5173,
+  `ARGUS_EXPLAIN=0` to keep the shell smoke `claude`-free; 0 console errors across the full
+  session):**
+  - **(a) rail EXPANDED** — Projects panel lists all **3 discovered projects** (argus / capo /
+    modal-rust) with the **decoded absolute path** as the label
+    (`/Users/nicolas/devel/modal-rust`, etc.); modal-rust marked active. Runs panel lists all
+    of modal-rust's runs **newest-first** with a status glyph + agentCount + human duration +
+    relative time (●/◐/✕/◼ correctly differentiated; the 14-agent `modal-rust-plan-research`
+    marked active). Settings panel shows the stub + the reachable Plan-workflow list.
+    Screenshots: `.argus/screenshots/argus-m4-expanded-projects.png`,
+    `argus-m4-expanded-runs.png`.
+  - **(b) rail COLLAPSED (canvas >90%)** — the 14-agent run renders full-canvas behind the
+    thin 52px icon strip; measured **canvas = 96.39%**. Screenshot:
+    `.argus/screenshots/argus-m4-collapsed-14agent.png`.
+  - **(c) a PICKED NON-DEFAULT run in Execution** — picked `modal-rust-app-cache` (a **1-agent
+    killed** run, NOT the auto-selected richest run) from the rail → it renders in the
+    Execution view (header `killed · 1 agent · 4 phases`; the single `AC-build` agent shows
+    `interrupted` (killed-run progress agent), `tok 166k`, `tools 79`, `dur —`). Screenshot:
+    `.argus/screenshots/argus-m4-picked-1agent-run.png`. **Also covers the 1-agent
+    reads-well case.**
+  - **Context-preservation verified at the wire/DOM level:** after picking the 1-agent run →
+    toggle Plan (same project, `modal-rust-plan-research`) → toggle back to Execution → the
+    view still shows the PICKED `modal-rust-app-cache` (NOT reset to the default 14-agent run).
+    Project/run/workflow selection genuinely lives above the view.
+
+- **Confidence: high.** Acceptance met and demonstrated on real modal-rust data at both the
+  14-agent and 1-agent scales; the gate is green at the held 95 tests; the change is scoped to
+  the web render layer with the file-first/read-only/Stance-4 invariants intact.
+
+#### Verifier (2026-06-04) — verdict COMPLETE, capability_proven: true (independent)
+
+- **Capability fully proven on REAL `~/.claude` data via live Playwright (1440×900, 0 console
+  errors).** Collapsed rail = **52px → canvas 96.39%** (>90%; the panel is **unmounted / 0-width
+  when collapsed**, not merely hidden). The **project switcher lists all 3 real projects**
+  (argus / capo / modal-rust) with decoded absolute-path labels; switching to **capo** re-scoped
+  live (cleared the picked run, reloaded capo's runs, re-defaulted to `capo-workpad-execute` /
+  **129 agents**) — genuinely replaces the hardcoded `pickProject`. The **run picker lists 27
+  modal-rust runs newest-first** (monotonic times verified) with status glyph / agentCount /
+  duration / relative-time; **all 4 glyphs differentiated on real data**. Picking a non-default
+  **1-agent killed** `modal-rust-app-cache` landed it in Execution. **Context preserved across
+  Execution → pick → Plan → Execution** (still showed the picked run, NOT the default richest).
+  Settings stub + a reachable workflow-picker present. (Verifier saw **27** modal-rust runs and
+  **capo 129 agents** on the richest run — the implementer's self-report cited 26/30, a benign
+  live-data delta as runs accrue.)
+- **Toolchain gate independently re-run green:** `tsc` clean, `eslint` clean, `vitest` **95/95**
+  (count held as claimed), `vite build` ok (the elk chunk-size warning is **pre-existing from
+  P1b**, not introduced by M4).
+- **Stance-4 / privacy / isolation verified:** `git diff` scope is ONLY `apps/web/src/`
+  (`App.tsx`, `index.css`, new `shell/Rail.tsx` + `shell/format.ts`) + `README` + workpads — **no
+  adapter / contract / server change, no new endpoints.** No `node:fs` / `child_process` / `spawn`
+  / `writeFile` / `dangerouslySetInnerHTML` in M4 source. The rail consumes only `@argus/contract`
+  wire types; `statusGlyph` covers all 4 `RunStatus` + a default; the format helpers tolerate
+  `null` `durationMs` / `startTime`. Screenshots gitignored under `.argus/`. **Reads well
+  fullscreen at BOTH the 14-agent** (4 lanes 7/2/4/1, partial-failure chip, `tok` em-dash) **and
+  the 1-agent killed** (`AC-build` interrupted) scales; the run-header clears the rail at
+  `left:68px`.
+- **OPEN QUESTION / artifact-hygiene (low, pre-existing, NOT introduced by M4).** The P0 leak
+  **persists**: `verify-p0-plan.png` is still tracked at the **REPO ROOT** (from the P0 commit
+  `eb11e07`) instead of the gitignored `.argus/screenshots/`. Correctly **NOT touched by M4**
+  (out of scope); content is benign Plan-view meta (no transcript/secret). **Recommend
+  `git rm verify-p0-plan.png` before the next commit.**
+- **VCS state (do NOT commit to main).** M4 work is **uncommitted and sits on the `main` branch**
+  (not a feature branch) — confirmed: ` M App.tsx`, ` M index.css`, ` M README.md`, `?? shell/`.
+  The implementer correctly left it uncommitted per the project git rule (no commit without
+  explicit user confirmation). **Action for the user: branch off `main`, then commit** (the
+  earlier phases live on `phase1-scaffold-and-research`); do NOT commit directly to `main`.
+- **Test-coverage follow-up (low).** `format.ts` (`formatDuration` / `formatRelativeTime` /
+  `statusGlyph`) are pure and currently **untested by a focused unit test** — `format.test.ts`
+  was deliberately omitted to honor the stated 95-test-count invariant. Low-risk follow-up: add
+  the coverage when the count is allowed to grow.

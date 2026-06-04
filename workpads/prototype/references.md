@@ -94,3 +94,33 @@ transcripts for live/inspect. M1 (adapter) and M3 (render) build against these.
   Two low-severity follow-ups logged in `knowledge.md` (U1 verifier block): a doc overstatement
   (STATE_COLOR only consumed by `AgentCard.tsx` today; the plan rail uses `--argus-accent`) and
   the still-unresolved pre-existing `verify-p0-plan.png` repo-root leak (recommend `git rm`).
+
+## M4 — Shell: collapsible left icon-rail (2026-06-04)
+
+- **Shell render surface verified on real `~/.claude`:** `apps/web/src/shell/Rail.tsx` (new
+  controlled/presentational rail — project switcher + run picker + settings stub) + pure
+  `apps/web/src/shell/format.ts` (`formatDuration` / `formatRelativeTime` / `statusGlyph`);
+  selection lifted into shared `App.tsx` state (`selectedProjectPath` / `selectedRunId` /
+  `selectedWorkflowName`). Uses ONLY the existing `GET /api/projects`,
+  `GET /api/projects/:slug/runs`, `GET /api/projects/:slug/workflows`, and the run snapshot
+  endpoint — no new on-disk read, no adapter/contract/server change.
+- **UI-smoke screenshots (gitignored `.argus/screenshots/`):**
+  `argus-m4-expanded-projects.png` (rail expanded — 3 projects with decoded abs-path labels),
+  `argus-m4-expanded-runs.png` (run picker, newest-first, status glyph/agentCount/duration/
+  relative-time), `argus-m4-collapsed-14agent.png` (the 14-agent run full-canvas behind the 52px
+  strip — canvas 96.39%), and `argus-m4-picked-1agent-run.png` (a picked NON-default 1-agent
+  killed `modal-rust-app-cache` in Execution — also covers the 1-agent reads-well case). All
+  Playwright 1440×900, 0 console errors.
+- **Verifier independent re-run (2026-06-04):** verdict COMPLETE, capability_proven: true.
+  Re-ran the gate green (tsc / eslint / vitest **95/95** / build); live Playwright on real
+  `~/.claude`: collapsed rail 52px → canvas **96.39%** (panel unmounted when collapsed), project
+  switcher lists all 3 projects + re-scopes live (capo → `capo-workpad-execute` / 129 agents),
+  run picker lists **27** modal-rust runs newest-first (all 4 status glyphs differentiated),
+  picked 1-agent killed run renders in Execution, and project/run/workflow context survives a
+  Execution→Plan→Execution round-trip. Stance-4/privacy hold: `git diff` scope is ONLY
+  `apps/web/src/` (App.tsx, index.css, new shell/) + README + workpads — no adapter/contract/
+  server/endpoint change; no `node:fs`/`child_process`/`writeFile`/`dangerouslySetInnerHTML` in
+  M4 source. Two low-severity follow-ups (in `knowledge.md` M4 verifier block): the pre-existing
+  `verify-p0-plan.png` repo-root leak still unresolved (recommend `git rm`), and the untested pure
+  `format.ts` helpers (add `format.test.ts` when the test count may grow). **VCS note: M4 is
+  uncommitted on `main`; the user should branch + commit, not commit to `main` directly.**

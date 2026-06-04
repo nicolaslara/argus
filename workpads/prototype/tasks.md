@@ -100,8 +100,23 @@ observed in a browser; reads well at 1 agent and at the 14-agent run.
     14-agent run as crisp vertical phase-lanes (4 lanes, 7/2/4/1) AND a 1-agent run
     renders clean; `tsc`/`lint`/`build` green; a Playwright fullscreen screenshot is
     captured. (Deep visual polish + the gate sign-off are M5 — M3 just renders correctly.)
-- [ ] **M4 — Shell (collapsible left toolbar).** A minimal, collapsible left icon-rail
-  (collapsed by default; keeps >90% of the viewport for the canvas) per `boundaries.md`
+- [x] **M4 — Shell (collapsible left toolbar).** DONE 2026-06-04. Collapsed-by-default left
+  icon-rail (`apps/web/src/shell/Rail.tsx` + pure `format.ts`) overlaying the fullscreen
+  canvas: 52px icon strip (toggle / projects / runs / settings) → 264px expandable panel.
+  Project switcher lists `GET /api/projects` (decoded abs-path label) and re-scopes runs +
+  workflows via the existing TanStack Query keys (replaces the hardcoded `pickProject`); run
+  picker lists `GET /api/projects/:slug/runs` newest-first (status glyph ●/◐/✕/◼ + agentCount +
+  human duration + relative time) and lands ANY picked run in Execution (replaces the
+  auto-select-richest path); Settings stub present (icon + panel). Selection lifted into shared
+  `App.tsx` state (`selectedProjectPath`/`selectedRunId`/`selectedWorkflowName`, default-but-
+  overridable) so the Plan⟷Execution toggle preserves project/run/workflow context (verified:
+  picked 1-agent run survives a Plan↔Execution round-trip). Collapsed canvas measured **96.39%**
+  of a 1440 viewport. tsc/lint/vitest(**95**, count held)/build all green; **0 console errors**.
+  Only `apps/web/src/` touched (no adapter/contract/server change); no new on-disk reads; no
+  `node:fs`/`child_process`/`.claude` reads; text rendered as text nodes only. Evidence:
+  `.argus/screenshots/argus-m4-{expanded-projects,expanded-runs,collapsed-14agent,picked-1agent-run}.png`.
+  Decisions (rail IA / shared-state lift / collapse mechanic) in `knowledge.md` (M4 section).
+  Per `boundaries.md`
   §7 / design §2.7. Contents:
   - **Project switcher** — list `GET /api/projects` (decoded absolute path as the label,
     `modal-rust` etc.); selecting one re-scopes the runs + workflows. Replaces the

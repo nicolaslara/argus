@@ -20,14 +20,15 @@ Early build, end-to-end and on real data at every step. What actually works toda
   [`workpads/architecture/boundaries.md`](./workpads/architecture/boundaries.md)
   (the adapter, the normalized run model, the server↔client API, the live path, the
   render/layout pipeline, the shell, failure modes, and format-version policy).
-- **Prototype M0 — done.** The 4-package npm-workspaces monorepo is scaffolded; the
-  Node backend and the React/Vite web app both run, and the web app shows an **empty
-  fullscreen shell** (no run rendered yet).
-- **Prototype M1 — in progress.** The adapter that parses a finalized run into the
-  normalized run model is being built (pure parser + the injected `FileSystemPort`).
+- **Prototype M0–M4 — done.** The 4-package monorepo is scaffolded; the adapter parses
+  finalized runs + discovers projects/runs/workflows; the Node backend serves the typed
+  read API; and the web app renders real runs on a fullscreen `@xyflow/react` canvas —
+  both an **Execution** view (the phase/agent graph of a finished run) and a run-free
+  **Plan** view (the declared workflow DAG). A **collapsible left icon-rail** (M4) lets you
+  switch between any discovered project and pick any of its runs.
 
-**Not done yet:** rendering an actual run on the canvas arrives at **M3**. Until
-then `npm run dev:web` loads the empty shell, not a workflow graph.
+**Now usable:** with the dev servers running (see **Try it** below), the app opens on the
+richest discovered run, and the left rail lets you navigate any project / any run.
 
 See [`project.md`](./project.md) for the product vision and the four design stances,
 [`TASKS.md`](./TASKS.md) for the active phase, and [`workpads/`](./workpads/) for the
@@ -95,8 +96,20 @@ allowlist satisfied with no browser CORS surface). The backend prints an
 `ARGUS_TOKEN` on startup (override the port with `ARGUS_PORT`, the token with
 `ARGUS_TOKEN`).
 
-**Today this loads the empty fullscreen shell.** Actual run visualization lands at
-**M3** — `dev:web` does not yet render a workflow graph.
+### Try it
+
+The simplest entry point is the single launcher, which starts both servers with a
+shared per-launch token wired through the Vite proxy:
+
+```sh
+npm run dev          # starts the backend + the web app together
+```
+
+Then open **http://localhost:5173**. The app opens on the richest discovered run in the
+**Execution** view. Use the **left icon-rail** (collapsed by default — click `»` to
+expand) to switch between any discovered project, pick any of its runs, or open the
+**Plan** view of a declared workflow. argus reads only your own local `~/.claude` tree
+and never writes to it.
 
 Gate commands (kept green every milestone):
 
