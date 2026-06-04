@@ -70,7 +70,10 @@ export function App() {
     queryFn: () => fetchProjectWorkflows(project!.slug),
     enabled: !!project && view === 'plan',
   });
-  const workflow = pickWorkflow(workflowsQ.data);
+  const [selectedWorkflow, setSelectedWorkflow] = useState<string | null>(null);
+  const workflows = workflowsQ.data ?? [];
+  const workflow =
+    workflows.find((w) => w.name === selectedWorkflow) ?? pickWorkflow(workflowsQ.data);
 
   const run = runQ.data;
   const graph = useMemo(() => {
@@ -132,7 +135,22 @@ export function App() {
 
       {view === 'plan' && workflow ? (
         <div className="run-header">
-          <span className="run-header-name">{workflow.name}</span>
+          {workflows.length > 1 ? (
+            <select
+              className="wf-picker"
+              value={workflow.name}
+              onChange={(e) => setSelectedWorkflow(e.target.value)}
+              aria-label="workflow"
+            >
+              {workflows.map((w) => (
+                <option key={w.name} value={w.name}>
+                  {w.name}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <span className="run-header-name">{workflow.name}</span>
+          )}
           <span className="run-badge run-badge-plan">plan</span>
           <span className="run-header-meta">
             {workflow.phases.length} {workflow.phases.length === 1 ? 'phase' : 'phases'} · declared
