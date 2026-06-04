@@ -8,19 +8,18 @@ override it. Check items off when a phase is finished, not when pausing mid-phas
 
 ## Active Now
 
-**prototype** is active (2026-06-04). Research + architecture gates passed. **Shipped
-& on GitHub (`github.com/nicolaslara/argus`, branch `main`):** M0 scaffold, M1 adapter,
-M2 discovery, M3 execution render (horizontal lanes), P0 meta-plan, P1a AST parser, P1b
-plan-DAG render (article vocabulary, horizontal, elk), PX explanation layer (`claude -p`
-captions, cached). Both **Plan** and **Execution** views render real data with a toggle
-+ workflow picker; 95 tests green.
+**prototype** gate PASSED 2026-06-04; **live** + **inspect** now in progress. Everything
+is on GitHub (`github.com/nicolaslara/argus`, branch `main`); 144 tests green.
 
-**Remaining (this is the overnight order — see the AFK note below):** U1 (unify the
-Plan/Execution visual language — user-requested), M4 (left toolbar: project + run
-picker), P2 (execution overlay — plan⟷run morph), M5 (UI polish + prototype gate +
-README "Try it"), then inspect M9 (node detail) and live M6 (running detection +
-journal tail) as budget allows. Plus PX-fit (better/expandable captions) and #9
-(generative sub-UIs) tracked in `workpads/prototype/tasks.md`.
+**Overnight order (2026-06-04 night → 2026-06-05): ALL COMPLETE.** U1 → M4 → P2 → M5 →
+inspect I1 → live M6 — all shipped. PLUS PX-fit (#14): the detail panel is the caption
+expand surface (baseline/✨llm provenance + pattern chip), and the `claude -p` prompt
+(px-v2) now yields role-focused captions + structural pattern names.
+
+**Next candidates (not yet started — for the morning):** finish the **live** gate (L3 SSE
+stream, L4 no-jump re-layout, L5 finalize reconciliation, L6 robustness) and **inspect**
+(I2 transcript, I3 run-structure/logs timeline, I4 describe-via-Claude). #9 generative
+sub-UIs stays a forward/exploratory item. See the per-workpad `tasks.md` for the detail.
 
 ## Workpad Queue
 
@@ -37,12 +36,22 @@ journal tail) as budget allows. Plus PX-fit (better/expandable captions) and #9
   run renders correctly fullscreen in **three views** (Plan AST DAG / Morph overlay /
   Execution) with Claude captions + a project/run rail; 118 tests; 0 console errors.
   Known residual cosmetic: Plan/Morph wide-short DAG leaves vertical empty space.
-- [ ] **live** — File-watching → live progress as a workflow runs (`journal.jsonl`
-  + `agent-*.jsonl` tail → incremental graph updates). Gate: a live (or replayed)
-  run animates correctly to completion.
-- [ ] **inspect** — Drill into a node (prompt, result, transcript, tokens/tools/
-  timing); navigate phase/pipeline structure; "describe this workflow" via Claude.
-  Gate: any agent node opens a readable detail view.
+- [~] **live** — IN PROGRESS (overnight 2026-06-05). **M6 done across the stack:** L1
+  running-run detection (`classifyRunLiveness` + `discoverRunningRunsReport`) + L2
+  journal→model (`buildLiveModel`, labels recovered from the persisted script by
+  start-order binding) in the adapter; a `/live` server endpoint + running runs merged
+  into the run list; the web fetches + polls the live snapshot with a pulsing "● running"
+  badge. Verified end-to-end (curl + a frozen-fixture UI screenshot). On-disk live
+  behavior empirically locked (`workpads/live/knowledge.md` F1–F5: the finalized json is
+  written ONCE at finalize; the journal is started/result-only). **Remaining for the gate:**
+  L3 SSE/chokidar delta stream (currently a poll), L4 no-jump re-layout, L5 agentId-keyed
+  finalize reconciliation, L6 robustness.
+- [~] **inspect** — IN PROGRESS (overnight 2026-06-05). **I1 done:** clicking any node
+  (execution agent or plan node) opens a right-hand detail panel (state/model/tokens/
+  timing/tools, prompt+result previews, and the full PX caption with a baseline/✨llm
+  provenance chip + pattern name) in all three views. **Remaining:** I2 transcript (note
+  F5 — workflow-agent transcripts are unreliable on disk), I3 run-structure nav + logs[]
+  narrator timeline, I4 describe-a-workflow via the Claude API.
 - [ ] **interact** *(exploratory)* — Jump into a session; embedded agent (runs in
   the project dir) to review & modify a workflow; evaluate ACP / remote-control /
   headless SDK here. Gate: a decision-ready design matrix + spike plan; does not
