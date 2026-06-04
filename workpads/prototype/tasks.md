@@ -134,9 +134,23 @@ observed in a browser; reads well at 1 agent and at the 14-agent run.
     Execution; reads well fullscreen; `tsc`/`lint`/`test`/`build` green; Playwright
     screenshots (expanded + collapsed + a picked non-default run). Render text as text
     nodes only; no new on-disk reads beyond the existing endpoints.
-- [ ] **M5 — UI smoke + polish.** Render the 14-agent `modal-rust-plan-research`
-  run; screenshot/Playwright; pass the UI/UX review lens (reads at a glance,
-  legible, beautiful defaults). Update README "Try it".
+- [ ] **M5 — UI polish + prototype GATE + README.** Final polish pass across ALL THREE
+  views (Plan / Morph / Execution) + the M4 rail, then sign off the prototype gate. Apply
+  a UI/UX review lens (reads at a glance, legible, beautiful, consistent). Concretely:
+  - **Fix the known nits:** the Plan/Morph elk graph sits in a thin band with ~60% empty
+    canvas (tune fitView padding / alignment so it fills better); execution agent-card
+    density (4 lines) — tighten spacing/typography; ensure the left rail, view-toggle, and
+    run-header chrome don't collide at any width; check the 1-agent and 14-agent extremes.
+  - **Captions fit** (the v1 of PX-fit): ensure captions clamp cleanly and never overflow
+    the card; a hover/title shows the full text (full expand/popover is the separate PX-fit
+    task — at minimum guarantee they FIT here).
+  - **README "Try it":** real commands (`npm install`; `npm run dev`; open localhost:5173;
+    toggle Plan/Morph/Execution; pick a project/run in the rail) — verified against what
+    works; note the tested client version.
+  - **Prototype gate sign-off:** record in `knowledge.md` that a real modal-rust run renders
+    beautifully fullscreen in all three views, reads well at 1 and 14 agents, 0 console
+    errors. Acceptance: `tsc`/`lint`/`test`/`build` green; fresh Playwright screenshots of
+    each view; README updated; gate noted; mark the **prototype** workpad gate passed.
 
 ## Plan view (P-series — design: `../architecture/plan-view-design.md`)
 
