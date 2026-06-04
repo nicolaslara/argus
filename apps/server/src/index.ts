@@ -26,6 +26,7 @@ import {
   handleRunSnapshot,
   handleRunExplanations,
   handleRunPlan,
+  handleRunLive,
   type RouteDeps,
   type RouteResult,
 } from './routes.ts';
@@ -151,6 +152,19 @@ async function dispatchApi(pathname: string): Promise<RouteResult | null> {
       return { status: 400, body: { error: 'bad_request' } };
     }
     return handleRunExplanations(deps, slug, session, runId);
+  }
+
+  // GET /api/runs/:slug/:session/:runId/live (L2: the partial live journal snapshot).
+  // More specific than the snapshot route → matched first.
+  const runLiveMatch = /^\/api\/runs\/([^/]+)\/([^/]+)\/([^/]+)\/live$/.exec(pathname);
+  if (runLiveMatch) {
+    const slug = decodeSegment(runLiveMatch[1]!);
+    const session = decodeSegment(runLiveMatch[2]!);
+    const runId = decodeSegment(runLiveMatch[3]!);
+    if (slug === null || session === null || runId === null) {
+      return { status: 400, body: { error: 'bad_request' } };
+    }
+    return handleRunLive(deps, slug, session, runId);
   }
 
   // GET /api/runs/:slug/:session/:runId/plan (P2: the PER-RUN persisted plan source).

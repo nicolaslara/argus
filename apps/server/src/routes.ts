@@ -18,7 +18,9 @@ import { resolve, sep } from 'node:path';
 import {
   discoverProjects,
   discoverRuns,
+  discoverRunningRunsReport,
   discoverWorkflowMetas,
+  loadLiveModel,
   loadPlan,
   loadRun,
   loadRunPlan,
@@ -114,6 +116,53 @@ export function safeRunScriptPath(
 }
 
 /**
+ * Build the absolute LIVE journal path
+ *   `<claudeHome>/projects/<slug>/<session>/subagents/workflows/<runId>/journal.jsonl`
+ * and resolve()-verify it stays strictly inside `claudeHome` (path-escape guard on top of
+ * the segment charset check). Returns null on a bad segment or escape. NEVER throws.
+ */
+export function safeRunJournalPath(
+  claudeHome: string,
+  slug: string,
+  session: string,
+  runId: string,
+): string | null {
+  if (!isValidSegment(slug) || !isValidSegment(session) || !isValidRunId(runId)) return null;
+  const homeAbs = resolve(claudeHome);
+  const candidate = resolve(
+    homeAbs,
+    'projects',
+    slug,
+    session,
+    'subagents',
+    'workflows',
+    runId,
+    'journal.jsonl',
+  );
+  if (candidate !== homeAbs && !candidate.startsWith(homeAbs + sep)) return null;
+  return candidate;
+}
+
+/**
+ * Build the absolute per-run scripts DIRECTORY
+ *   `<claudeHome>/projects/<slug>/<session>/workflows/scripts`
+ * (resolve()-guarded). Used live to discover the persisted script basename when there is
+ * NO finalized wf_<id>.json header yet (the run is still going). NEVER throws.
+ */
+export function safeRunScriptsDir(
+  claudeHome: string,
+  slug: string,
+  session: string,
+  runId: string,
+): string | null {
+  if (!isValidSegment(slug) || !isValidSegment(session) || !isValidRunId(runId)) return null;
+  const homeAbs = resolve(claudeHome);
+  const candidate = resolve(homeAbs, 'projects', slug, session, 'workflows', 'scripts');
+  if (candidate !== homeAbs && !candidate.startsWith(homeAbs + sep)) return null;
+  return candidate;
+}
+
+/**
  * A workflow source filename: a `.js` basename of safe charset (alnum + dash +
  * underscore + dot), with NO path separators and NO `..`. Enforced BEFORE any FS read.
  */
@@ -160,6 +209,8 @@ export interface RouteDeps {
    * and the explanations route reads its current batch.
    */
   explain?: ExplanationEngine;
+  /** Injected clock for live-run detection (defaults to Date.now). Tests pin it. */
+  now?: () => number;
 }
 
 /** GET /api/projects -> ProjectRef[] */
@@ -179,9 +230,25 @@ export async function handleProjectRuns(deps: RouteDeps, slug: string): Promise<
   if (matching.length === 0) return { status: 200, body: [] as RunSummary[] };
 
   const runs: RunSummary[] = [];
+  const finalizedRunIds = new Set<string>();
   for (const project of matching) {
     const projRuns = await discoverRuns(deps.port, project, deps.claudeHome);
+    for (const r of projRuns) finalizedRunIds.add(r.ref.runId);
     runs.push(...projRuns);
+  }
+  // L1: also surface IN-PROGRESS runs (journal present, no finalized json). `nowMs` is
+  // supplied by the server (the adapter reads no clock). A run that finalized between the
+  // two scans is de-duped by runId in favor of its authoritative finalized summary.
+  const nowMs = deps.now ? deps.now() : Date.now();
+  for (const project of matching) {
+    try {
+      const { items } = await discoverRunningRunsReport(deps.port, deps.claudeHome, project, nowMs);
+      for (const r of items) {
+        if (!finalizedRunIds.has(r.ref.runId)) runs.push(r);
+      }
+    } catch {
+      // detection is best-effort; never fail the run list because of it.
+    }
   }
   // Newest first (startTime desc), nulls last — same order discovery uses per-project.
   runs.sort((a, b) => (b.startTime ?? -Infinity) - (a.startTime ?? -Infinity));
@@ -440,4 +507,71 @@ export async function handleRunPlan(
 
   // Neither a per-run script nor a recoverable project script is readable → 404.
   return err(404, 'not_found');
+}
+
+/**
+ * Find the persisted per-run script basename LIVE — by listing
+ * `<session>/workflows/scripts/` for a file ending in `-<runId>.js` (the
+ * `<workflowName>-wf_<id>.js` shape). Used when there is no finalized wf_<id>.json header
+ * to read the name from (the run is still going). Returns a validated basename, or null.
+ */
+async function findLiveScriptBasename(
+  deps: RouteDeps,
+  slug: string,
+  session: string,
+  runId: string,
+): Promise<string | null> {
+  const dir = safeRunScriptsDir(deps.claudeHome, slug, session, runId);
+  if (dir === null) return null;
+  let entries: Array<{ name: string; isDir: boolean }>;
+  try {
+    entries = await deps.port.listDir(dir);
+  } catch {
+    return null;
+  }
+  const suffix = `-${runId}.js`;
+  const hit = entries.find((e) => !e.isDir && e.name.endsWith(suffix) && isValidWorkflowFile(e.name));
+  return hit ? hit.name : null;
+}
+
+/**
+ * GET /api/runs/:slug/:session/:runId/live -> RunModel (L2 partial live snapshot).
+ * Reads the live `journal.jsonl` THROUGH the port and builds a partial RunModel
+ * (`incomplete:true`, `status:'running'`) via the adapter's buildLiveModel. Best-effort,
+ * it also locates + parses the persisted per-run script (no finalized header exists yet)
+ * to recover labels/phases by start-order binding; if absent, agents stay anonymous in a
+ * single "Running" lane. Same M3 posture: charset-validate slug/session/runId (400) +
+ * resolve()-inside-home guard on the journal path. A journal read miss is a 404 (the run
+ * finalized or never started) — the client then re-fetches the finalized snapshot.
+ */
+export async function handleRunLive(
+  deps: RouteDeps,
+  slug: string,
+  session: string,
+  runId: string,
+): Promise<RouteResult> {
+  const journalPath = safeRunJournalPath(deps.claudeHome, slug, session, runId);
+  if (journalPath === null) return err(400, 'bad_request');
+
+  // Best-effort: parse the persisted per-run script into a plan for label/phase recovery.
+  let plan: PlanModel | undefined;
+  const file = await findLiveScriptBasename(deps, slug, session, runId);
+  if (file !== null) {
+    const scriptsPath = safeRunScriptPath(deps.claudeHome, slug, session, runId, file);
+    if (scriptsPath !== null) {
+      try {
+        plan = await loadRunPlan(deps.port, scriptsPath, file);
+      } catch {
+        // no readable script → anonymous live model
+      }
+    }
+  }
+
+  const ref: RunRef = { projectPath: '', slug, sessionId: session, runId };
+  try {
+    const model = await loadLiveModel(deps.port, journalPath, ref, { plan: plan ?? null });
+    return { status: 200, body: model };
+  } catch {
+    return err(404, 'not_found');
+  }
 }
