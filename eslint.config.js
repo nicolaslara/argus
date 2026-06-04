@@ -18,4 +18,18 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    // Node-runtime scripts (the dev launcher) — give them Node globals.
+    files: ['scripts/**/*.{mjs,js}'],
+    languageOptions: {
+      globals: {
+        process: 'readonly',
+        console: 'readonly',
+        URL: 'readonly',
+        Buffer: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+      },
+    },
+  },
 );

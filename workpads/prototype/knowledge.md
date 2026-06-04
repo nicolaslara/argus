@@ -157,3 +157,33 @@ prototype phase. Blocked until the architecture gate passes.
   low-severity precision notes from the verifier are folded into the findings above
   (parseWorkflowMeta literal-eval caveat; `discoverRuns` 3rd-param contract drift) —
   neither blocks completion.
+
+### M3 (2026-06-04) — render one finished run (server API + web canvas)
+
+- **Built:** server `apps/server/src/routes.ts` (GET /api/projects, /projects/:slug/
+  runs, /runs/:slug/:session/:runId — token-gated, strict segment charset +
+  `resolve()`-inside-claudeHome path-escape guard, coded errors) wired into
+  `index.ts`; secure dev token path — `scripts/dev.mjs` generates a per-launch
+  `ARGUS_TOKEN`, shares it via env to both children, and `vite.config.ts` injects
+  `Authorization: Bearer $ARGUS_TOKEN` **server-side via proxy.configure** (browser
+  stays token-free; server token check never disabled); web `api.ts` (token-free
+  same-origin fetch) + `mapping.ts` (RunModel -> xyflow nodes/edges) + a swappable
+  `layout/` (deterministic `vertical-lanes` default) + `nodes/AgentCard.tsx` +
+  `nodes/PhaseLane.tsx`; `@tanstack/react-query` data layer.
+- **Verified on REAL data (Playwright):** the 14-agent run renders as vertical phase
+  lanes in the **7/2/4/1** shape; run header shows `completed` + `partial failure`
+  (the hidden `parallel[0] failed` log) with **zero** mis-attributed agents; the
+  0-token `review:red-team` agent shows `tok —`. **0 console errors.** End-to-end
+  token-proxy confirmed: `GET /api/projects` via the Vite proxy -> 200, 3 real projects.
+  Screenshot: `.argus/screenshots/argus-m3-14agent-run.png`.
+- **Process:** the implement workflow flaked on the final `StructuredOutput` call
+  (heavy task) but built all the pieces on disk; it **did not wire `App.tsx`** (the
+  build stayed byte-identical -> empty shell). The main loop assembled `App.tsx` +
+  `main.tsx` (QueryClientProvider) + the node CSS, and fixed a `scripts/dev.mjs`
+  ESLint `no-undef` (Node globals for `scripts/**`). Pattern reaffirmed: workflow
+  implements -> main loop verifies + completes + commits.
+- **Deferred to M4/M5:** run picker / project switcher (M4); 1-agent-run visual check
+  via the picker, deliberate visual polish (spine visibility, single-agent lane
+  centering, label tooltips), and the gate sign-off (M5). M3 proves the render works.
+- **Evidence:** `tsc --noEmit` clean; `eslint` clean; `vitest` 54 passed; `vite build`
+  ok (now ~413 KB JS — TanStack Query + render code); 0 console errors on the live run.

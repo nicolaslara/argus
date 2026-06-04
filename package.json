@@ -15,7 +15,7 @@
     "test": "vitest run",
     "lint": "eslint .",
     "build": "npm run build --workspace @argus/web",
-    "dev": "npm run dev --workspace @argus/web",
+    "dev": "node scripts/dev.mjs",
     "dev:server": "npm run dev --workspace @argus/server",
     "dev:web": "npm run dev --workspace @argus/web"
   },

@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@argus/contract": "*",
+    "@tanstack/react-query": "^5.90.2",
     "@xyflow/react": "^12.3.5",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

@@ -66,7 +66,15 @@ observed in a browser; reads well at 1 agent and at the 14-agent run.
   tree** (built from the `.argus/fixtures` files) returns the right status mix and
   abs-path keys; a bogus-path test returns empty-with-reason; `tsc`/`lint`/`test`/
   `build` green.
-- [ ] **M3 — Render one finished run** (server API + web canvas), per `boundaries.md`
+- [x] **M3 — Render one finished run** — DONE 2026-06-04. The real 14-agent
+  `modal-rust-plan-research` run renders as crisp vertical phase-lanes (7/2/4/1) with
+  the run-level `partial failure` chip (hidden `parallel[0] failed`) and zero agent
+  mis-attribution; `tok —` for the 0-token agent. Server snapshot API + secure dev
+  token-proxy + TanStack Query data layer + `@xyflow/react` lanes/AgentCard. tsc/lint/
+  test(54)/build green; **0 console errors**. Evidence:
+  `.argus/screenshots/argus-m3-14agent-run.png`. (Workflow built the pieces; the main
+  loop assembled `App.tsx`/`main.tsx`/CSS + fixed the `scripts/dev.mjs` lint.)
+  Per `boundaries.md`
   §4–§7. Three parts:
   1. **Server API** (`apps/server`): add token-gated, path-escape-guarded routes using
      `NodeFileSystemPort` + the M2 discovery + M1 `loadRun`: `GET /api/projects`,
