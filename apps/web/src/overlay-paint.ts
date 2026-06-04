@@ -22,6 +22,8 @@ export interface PaintedBinding {
   bindTotal: number | 'N';
   bindConfidence: PlanBinding['confidence'];
   bindAmbiguous: boolean;
+  /** I1: the bound run agentIds, surfaced by the Morph detail panel (the binding inspector). */
+  bindAgentIds: string[];
 }
 
 /**
@@ -64,6 +66,7 @@ export function paintOverlay(graph: GraphResult, overlay: Overlay, unrolled = fa
       bindTotal: b.total,
       bindConfidence: b.confidence,
       bindAmbiguous: b.ambiguous,
+      bindAgentIds: b.agentIds,
     };
     return { ...n, data: { ...n.data, ...fields, painted: true } };
   });

@@ -12,7 +12,7 @@
 
 import { memo } from 'react';
 import { Handle, Position } from '@xyflow/react';
-import type { AgentState } from '@argus/contract';
+import type { AgentState, Preview } from '@argus/contract';
 import { AgentCardShell, CARD_SHELL_HEIGHT_EXEC } from './AgentCardShell.tsx';
 
 export interface AgentCardData {
@@ -24,6 +24,19 @@ export interface AgentCardData {
   tokens: number | null;
   toolCalls: number | null;
   durationMs: number | null;
+  // --- I1: the rest of the AgentNode scalars, carried on node.data so the detail panel
+  //     reads them WITHOUT a new fetch (boundaries §7 "filled instantly from card data";
+  //     these were always in RunModel.agents[]). The card render ignores them; only the
+  //     DetailPanel projects them. Previews stay capped at the adapter boundary. ---
+  agentType?: string | null;
+  attempt?: number | null;
+  queuedAt?: number | null;
+  startedAt?: number | null;
+  lastProgressAt?: number | null;
+  lastToolName?: string | null;
+  lastToolSummary?: string | null;
+  promptPreview?: Preview | null;
+  resultPreview?: Preview | null;
   /**
    * PX (annotation-only): the node caption — an LLM-enriched one-liner when ready, else
    * the deterministic baseline. Rendered as a text node only, 2-line clamped. Swapped in

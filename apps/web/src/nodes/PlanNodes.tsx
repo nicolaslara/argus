@@ -45,6 +45,8 @@ export interface PaintedBindingFields {
   bindTotal?: number | 'N';
   bindConfidence?: PlanBinding['confidence'];
   bindAmbiguous?: boolean;
+  /** I1: bound run agentIds (Morph detail panel reads these; the card render ignores them). */
+  bindAgentIds?: string[];
   painted?: boolean;
 }
 

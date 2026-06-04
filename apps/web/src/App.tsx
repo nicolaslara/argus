@@ -41,6 +41,7 @@ import {
   UnparsedPlaceholder,
 } from './nodes/PlanNodes.tsx';
 import { Rail, type RailSection } from './shell/Rail.tsx';
+import { DetailPanel } from './nodes/DetailPanel.tsx';
 
 // Stable identity (a fresh object each render would make React Flow warn + re-mount).
 // Execution-view types (M3, unchanged) + the P1b Plan-AST types — one shared registry.
@@ -95,6 +96,9 @@ export function App() {
   const [selectedWorkflowName, setSelectedWorkflowName] = useState<string | null>(null);
   // P2: the folded↔unrolled MODE switch for loop rounds (default folded).
   const [unrolled, setUnrolled] = useState(false);
+  // I1: the node whose detail panel is open (by id; null = closed). Resolved against the
+  // CURRENT graph, so switching view/run/workflow (a new node set) auto-closes a stale panel.
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
   const projectsQ = useQuery({ queryKey: ['projects'], queryFn: fetchProjects });
   const projects = projectsQ.data;
@@ -274,6 +278,12 @@ export function App() {
     return baseGraph;
   }, [view, planIsAst, baseGraph, runExplanations, planExplanations]);
 
+  // I1: resolve the open detail node against the live graph (null if it's no longer present).
+  const selectedNode = useMemo(
+    () => graph.nodes.find((n) => n.id === selectedNodeId) ?? null,
+    [graph.nodes, selectedNodeId],
+  );
+
   // fitView (U1 cosmetic fix): the `fitView` PROP only fits on mount, so the async
   // Plan-AST graph (which replaces the meta-only graph after elk resolves) was never
   // refit — leaving it off-center with the rightmost phase lane clipped. Capture the
@@ -362,6 +372,8 @@ export function App() {
         nodesDraggable={false}
         nodesConnectable={false}
         elementsSelectable={false}
+        onNodeClick={(_, n) => setSelectedNodeId(n.id)}
+        onPaneClick={() => setSelectedNodeId(null)}
       >
         <Background variant={BackgroundVariant.Dots} gap={24} size={1} />
         <MiniMap pannable zoomable />
@@ -527,6 +539,9 @@ export function App() {
           </div>
         </div>
       ) : null}
+
+      {/* I1: node detail panel (right side), filled instantly from the clicked node's data. */}
+      <DetailPanel node={selectedNode} onClose={() => setSelectedNodeId(null)} />
     </div>
   );
 }

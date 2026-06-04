@@ -91,8 +91,17 @@ function geomFor(node: PlanNode): KindGeom {
 const LOOP_FALLBACK_W = 360;
 const LOOP_FALLBACK_H = 120;
 
-function dataFor(node: PlanNode): Record<string, unknown> {
-  const base = { confidence: node.confidence, optional: node.optional };
+function dataFor(node: PlanNode, laneTitle: string | null): Record<string, unknown> {
+  // I1: every plan node carries its `kind` + resolved `phaseTitle` on node.data so the
+  // detail panel can project them with no extra fetch (the node components ignore both —
+  // they read only their kind-specific fields). These are already in PlanModel.
+  const base = {
+    confidence: node.confidence,
+    optional: node.optional,
+    kind: node.kind,
+    phaseRef: node.phaseRef,
+    phaseTitle: laneTitle,
+  };
   switch (node.kind) {
     case 'agent': {
       const d: PlanAgentData = {
@@ -129,7 +138,7 @@ function dataFor(node: PlanNode): Record<string, unknown> {
     case 'loop': {
       const loop = node as LoopNode;
       const d: PlanLoopData = {
-        confidence: node.confidence,
+        ...base,
         title: loop.title,
         stopCondition: loop.stopCondition,
         maxRounds: loop.maxRounds,
@@ -138,12 +147,12 @@ function dataFor(node: PlanNode): Record<string, unknown> {
     }
     case 'output':
     case 'input': {
-      const d: PlanOutputData = { confidence: node.confidence, title: node.title };
+      const d: PlanOutputData = { ...base, title: node.title };
       return d;
     }
     case 'unparsed':
     default: {
-      const d: PlanUnparsedData = { title: node.title, span: node.annotation.span ?? null };
+      const d: PlanUnparsedData = { ...base, title: node.title, span: node.annotation.span ?? null };
       return d;
     }
   }
@@ -240,6 +249,10 @@ export async function planModelToGraph(plan: PlanModel, elkLayout: ElkPlanLayout
   const laneByIndex = new Map<number, PlanLane>();
   for (const l of plan.lanes) laneByIndex.set(l.index, l);
 
+  // I1: resolve a node's phase title (via phaseRef → PlanLane.title) for the detail panel.
+  const titleOf = (n: PlanNode): string | null =>
+    n.phaseRef != null ? (laneByIndex.get(n.phaseRef)?.title ?? null) : null;
+
   const laneMembers = new Map<number, string[]>(); // laneIndex -> top-level member ids
   for (const n of plan.nodes) {
     if (loopOf.has(n.id)) continue; // a loop body — laid out inside its loop, not a lane
@@ -313,7 +326,7 @@ export async function planModelToGraph(plan: PlanModel, elkLayout: ElkPlanLayout
       type: 'planLoop',
       ...(parentId ? { parentId, extent: 'parent' as const } : {}),
       position: rel,
-      data: dataFor(n),
+      data: dataFor(n, titleOf(n)),
       draggable: false,
       selectable: false,
       style: { width: p.width, height: p.height },
@@ -340,7 +353,7 @@ export async function planModelToGraph(plan: PlanModel, elkLayout: ElkPlanLayout
         parentId: loopParent,
         extent: 'parent',
         position: { x: rx, y: ry },
-        data: dataFor(n),
+        data: dataFor(n, titleOf(n)),
         draggable: false,
         selectable: false,
       });
@@ -357,7 +370,7 @@ export async function planModelToGraph(plan: PlanModel, elkLayout: ElkPlanLayout
         parentId: laneNodeId(laneIdx),
         extent: 'parent',
         position: relTo(p, box),
-        data: dataFor(n),
+        data: dataFor(n, titleOf(n)),
         draggable: false,
         selectable: false,
       });
@@ -369,7 +382,7 @@ export async function planModelToGraph(plan: PlanModel, elkLayout: ElkPlanLayout
       id: n.id,
       type: geom.type,
       position: { x: p.x, y: p.y },
-      data: dataFor(n),
+      data: dataFor(n, titleOf(n)),
       draggable: false,
       selectable: false,
     });

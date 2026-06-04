@@ -888,3 +888,113 @@ body {
 .overlay-unplanned-glyph {
   font-size: 12px;
 }
+
+/* ===== I1 — node detail panel (right side) ============================== */
+.detail-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 360px;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 18px;
+  overflow-y: auto;
+  background: rgba(13, 17, 23, 0.94);
+  border-left: 1px solid #232a31;
+  backdrop-filter: blur(8px);
+}
+.detail-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.detail-kind {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--argus-dim);
+}
+.detail-close {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--argus-dim);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.detail-close:hover {
+  color: var(--argus-fg);
+}
+.detail-title {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 15px;
+  font-weight: 600;
+  word-break: break-word;
+}
+.detail-caption {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--argus-dim);
+}
+.detail-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 4px;
+}
+.detail-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+}
+.detail-row-label {
+  color: var(--argus-dim);
+}
+.detail-row-value {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-align: right;
+  word-break: break-word;
+}
+.detail-block {
+  margin-top: 6px;
+}
+.detail-block-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--argus-dim);
+  margin-bottom: 4px;
+}
+.detail-trunc {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 10px;
+  color: #d29922;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  padding: 0 6px;
+}
+.detail-pre {
+  margin: 0;
+  max-height: 280px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--argus-fg);
+  background: #0b0d10;
+  border: 1px solid #21262d;
+  border-radius: 8px;
+  padding: 10px 12px;
+}

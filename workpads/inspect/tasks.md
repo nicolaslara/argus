@@ -8,7 +8,7 @@ tokens/tools/timing).
 
 ## Tasks (draft)
 
-- [ ] **I1 — Node detail panel.** Clicking ANY node (execution AgentCard or a plan node)
+- [x] **I1 — Node detail panel.** DONE 2026-06-05. Clicking ANY node (execution AgentCard or a plan node)
   opens a **right-hand detail panel** (LangSmith-style, per design §2.7) reachable from
   all three views (Plan/Morph/Execution); clicking empty space or a close button dismisses
   it. Enable node selection (`onNodeClick`) WITHOUT enabling drag/connect (keep
