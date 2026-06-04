@@ -25,7 +25,22 @@ import {
   type FileSystemPort,
   type AdapterContext,
 } from '@argus/adapter';
-import type { PlanModel, ProjectRef, RunModel, RunRef, RunSummary, WorkflowMeta } from '@argus/contract';
+import type {
+  ExplanationBatch,
+  PlanModel,
+  ProjectRef,
+  RunModel,
+  RunRef,
+  RunSummary,
+  WorkflowMeta,
+} from '@argus/contract';
+import {
+  ExplanationEngine,
+  planArtifacts,
+  planTargetId,
+  runArtifacts,
+  runTargetId,
+} from './explain.ts';
 
 /**
  * Strict path-segment charset. Slug dirs are `-Users-...` (alnum + dash), session ids
@@ -110,6 +125,12 @@ function err(status: number, error: string): RouteResult {
 export interface RouteDeps {
   port: FileSystemPort;
   claudeHome: string;
+  /**
+   * The Explanation engine (PX). Optional so the M3/P0/P1 routes and their tests need no
+   * engine; when present, the plan/run handlers warm it in the BACKGROUND (never awaited)
+   * and the explanations route reads its current batch.
+   */
+  explain?: ExplanationEngine;
 }
 
 /** GET /api/projects -> ProjectRef[] */
@@ -200,9 +221,90 @@ export async function handleProjectPlan(
     } catch {
       continue; // not present under this recovered cwd; try the next
     }
+    // PX: warm the explanation engine in the BACKGROUND (never awaited → the snapshot
+    // response is unchanged and does not block on generation). Annotation-only.
+    if (deps.explain) {
+      deps.explain.warm(planTargetId(slug, file), planArtifacts(plan));
+    }
     return { status: 200, body: plan };
   }
   return err(404, 'not_found');
+}
+
+/**
+ * GET /api/projects/:slug/workflows/:file/explanations -> ExplanationBatch (PX poll).
+ * Returns the CURRENT per-node captions for the plan (baseline immediately, llm-enriched
+ * when the background pool finishes). Re-warms the engine from the freshly-parsed plan so
+ * a first poll (no prior /plan call) still has the artifacts. Same token gate + path guard
+ * as the plan route. Never blocks on generation. claude absent/errors -> all baseline.
+ */
+export async function handleProjectPlanExplanations(
+  deps: RouteDeps,
+  slug: string,
+  file: string,
+): Promise<RouteResult> {
+  if (!isValidSegment(slug)) return err(400, 'bad_request');
+  if (!isValidWorkflowFile(file)) return err(400, 'bad_request');
+  const target = planTargetId(slug, file);
+  if (!deps.explain) {
+    return { status: 200, body: emptyBatch(target) };
+  }
+
+  const projects = await discoverProjects(deps.port, deps.claudeHome);
+  const matching = projects.filter((p) => p.slug === slug);
+  for (const project of matching) {
+    const jsPath = safeWorkflowJsPath(project.projectPath, file);
+    if (jsPath === null) return err(400, 'bad_request');
+    try {
+      const plan = await loadPlan(deps.port, jsPath, file);
+      deps.explain.warm(target, planArtifacts(plan));
+      break;
+    } catch {
+      continue;
+    }
+  }
+  return { status: 200, body: deps.explain.batch(target) };
+}
+
+/**
+ * GET /api/runs/:slug/:session/:runId/explanations -> ExplanationBatch (PX poll).
+ * Same posture as the plan explanations route, for the execution view's agent cards.
+ */
+export async function handleRunExplanations(
+  deps: RouteDeps,
+  slug: string,
+  session: string,
+  runId: string,
+): Promise<RouteResult> {
+  const wfPath = safeRunJsonPath(deps.claudeHome, slug, session, runId);
+  if (wfPath === null) return err(400, 'bad_request');
+  const target = runTargetId(slug, session, runId);
+  if (!deps.explain) {
+    return { status: 200, body: emptyBatch(target) };
+  }
+
+  let header: unknown;
+  try {
+    header = await deps.port.readJson(wfPath);
+  } catch {
+    return err(404, 'not_found');
+  }
+  const o = header && typeof header === 'object' ? (header as Record<string, unknown>) : {};
+  const scriptPath = typeof o.scriptPath === 'string' ? o.scriptPath : undefined;
+  const projectPath = (scriptPath && recoverProjectPath(scriptPath)) ?? '';
+  const ref: RunRef = { projectPath, slug, sessionId: session, runId };
+  try {
+    const model = await loadRun(deps.port, wfPath, { ref });
+    deps.explain.warm(target, runArtifacts(model));
+  } catch {
+    return err(404, 'not_found');
+  }
+  return { status: 200, body: deps.explain.batch(target) };
+}
+
+/** An empty (engine-absent) batch — all-baseline, never pending. */
+function emptyBatch(target: string): ExplanationBatch {
+  return { target, pending: false, engineAvailable: false, explanations: [] };
 }
 
 /** GET /api/runs/:slug/:session/:runId -> RunModel snapshot. */
@@ -236,6 +338,11 @@ export async function handleRunSnapshot(
     // Defensive: loadRun shouldn't throw on malformed input (the adapter tolerates it),
     // but a hard read failure here is a 404, never a 500 that leaks a stack/path.
     return err(404, 'not_found');
+  }
+  // PX: warm the explanation engine in the BACKGROUND (never awaited → the snapshot
+  // response is byte-unchanged and does not block on generation). Annotation-only.
+  if (deps.explain) {
+    deps.explain.warm(runTargetId(slug, session, runId), runArtifacts(model));
   }
   return { status: 200, body: model };
 }

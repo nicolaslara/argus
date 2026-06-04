@@ -182,10 +182,40 @@ hover.
 - [ ] **P2 — Execution overlay.** `buildOverlay` (label-prefix + phaseIndex 3-way bind);
   per-run plan from the persisted script; Plan⟷Execution morph; status-painted shared
   layout; folded↔unrolled loop mode switch. Design doc §6.
-- [ ] **PX — Explanation layer (default-on, `claude -p`, cached).** Per-node LLM
-  captions/simplifications grounded in (node identity + the artifact it represents);
-  annotation-only on topology; content-addressed cache (`hash(data)`, bust-and-
-  regenerate) under `.argus/cache/`; background + parallel; feeds subtitles across views.
+- [x] **PX — Explanation layer (default-on, `claude -p`, cached, background)** — DONE
+  2026-06-04 (95 tests green: 83 prior + 12 new `explain.test.ts` with `claude` STUBBED;
+  tsc/lint/build clean; 0 console errors). Server `apps/server/src/explain.ts`
+  (content-addressed cache `sha256(stableArtifact+PROMPT_VERSION)` →
+  `.argus/cache/explanations/<hash>.json`, `defaultClaudeRunner` shelling out to
+  `claude -p --model haiku --output-format json`, a bounded background pool) + poll
+  endpoints `…/workflows/:file/explanations` + `…/runs/:slug/:session/:runId/explanations`
+  (token-gated, path-guarded, never block the snapshot/plan REST); web `explanations.ts`
+  (TanStack poll + PURE `overlayExplanations` patching only subtitle/caption text);
+  AgentCard caption slot + PlanProcess subtitle slot. Contract additive only
+  (`NodeExplanation`/`ExplanationBatch`); `RunModel`/`PlanModel`/`WorkflowMeta`
+  byte-unchanged. Live on real modal-rust `plan-research`: enriched captions (e.g.
+  fan-out×7 → "Spawns seven concurrent research agents"), reload = cache hit (0 re-spawn,
+  201ms), `claude`-absent = graceful baseline + server stays up. Screenshots
+  `.argus/screenshots/argus-px-enriched-caption.png` + `argus-px-degraded-baseline.png`.
+  Details in `knowledge.md` (PX section). Per design `plan-view-design.md` §10.
+  **Verifier (2026-06-04): verdict COMPLETE, capability_proven: true** — independently
+  re-ran tsc/lint/build green + vitest 95/95; live on real modal-rust BOTH views
+  enriched (plan-research 11 nodes + the 14-agent run all 14 execution agents) with
+  distinct grounded captions; cold-miss 50s / 11 cache files written vs warm-reload on a
+  fresh server process ~1s / 0 new writes (true disk hit, no re-spawn); `claude`-stripped
+  degrade clean (engineAvailable=false, all status=error/source=baseline, baseline
+  captions retained, /health 200, no crash, no cache writes); annotation-only confirmed
+  at the wire (NO caption/captionSource/LLM fields in the /plan or run-snapshot JSON —
+  served only via the poll endpoints; enriched vs degraded screenshots byte-identical
+  topology); Stance-4/isolation/privacy hold (child_process only in `explain.ts`, cache
+  in argus' own gitignored `.argus/cache/explanations/` — nothing written into
+  modal-rust/.claude, captions carry no transcript/secret); security gates 401/400/403
+  all confirmed; fresh Playwright UI smoke at 1440×900 / 0 console errors reads well
+  fullscreen at the 14-agent (4 lanes 7/2/4/1, 2-line-clamped caption + green left-tick)
+  and the 1-agent Synthesize cases. Captured a pre-existing (NOT a PX) follow-up: the
+  horizontal Plan-AST elk layout leaves ~60% of the canvas empty (graph wide-but-short,
+  fitView centers it) — Plan-view polish, out of scope for PX. Details in `knowledge.md`
+  (PX verifier block).
   Design doc §10. Concrete v1 contract:
   - **Engine** (`apps/server`): a service that shells out to **headless `claude -p
     --model haiku --output-format json`** (reuses the user's Claude Code auth; the

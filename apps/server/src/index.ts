@@ -22,10 +22,13 @@ import {
   handleProjectRuns,
   handleProjectWorkflows,
   handleProjectPlan,
+  handleProjectPlanExplanations,
   handleRunSnapshot,
+  handleRunExplanations,
   type RouteDeps,
   type RouteResult,
 } from './routes.ts';
+import { ExplanationEngine, explanationsCacheDir } from './explain.ts';
 
 const HOST = '127.0.0.1';
 const PORT = Number(process.env.ARGUS_PORT ?? 4317);
@@ -37,8 +40,20 @@ const CLAUDE_HOME = resolve(process.env.ARGUS_CLAUDE_HOME ?? `${homedir()}/.clau
 const ALLOWED_HOSTS = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`]);
 const ALLOWED_ORIGINS = new Set([`http://127.0.0.1:${PORT}`, `http://localhost:${PORT}`]);
 
+// The repo root (this file is apps/server/src/index.ts → up three) is where the
+// gitignored .argus/cache lives. Overridable so tests/launchers can relocate it.
+const REPO_ROOT = resolve(process.env.ARGUS_REPO_ROOT ?? resolve(import.meta.dirname, '..', '..', '..'));
+
+// PX: the Explanation engine. Default-on, background, content-addressed cache under
+// .argus/cache/explanations. Degrades gracefully if `claude` is absent (the runner
+// returns null → nodes keep their baseline caption). Disabled via ARGUS_EXPLAIN=0.
+const EXPLAIN_ENABLED = process.env.ARGUS_EXPLAIN !== '0';
+const explain = EXPLAIN_ENABLED
+  ? new ExplanationEngine({ cacheDir: explanationsCacheDir(REPO_ROOT) })
+  : undefined;
+
 // One shared read-only port + route deps for the process lifetime.
-const deps: RouteDeps = { port: new NodeFileSystemPort(), claudeHome: CLAUDE_HOME };
+const deps: RouteDeps = { port: new NodeFileSystemPort(), claudeHome: CLAUDE_HOME, explain };
 
 function send(res: ServerResponse, status: number, body: unknown): void {
   const payload = JSON.stringify(body);
@@ -96,6 +111,16 @@ async function dispatchApi(pathname: string): Promise<RouteResult | null> {
     return handleProjectRuns(deps, slug);
   }
 
+  // GET /api/projects/:slug/workflows/:file/explanations (PX: the plan poll endpoint).
+  // More specific than the /plan + listing routes → matched first.
+  const planExplMatch = /^\/api\/projects\/([^/]+)\/workflows\/([^/]+)\/explanations$/.exec(pathname);
+  if (planExplMatch) {
+    const slug = decodeSegment(planExplMatch[1]!);
+    const file = decodeSegment(planExplMatch[2]!);
+    if (slug === null || file === null) return { status: 400, body: { error: 'bad_request' } };
+    return handleProjectPlanExplanations(deps, slug, file);
+  }
+
   // GET /api/projects/:slug/workflows/:file/plan (P1: the run-free static plan DAG).
   // More specific than the listing route → matched first.
   const planMatch = /^\/api\/projects\/([^/]+)\/workflows\/([^/]+)\/plan$/.exec(pathname);
@@ -112,6 +137,19 @@ async function dispatchApi(pathname: string): Promise<RouteResult | null> {
     const slug = decodeSegment(workflowsMatch[1]!);
     if (slug === null) return { status: 400, body: { error: 'bad_request' } };
     return handleProjectWorkflows(deps, slug);
+  }
+
+  // GET /api/runs/:slug/:session/:runId/explanations (PX: the run poll endpoint).
+  // More specific than the snapshot route → matched first.
+  const runExplMatch = /^\/api\/runs\/([^/]+)\/([^/]+)\/([^/]+)\/explanations$/.exec(pathname);
+  if (runExplMatch) {
+    const slug = decodeSegment(runExplMatch[1]!);
+    const session = decodeSegment(runExplMatch[2]!);
+    const runId = decodeSegment(runExplMatch[3]!);
+    if (slug === null || session === null || runId === null) {
+      return { status: 400, body: { error: 'bad_request' } };
+    }
+    return handleRunExplanations(deps, slug, session, runId);
   }
 
   // GET /api/runs/:slug/:session/:runId

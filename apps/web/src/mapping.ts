@@ -74,6 +74,8 @@ export function runModelToGraph(model: RunModel, engine: LayoutEngine = defaultL
       tokens: agent.tokens,
       toolCalls: agent.toolCalls,
       durationMs: agent.durationMs,
+      // PX: the explanation-overlay join key (the AgentNode.agentId == the engine's id).
+      agentId: agent.agentId,
     };
     nodes.push({
       id: agentNodeId(agent.agentId, agent.index),

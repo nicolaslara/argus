@@ -95,6 +95,8 @@ export interface PlanProcessData {
   multiplicity: Multiplicity;
   confidence: Confidence;
   optional: boolean;
+  /** PX (annotation-only): an LLM-enriched caption, text node, swapped in when ready. */
+  subtitle?: string | null;
   [key: string]: unknown;
 }
 
@@ -107,6 +109,7 @@ export const PlanProcessNode = memo(function PlanProcessNode({ data }: { data: P
       <Handle type="source" position={Position.Right} style={hidden} />
       <MultiplicityChip multiplicity={data.multiplicity} />
       <span className="plan-process-label">{data.title}</span>
+      {data.subtitle ? <div className="plan-process-sub">{data.subtitle}</div> : null}
     </div>
   );
 });

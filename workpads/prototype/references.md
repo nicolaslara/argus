@@ -40,3 +40,29 @@ transcripts for live/inspect. M1 (adapter) and M3 (render) build against these.
 - **Stray/misplaced artifact (to remove):** `verify-p0-plan.png` was committed to the
   REPO ROOT in `eb11e07` (should live under gitignored `.argus/screenshots/`); Plan-view
   only, no run/transcript content. See `knowledge.md` P0 open question.
+
+## PX — Explanation layer sources (2026-06-04)
+
+- **Real on-disk engine verified:** `claude` is on PATH here (v2.1.162); the explanation
+  layer shells out to `claude -p --model haiku --output-format json` via
+  `apps/server/src/explain.ts` and caches captions under the argus repo's own gitignored
+  `.argus/cache/explanations/<hash>.json`. Verified live on the real `~/.claude`
+  modal-rust project: `plan-research` (11 nodes) + the 14-agent run (14 execution agents)
+  both enrich.
+- **UI-smoke screenshots (gitignored `.argus/screenshots/`):**
+  `argus-px-enriched-caption.png` (Plan view of the real `modal-rust-plan-research` AST
+  plan with LLM captions on fan-out/agent/merge nodes) and
+  `argus-px-degraded-baseline.png` (`claude` stripped from PATH → baseline captions,
+  byte-identical topology). Verifier captured a fresh Playwright screenshot of the
+  **14-agent execution view at 1440×900, 0 console errors** (captions 2-line-clamped with
+  a green left-tick; the single-agent Synthesize lane reads well — covers the 1-agent
+  case).
+- **Verifier independent re-run (2026-06-04):** verdict COMPLETE, capability_proven:
+  true. Re-ran tsc/lint/build green + vitest 95/95; live cache cold-miss (50s / 11 files
+  written) vs warm-reload on a fresh server process (~1s / 0 writes); `claude`-stripped
+  graceful degrade (engineAvailable=false, all baseline, /health 200, no crash, no cache
+  writes); annotation-only confirmed at the wire (no caption fields in /plan or run
+  snapshot); Stance-4/isolation/privacy + security gates (401/400/403, cache outside the
+  target `.claude` tree, no secret leakage) all hold. Follow-up logged (not a PX
+  regression): the horizontal Plan-AST elk layout leaves ~60% of the canvas empty —
+  Plan-view layout polish, out of scope for PX.

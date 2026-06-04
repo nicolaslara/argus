@@ -20,6 +20,11 @@ import {
 import { runModelToGraph, type GraphResult } from './mapping.ts';
 import { planMetaToGraph } from './plan-mapping.ts';
 import { planModelToGraph } from './plan-model-mapping.ts';
+import {
+  overlayExplanations,
+  usePlanExplanations,
+  useRunExplanations,
+} from './explanations.ts';
 import { loadElkLayout } from './layout/index.ts';
 import { AgentCardNode } from './nodes/AgentCard.tsx';
 import { PhaseLaneNode } from './nodes/PhaseLane.tsx';
@@ -152,8 +157,28 @@ export function App() {
 
   // The AST plan is used when available AND elk succeeded; else the meta-only fallback.
   const planIsAst = view === 'plan' && useAstMode && !astError && astGraph.nodes.length > 0;
-  const graph: GraphResult =
+  const baseGraph: GraphResult =
     view === 'execution' ? execGraph : planIsAst ? astGraph : metaGraph;
+
+  // --- PX: poll per-node LLM captions in the background and swap them into the existing
+  //     subtitle/caption slots when ready. Annotation-only: topology is untouched. The
+  //     plan poll keys on the selected workflow file; the run poll on the run ref. The
+  //     poll only runs for the active view (execution vs plan). When `claude` is absent
+  //     the batch is engine-unavailable/all-baseline and the overlay is a no-op. ---
+  const planExplanations = usePlanExplanations(
+    project?.slug,
+    workflow?.file,
+    view === 'plan' && planIsAst,
+  );
+  const runExplanations = useRunExplanations(
+    summary ? { slug: summary.ref.slug, sessionId: summary.ref.sessionId, runId: summary.ref.runId } : undefined,
+    view === 'execution' && !!run,
+  );
+  const graph: GraphResult = useMemo(() => {
+    if (view === 'execution') return overlayExplanations(baseGraph, runExplanations);
+    if (planIsAst) return overlayExplanations(baseGraph, planExplanations);
+    return baseGraph; // meta-only plan: lanes carry their declared subtitle already
+  }, [view, planIsAst, baseGraph, runExplanations, planExplanations]);
 
   const error = projectsQ.error ?? runsQ.error ?? runQ.error ?? workflowsQ.error;
   const loading =

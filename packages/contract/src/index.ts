@@ -294,6 +294,53 @@ export interface PlanModel {
   format: string;
 }
 
+// ============================================================================
+// Explanation layer (PX) — ADDITIVE wire types. Per-node LLM captions enriched
+// by a background `claude -p` pool, served via a separate poll endpoint, swapped
+// into the node subtitle/caption slot when ready. ANNOTATION-ONLY: these types
+// never carry topology — nodes/edges/containers (from AST/meta) stay byte-identical.
+// Design: workpads/architecture/plan-view-design.md §10.
+// ============================================================================
+
+/**
+ * The lifecycle of a single node's explanation:
+ * - `baseline`: only the deterministic caption is available (meta detail / prompt
+ *   first line / label). Always renderable instantly.
+ * - `pending`: enqueued/in-flight in the background pool (still shows baseline).
+ * - `ready`: an LLM caption is available and should swap into the subtitle.
+ * - `error`: generation failed (claude absent/errored/timed out) → keep baseline.
+ */
+export type ExplanationStatus = 'baseline' | 'pending' | 'ready' | 'error';
+
+/** Provenance of the caption currently carried by a NodeExplanation. */
+export type ExplanationSource = 'baseline' | 'llm';
+
+/**
+ * One node's caption. `id` matches the visualization node id (PlanNode.id for plan
+ * views, the AgentNode.agentId for execution). `caption` is ALWAYS populated (the
+ * deterministic baseline at minimum); `source`/`status` say whether it has been
+ * LLM-enriched yet. Rendered as a text node only (never dangerouslySetInnerHTML).
+ */
+export interface NodeExplanation {
+  id: string;
+  caption: string;
+  /** Optional short pattern name (e.g. "fan-out verifier") — LLM-only, may be null. */
+  pattern?: string | null;
+  status: ExplanationStatus;
+  source: ExplanationSource;
+}
+
+/** The poll response: the current explanations for every node of a plan/run. */
+export interface ExplanationBatch {
+  /** Echoes the requested target so the client can drop stale responses. */
+  target: string;
+  /** True while any node is still `pending` (the client keeps polling). */
+  pending: boolean;
+  /** Whether the `claude` engine is available at all (false → all baseline). */
+  engineAvailable: boolean;
+  explanations: NodeExplanation[];
+}
+
 /** A page of an agent's transcript (lazy, paginated). */
 export interface TranscriptPage {
   agentId: string;

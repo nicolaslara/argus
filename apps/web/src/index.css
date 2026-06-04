@@ -313,6 +313,24 @@ body {
   pointer-events: none;
 }
 
+/* PX — the per-node LLM caption (execution AgentCard). Text node, 2-line clamp. A
+   subtle accent left-tick marks an llm-enriched caption (vs the deterministic baseline). */
+.agent-caption {
+  color: var(--argus-dim);
+  font-size: 11px;
+  line-height: 1.3;
+  padding-left: 7px;
+  border-left: 2px solid #2f6f4f;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.agent-caption[data-source='baseline'] {
+  border-left-color: #2d333b;
+}
+
 /* ===== Plan-AST view (P1b) — the richer vocabulary ======================= */
 .plan-node {
   box-sizing: border-box;
@@ -405,6 +423,25 @@ body {
   font-weight: 600;
   color: var(--argus-dim);
   text-transform: lowercase;
+}
+/* PX — an enriched caption on a process node (fan-out/merge). Overflows below the box
+   without resizing it (the elk layout reserves the fixed box; this is decoration). */
+.plan-process-sub {
+  position: absolute;
+  top: calc(100% + 3px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 180px;
+  text-align: center;
+  color: var(--argus-dim);
+  font-size: 10px;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  pointer-events: none;
 }
 
 /* decision — fixed-size SVG diamond */

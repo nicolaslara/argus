@@ -21,6 +21,15 @@ export interface AgentCardData {
   tokens: number | null;
   toolCalls: number | null;
   durationMs: number | null;
+  /**
+   * PX (annotation-only): the node caption — an LLM-enriched one-liner when ready, else
+   * the deterministic baseline. Rendered as a text node only, 2-line clamped. Swapped in
+   * by overlayExplanations; absent on the M3/P0/P1 render (so those stay byte-unchanged).
+   */
+  caption?: string | null;
+  captionSource?: 'baseline' | 'llm';
+  /** PX overlay join key: the AgentNode.agentId (== the engine's explanation id). */
+  agentId?: string;
   [key: string]: unknown;
 }
 
@@ -104,6 +113,16 @@ export const AgentCardNode = memo(function AgentCardNode({ data }: { data: Agent
         {data.cached ? <span className="agent-flag agent-flag-cached">cached</span> : null}
         {data.failedInLogs ? <span className="agent-flag agent-flag-failed">failed</span> : null}
       </div>
+
+      {data.caption ? (
+        <div
+          className="agent-caption"
+          data-source={data.captionSource ?? 'llm'}
+          title={data.caption}
+        >
+          {data.caption}
+        </div>
+      ) : null}
 
       <div className="agent-card-pills">
         <Pill label="dur" value={durationText} dim={durationText === EM_DASH} />

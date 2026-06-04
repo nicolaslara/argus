@@ -7,6 +7,7 @@
 // the browser stays token-free.
 
 import type {
+  ExplanationBatch,
   PlanModel,
   ProjectRef,
   RunModel,
@@ -64,6 +65,27 @@ export function fetchRunModel(ref: Pick<RunRef, 'slug' | 'sessionId' | 'runId'>)
   const { slug, sessionId, runId } = ref;
   return getJson<RunModel>(
     `/api/runs/${encodeURIComponent(slug)}/${encodeURIComponent(sessionId)}/${encodeURIComponent(runId)}`,
+  );
+}
+
+/**
+ * PX: poll the per-node LLM captions for a plan (the Plan view). Returns baseline
+ * captions immediately and llm-enriched ones as the background pool finishes. The
+ * caller keeps polling while `batch.pending` is true. Never blocks the plan render.
+ */
+export function fetchPlanExplanations(slug: string, file: string): Promise<ExplanationBatch> {
+  return getJson<ExplanationBatch>(
+    `/api/projects/${encodeURIComponent(slug)}/workflows/${encodeURIComponent(file)}/explanations`,
+  );
+}
+
+/** PX: poll the per-node LLM captions for a run (the Execution view's agent cards). */
+export function fetchRunExplanations(
+  ref: Pick<RunRef, 'slug' | 'sessionId' | 'runId'>,
+): Promise<ExplanationBatch> {
+  const { slug, sessionId, runId } = ref;
+  return getJson<ExplanationBatch>(
+    `/api/runs/${encodeURIComponent(slug)}/${encodeURIComponent(sessionId)}/${encodeURIComponent(runId)}/explanations`,
   );
 }
 

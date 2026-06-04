@@ -293,3 +293,138 @@ prototype phase. Blocked until the architecture gate passes.
   branch **`phase1-scaffold-and-research`** (not `main`): `baf8769` ("run-free Plan view +
   Plan/Execution toggle") and HEAD `eb11e07` ("workflow picker in the Plan view"). The
   capability is unaffected; the record now matches the repo.
+
+### PX (2026-06-04) — Explanation layer (default-on, `claude -p`, cached, background)
+
+- **Built (smallest correct change; annotation-only on topology):**
+  - **Contract (`packages/contract/src/index.ts`, ADDITIVE only):** `NodeExplanation
+    { id, caption, pattern?, status:'baseline'|'pending'|'ready'|'error',
+    source:'baseline'|'llm' }` + `ExplanationBatch { target, pending, engineAvailable,
+    explanations }`. `RunModel`/`PlanModel`/`WorkflowMeta` shapes are **byte-unchanged**
+    (M3/P0/P1 renders unaffected).
+  - **Server engine (`apps/server/src/explain.ts`, NEW):** pure `hashArtifact` +
+    `diskCacheIO(read/write)` + `defaultClaudeRunner(spawn)` + `cleanCaption` +
+    `buildPrompt` + the `ExplanationEngine` (bounded background pool, default
+    concurrency 3) + `planArtifacts`/`runArtifacts` extraction. `child_process` lives
+    HERE (the adapter stays node:fs/child_process-free). Engine `warm()` seeds every
+    node's baseline IMMEDIATELY then enqueues cache-check + generation in a microtask —
+    `warm()` and the REST handlers never await generation.
+  - **Routes (`apps/server/src/routes.ts`):** plan/run handlers `warm()` the engine in
+    the background (never awaited → snapshot/plan responses unchanged). New poll
+    endpoints `handleProjectPlanExplanations` + `handleRunExplanations` re-warm + return
+    the current `ExplanationBatch`. Wired in `index.ts` `dispatchApi` BEFORE the
+    `/plan` + snapshot routes (more specific), behind the SAME token gate + segment
+    charset + `safeWorkflowJsPath`/`safeRunJsonPath` resolve()-guard.
+  - **Web (`apps/web`):** `fetchPlanExplanations`/`fetchRunExplanations` in `api.ts`;
+    `explanations.ts` = a TanStack Query poll (`refetchInterval` while `batch.pending`,
+    then stops) + a PURE `overlayExplanations(graph, map)` that patches ONLY
+    `node.data.subtitle`/`caption` text (topology untouched; returns the SAME ref when
+    nothing to enrich). `App.tsx` overlays per active view. AgentCard gained a `caption`
+    slot; PlanProcessNode a `subtitle` slot (PlanAgentNode already had one). Rendered as
+    text nodes only (no `dangerouslySetInnerHTML`).
+- **Cache key recipe (locked):** `hash = sha256(JSON.stringify(stableArtifact) + ' ' +
+  PROMPT_VERSION)` where `stableArtifact = { kind, label, phase, role, evidence }`
+  (the node id is EXCLUDED so two structurally-identical nodes collide → a reload is a
+  hit). Stored at gitignored `.argus/cache/explanations/<hash>.json` =
+  `{ caption, pattern, promptVersion }`. `PROMPT_VERSION = 'px-v1'` — bump it to bust ALL
+  caches; a stale `promptVersion` on read is treated as a miss. v1 invalidation =
+  bust+regenerate when the hash changes (verified: editing artifact evidence → new hash
+  → new spawn, old + new entries both cached).
+- **`claude -p` invocation (locked):** `claude -p --model haiku --output-format json`
+  via `node:child_process.spawn` (`stdio:['pipe','pipe','ignore']`), the prompt written
+  to stdin, parse the JSON, read the `.result` string. 30s timeout (SIGKILL on expiry);
+  on ENOENT (`claude` absent) / non-zero exit / parse fail / timeout the runner resolves
+  **null** → the caller keeps the baseline caption and the engine flips
+  `engineAvailable=false`. NEVER throws, never leaves a hung child. `claude` is on PATH
+  here = v2.1.162; the JSON envelope carries `result`/`usage`/`total_cost_usd` (we read
+  only `result`).
+- **Poll wiring (no SSE — the smaller correct choice; no SSE channel exists yet):**
+  `GET /api/projects/:slug/workflows/:file/explanations` (plan) and
+  `GET /api/runs/:slug/:session/:runId/explanations` (run) return baseline immediately and
+  llm-enriched entries as the bounded pool finishes; the web polls every 1.5s while
+  `pending`, then stops. The poll is the only thing that touches generation state — the
+  snapshot/plan REST responses are byte-unchanged and do NOT await it.
+- **Annotation-only proof:** the overlay patches only `data.subtitle`/`data.caption`;
+  ids/types/positions/parents/edges/×N chips are identical between the enriched and the
+  baseline screenshots. The execution overlay join key is `AgentNode.agentId` (carried as
+  `data.agentId`); plan nodes join on `PlanNode.id` directly.
+- **Verification (all green):** `tsc --noEmit` clean; `eslint .` clean; `vitest run`
+  **95 passed** (83 prior + 12 new in `explain.test.ts`: hash stable/ignores-id,
+  hash-change, cleanCaption, buildPrompt, cache MISS=1 spawn, HIT=0 spawn on reload,
+  HASH-CHANGE=2 spawns, graceful-null + throwing-runner = baseline, planArtifacts +
+  runArtifacts extraction). `vite build` ok (425.65 KB JS; elk chunk warning pre-existing
+  from P1b). The cache test STUBS the runner — **no real spawn in tests**.
+- **Live evidence (real `~/.claude`, modal-rust `plan-research`):**
+  - **Enrichment + cache HIT:** a headless prewarm via real `claude -p` produced LLM
+    captions for all 11 plan-research nodes in ~45s (concurrency 4) and wrote them under
+    `.argus/cache/explanations/`. Run 1 (miss) = real spawn ~16.8s for one node; run 2
+    (fresh engine, same cache) = **0 spawns, 201ms** (cache hit). Live server poll #1 =
+    `pending` (warming) → poll #2 = `pending:false`, all 11 `ready/llm` served from the
+    cache without re-spawning.
+  - **Playwright UI smoke (1440×900, 0 console errors):** Plan view of the real
+    `modal-rust-plan-research` AST plan shows enriched captions on fan-out/agent/merge
+    nodes — e.g. `fan-out ×7` → "Spawns seven concurrent research agents",
+    `agent research:${r.key}` → "Research Modal Rust surface: images, functions,
+    volumes, GPU, modal-rs", `fan-out ×4` → "Spawn four concurrent reviewers across
+    distinct lenses". Screenshot: `.argus/screenshots/argus-px-enriched-caption.png`.
+  - **Graceful degradation:** restarting the server with `claude` stripped from PATH +
+    a fresh empty cache → every node `status:error, source:baseline`,
+    `engineAvailable:false`, the deterministic baseline caption retained (declared meta
+    detail / agent subtitle), `/health` 200 (server stays up), 0 console errors.
+    Screenshot: `.argus/screenshots/argus-px-degraded-baseline.png` (byte-identical
+    topology to the enriched view, captions reverted to the declared baselines).
+- **Privacy/security honored:** artifact text (the user's OWN local prompts/code) is
+  passed to their OWN local `claude` auth — never off-machine, never logged. The cache
+  lives under gitignored `.argus/` (verified `git check-ignore`). Cache paths are
+  resolve()-guarded with a hex-only hash charset. Poll endpoints share the M3 token gate
+  + path guards. Captions render as text nodes only.
+- **Drift note (accepted, documented):** `RouteDeps` gained an OPTIONAL `explain?:
+  ExplanationEngine` (absent in M3/P0/P1 route tests → those handlers behave exactly as
+  before). The engine reads `import.meta.dirname` to locate the repo-root `.argus/cache`
+  (overridable via `ARGUS_REPO_ROOT`); the whole layer is disablable via `ARGUS_EXPLAIN=0`.
+
+- **Verifier (2026-06-04) — verdict COMPLETE, capability_proven: true (independent,
+  not trusting self-report).**
+  - **Capability fully proven on REAL data.** Re-ran the gate green (tsc clean, lint
+    clean, build ok) + vitest **95/95**. Live against real modal-rust: `plan-research`
+    enriched **all 11 nodes** and the 14-agent run enriched **all 14 execution agents**
+    via real `claude -p`, with distinct, grounded, readable captions (e.g. "Spawns seven
+    concurrent research agents", "Red-team modal-rust design for hidden assumptions and
+    failure modes"). **Cache MISS vs HIT decisively demonstrated:** cold miss took **50s**
+    (real spawns, **11 cache files written**); warm reload on a **fresh server process**
+    served all 11 `ready/llm` in **~1s with 0 new cache writes** — a true disk cache hit,
+    no re-spawn. (Supersedes the self-reported ~45s/201ms single-node figures with a
+    whole-graph cold-vs-warm measurement.)
+  - **Graceful degradation verified at the process level:** relaunched the server with
+    `claude` stripped from PATH + an empty cache → `engineAvailable=false`, **all 14
+    nodes `status=error / source=baseline`** with baseline captions retained, `/health`
+    200, **no errors logged, no cache files written, server never crashed**. Confirms
+    ENOENT/spawn-fail → null → baseline.
+  - **Annotation-only + non-blocking confirmed at the WIRE level:** the `/plan` response
+    and the run snapshot contain **NO** caption/captionSource/LLM-sentence fields (grepped
+    the JSON); explanations are served ONLY via the separate poll endpoints, which return
+    baseline immediately on first poll. `overlayExplanations` is pure and patches only
+    subtitle/caption text. Enriched vs degraded screenshots show **byte-identical
+    topology**.
+  - **Stance-4 / isolation / privacy hold:** `child_process` lives ONLY in
+    `apps/server/src/explain.ts` (verified at `explain.ts:19` + the adapter's own guard
+    test that `index.ts`/`raw.ts` never import `node:fs`). Cache root resolves to the
+    **argus repo's own gitignored `.argus/cache/explanations/`, NOT the target project's
+    `.claude` tree** — nothing was written into `modal-rust/.claude`. Cache files contain
+    only short captions (no transcript/secret leakage). Parsing tolerates missing fields
+    (typeof guards, `.catch` on read). PX endpoints inherit the full security surface:
+    **401** (no/bad token), **400** (path traversal on both the workflow file and runId),
+    **403** (bad Host) all confirmed.
+  - **Visual milestone READS WELL fullscreen:** fresh Playwright screenshot of the
+    14-agent modal-rust execution view at 1440×900, **0 console errors**. The four phase
+    lanes (7/2/4/1) render crisply; each AgentCard shows the LLM caption **clamped to 2
+    lines with a subtle green left-tick**, integrated cleanly between the meta row and the
+    metric pills. The single-agent **Synthesize** lane reads perfectly (covers the 1-agent
+    case). Plan view live state matches the committed enriched screenshot, with captions
+    on both **agent AND process** (fan-out/merge) nodes.
+- **OPEN QUESTION / follow-up (pre-existing, NOT a PX regression):** the horizontal
+  **Plan-AST elk layout** leaves roughly the bottom ~**60%** of the fullscreen canvas
+  empty — the graph is wide-but-short and `fitView` centers it vertically. PX only adds
+  caption text and does not change layout. Worth a follow-up for **Plan-view polish**, but
+  out of scope for this capability. (Lives alongside the P0 agent-free-lane-height visual
+  note as Plan-view layout debt.)
