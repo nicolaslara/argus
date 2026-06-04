@@ -211,7 +211,26 @@ hover.
   view's AST mode (the meta-only P0 plan stays the run-free fallback). Acceptance:
   plan-research renders its fan-out, refine-plan its loop, observed in a browser
   (Playwright); `tsc`/`lint`/`build` green. Design doc §3.
-- [ ] **P2 — Execution overlay.** `buildOverlay` (label-prefix + phaseIndex 3-way bind);
+- [x] **P2 — Execution overlay.** DONE 2026-06-04 (118 tests green: 95 baseline + 12
+  `buildOverlay` 3-way/mismatch + 5 adapter `perRunScriptBasename`/`loadRunPlan` + 6
+  `handleRunPlan`/`safeRunScriptPath` route; tsc/eslint/build clean). PURE web-side
+  `apps/web/src/overlay.ts` `buildOverlay(plan, run)` (§6 3-way bind: exact→high /
+  prefix+unique-phaseIndex→medium / ambiguous→low, no winner picked; loop ` rN`-suffix
+  stripped to join the declared lane) + `apps/web/src/overlay-paint.ts` `paintOverlay`
+  (additive, topology-preserving — same canonical `planModelToGraph`+elk layout the Plan
+  view uses, patches ONLY node.data, never relayouts). Per-run plan from the PER-RUN
+  PERSISTED script via adapter `perRunScriptBasename`/`loadRunPlan` + server `GET
+  /api/runs/:slug/:session/:runId/plan` (token-gated, path-guarded, project-script
+  fallback when no per-run script → morph stays 404-free). Morph view paints run STATUS
+  onto the plan; folded↔unrolled is a loop-header MODE SWITCH (no per-node explosion, no
+  relayout). All three mismatches first-class (partial-instance amber / planned-not-run
+  ghost / unplanned-agent ⚠). `packages/contract` additive only (`PlanBinding`/`Overlay`/
+  `BindingConfidence`; `AgentNode`/`RunModel` byte-identical); `mapping.ts`,
+  `plan-model-mapping.ts`, `plan.ts`, and the PX layer byte-UNCHANGED.
+  Evidence: `.argus/screenshots/argus-p2-{morph-14agent,morph-1agent,loop-folded,loop-unrolled}.png`.
+  **Verifier (2026-06-04): verdict COMPLETE, capability_proven: true.** Details +
+  the 6 verifier follow-ups in `knowledge.md` (P2 verifier block).
+  `buildOverlay` (label-prefix + phaseIndex 3-way bind);
   per-run plan from the persisted script; Plan⟷Execution morph; status-painted shared
   layout; folded↔unrolled loop mode switch. Design doc §6.
 - [x] **PX — Explanation layer (default-on, `claude -p`, cached, background)** — DONE

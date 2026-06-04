@@ -69,6 +69,19 @@ export function fetchRunModel(ref: Pick<RunRef, 'slug' | 'sessionId' | 'runId'>)
 }
 
 /**
+ * P2: the PER-RUN plan DAG — parsed from the EXACT script a run executed (its persisted
+ * `<session>/workflows/scripts/<name>-wf_<id>.js`), NOT the project `.claude/workflows/*.js`
+ * (which may have drifted). Returns the adapter's PlanModel. A run with no persisted
+ * script 404s — the caller falls back to the project workflow plan.
+ */
+export function fetchRunPlan(ref: Pick<RunRef, 'slug' | 'sessionId' | 'runId'>): Promise<PlanModel> {
+  const { slug, sessionId, runId } = ref;
+  return getJson<PlanModel>(
+    `/api/runs/${encodeURIComponent(slug)}/${encodeURIComponent(sessionId)}/${encodeURIComponent(runId)}/plan`,
+  );
+}
+
+/**
  * PX: poll the per-node LLM captions for a plan (the Plan view). Returns baseline
  * captions immediately and llm-enriched ones as the background pool finishes. The
  * caller keeps polling while `batch.pending` is true. Never blocks the plan render.

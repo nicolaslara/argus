@@ -17,10 +17,13 @@ import {
   fetchProjectWorkflows,
   fetchProjectPlan,
   fetchRunModel,
+  fetchRunPlan,
 } from './api.ts';
 import { runModelToGraph, type GraphResult } from './mapping.ts';
 import { planMetaToGraph } from './plan-mapping.ts';
 import { planModelToGraph } from './plan-model-mapping.ts';
+import { buildOverlay } from './overlay.ts';
+import { paintOverlay } from './overlay-paint.ts';
 import {
   overlayExplanations,
   usePlanExplanations,
@@ -52,7 +55,10 @@ const nodeTypes: NodeTypes = {
   planUnparsed: UnparsedPlaceholder,
 };
 
-type ViewMode = 'execution' | 'plan';
+// P2: a third mode — the Plan⟷Execution MORPH. `overlay` paints a selected run's STATUS
+// onto its plan template (the canonical shared layout). `plan` = run-free template;
+// `execution` = the M3 phase-lane run view (byte-unchanged).
+type ViewMode = 'execution' | 'plan' | 'overlay';
 
 const EMPTY_GRAPH: GraphResult = { nodes: [], edges: [] };
 
@@ -87,6 +93,8 @@ export function App() {
   const [selectedProjectPath, setSelectedProjectPath] = useState<string | null>(null);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [selectedWorkflowName, setSelectedWorkflowName] = useState<string | null>(null);
+  // P2: the folded↔unrolled MODE switch for loop rounds (default folded).
+  const [unrolled, setUnrolled] = useState(false);
 
   const projectsQ = useQuery({ queryKey: ['projects'], queryFn: fetchProjects });
   const projects = projectsQ.data;
@@ -104,10 +112,12 @@ export function App() {
   const summary =
     runs.find((r) => r.ref.runId === selectedRunId) ?? defaultRun(runs);
 
+  // The run model is needed by BOTH the execution view AND the P2 overlay (to build the
+  // binding). Gate it on either.
   const runQ = useQuery({
     queryKey: ['run', summary?.ref.slug, summary?.ref.sessionId, summary?.ref.runId],
     queryFn: () => fetchRunModel(summary!.ref),
-    enabled: !!summary && view === 'execution',
+    enabled: !!summary && (view === 'execution' || view === 'overlay'),
   });
 
   // --- Workflows for the selected project (run-free Plan source). Loaded whenever a
@@ -129,6 +139,18 @@ export function App() {
     enabled: !!project && view === 'plan' && !!workflow,
   });
   const plan = planQ.data;
+
+  // --- P2 MORPH: the selected run's PLAN source via the per-run endpoint
+  //     (`/api/runs/:slug/:session/:runId/plan`). The SERVER prefers the EXACT persisted
+  //     per-run script (what actually ran) and falls back to the recovered project
+  //     workflow `.js` when a run has no persisted script (e.g. the 14-agent plan-research
+  //     run) — so the web makes ONE clean request (no client-side 404 probe). ---
+  const runPlanQ = useQuery({
+    queryKey: ['run-plan', summary?.ref.slug, summary?.ref.sessionId, summary?.ref.runId],
+    enabled: !!summary && view === 'overlay',
+    queryFn: () => fetchRunPlan(summary!.ref),
+  });
+  const runPlan = runPlanQ.data;
 
   // --- AST-mode layout: when the PlanModel is rich (static-source), lay it out with
   //     elkjs (lazily loaded). The P0 meta-only planMetaToGraph is the RUN-FREE FALLBACK
@@ -164,6 +186,50 @@ export function App() {
   }, [view, useAstMode, plan]);
 
   const run = runQ.data;
+
+  // --- P2 MORPH layout: lay the run's plan out with the SAME elk pass + planModelToGraph
+  //     the Plan view uses (the canonical shared layout), then PAINT the run status onto
+  //     it (buildOverlay → paintOverlay). Painting is additive (data-only); toggling the
+  //     folded↔unrolled `unrolled` mode re-paints without relaying out. Drilling a node
+  //     never relayouts (paint is a data patch). ---
+  const overlay = useMemo(
+    () => (runPlan && run ? buildOverlay(runPlan, run) : null),
+    [runPlan, run],
+  );
+  const overlayLayoutReady = !!runPlan && runPlan.derivedFrom === 'static-source' && runPlan.nodes.length > 0;
+  const [overlayBaseGraph, setOverlayBaseGraph] = useState<GraphResult>(EMPTY_GRAPH);
+  const [overlayError, setOverlayError] = useState(false);
+  useEffect(() => {
+    if (view !== 'overlay' || !overlayLayoutReady || !runPlan) {
+      setOverlayBaseGraph(EMPTY_GRAPH);
+      setOverlayError(false);
+      return;
+    }
+    let cancelled = false;
+    setOverlayError(false);
+    (async () => {
+      try {
+        const elk = await loadElkLayout();
+        const graph = await planModelToGraph(runPlan as PlanModel, elk);
+        if (!cancelled) setOverlayBaseGraph(graph);
+      } catch {
+        if (!cancelled) {
+          setOverlayBaseGraph(EMPTY_GRAPH);
+          setOverlayError(true);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [view, overlayLayoutReady, runPlan]);
+
+  // Paint (data-only) — separate from layout so the folded↔unrolled toggle never relayouts.
+  const overlayGraph = useMemo(() => {
+    if (view !== 'overlay' || overlayBaseGraph.nodes.length === 0 || !overlay) return EMPTY_GRAPH;
+    return paintOverlay(overlayBaseGraph, overlay, unrolled);
+  }, [view, overlayBaseGraph, overlay, unrolled]);
+
   const metaGraph = useMemo(() => {
     if (view !== 'plan') return EMPTY_GRAPH;
     return workflow ? planMetaToGraph(workflow) : EMPTY_GRAPH;
@@ -177,7 +243,13 @@ export function App() {
   // The AST plan is used when available AND elk succeeded; else the meta-only fallback.
   const planIsAst = view === 'plan' && useAstMode && !astError && astGraph.nodes.length > 0;
   const baseGraph: GraphResult =
-    view === 'execution' ? execGraph : planIsAst ? astGraph : metaGraph;
+    view === 'execution'
+      ? execGraph
+      : view === 'overlay'
+        ? overlayGraph
+        : planIsAst
+          ? astGraph
+          : metaGraph;
 
   // --- PX: poll per-node LLM captions in the background and swap them into the existing
   //     subtitle/caption slots when ready. Annotation-only: topology is untouched. The
@@ -196,7 +268,10 @@ export function App() {
   const graph: GraphResult = useMemo(() => {
     if (view === 'execution') return overlayExplanations(baseGraph, runExplanations);
     if (planIsAst) return overlayExplanations(baseGraph, planExplanations);
-    return baseGraph; // meta-only plan: lanes carry their declared subtitle already
+    // overlay (morph) mode: the base graph is already painted with run status; PX captions
+    // are not joined here (the painted plan node ids ≠ agentIds). meta-only plan: lanes
+    // carry their declared subtitle already.
+    return baseGraph;
   }, [view, planIsAst, baseGraph, runExplanations, planExplanations]);
 
   // fitView (U1 cosmetic fix): the `fitView` PROP only fits on mount, so the async
@@ -243,14 +318,23 @@ export function App() {
   const loading =
     projectsQ.isPending ||
     (!!project && view === 'execution' && runsQ.isPending) ||
-    (!!summary && view === 'execution' && runQ.isPending) ||
+    (!!summary && (view === 'execution' || view === 'overlay') && runQ.isPending) ||
+    (!!summary && view === 'overlay' && runPlanQ.isPending) ||
     (!!project && view === 'plan' && workflowsQ.isPending);
 
-  const hasContent = view === 'plan' ? !!workflow : !!run;
+  const hasContent =
+    view === 'plan' ? !!workflow : view === 'overlay' ? !!run && !!runPlan : !!run;
 
   // Header: in AST mode show the real node/edge counts + coverage + the derivation tag.
   const planNodeCount = plan?.nodes.length ?? 0;
   const planDerived = planIsAst ? 'AST' : 'declared';
+
+  // P2 overlay header summary: bound / partial / planned-not-run / unplanned counts.
+  const overlayBound = overlay?.bindings.filter((b) => b.status !== 'not-run').length ?? 0;
+  const overlayNotRun = overlay?.bindings.filter((b) => b.status === 'not-run').length ?? 0;
+  const overlayPartial = overlay?.bindings.filter((b) => b.status === 'partial').length ?? 0;
+  const overlayUnplanned = overlay?.unplannedAgentIds.length ?? 0;
+  const overlayRounds = overlay?.rounds ?? null;
 
   return (
     <div className="argus-app">
@@ -294,7 +378,8 @@ export function App() {
         onSelectWorkflow={handleSelectWorkflow}
       />
 
-      {/* Minimal Plan ⟷ Execution view toggle (this view IS review-the-workflow mode). */}
+      {/* Plan ⟷ Morph ⟷ Execution view toggle. Morph (P2) paints the selected run's
+          status onto its plan template — proving plan & execution are one graph. */}
       <div className="view-toggle" role="group" aria-label="view mode">
         <button
           type="button"
@@ -306,6 +391,15 @@ export function App() {
         </button>
         <button
           type="button"
+          className={`view-toggle-btn${view === 'overlay' ? ' is-active' : ''}`}
+          aria-pressed={view === 'overlay'}
+          onClick={() => setView('overlay')}
+          title="paint this run's status onto its plan template (Plan⟷Execution morph)"
+        >
+          Morph
+        </button>
+        <button
+          type="button"
           className={`view-toggle-btn${view === 'execution' ? ' is-active' : ''}`}
           aria-pressed={view === 'execution'}
           onClick={() => setView('execution')}
@@ -313,6 +407,30 @@ export function App() {
           Execution
         </button>
       </div>
+
+      {/* P2 folded↔unrolled MODE switch — shown only when the morph observed loop rounds. */}
+      {view === 'overlay' && overlayRounds != null && overlayRounds > 1 ? (
+        <div className="mode-toggle" role="group" aria-label="loop unroll mode">
+          <button
+            type="button"
+            className={`mode-toggle-btn${!unrolled ? ' is-active' : ''}`}
+            aria-pressed={!unrolled}
+            onClick={() => setUnrolled(false)}
+            title="folded: one aggregate loop body"
+          >
+            ⊟ folded
+          </button>
+          <button
+            type="button"
+            className={`mode-toggle-btn${unrolled ? ' is-active' : ''}`}
+            aria-pressed={unrolled}
+            onClick={() => setUnrolled(true)}
+            title={`unrolled: ${overlayRounds} round-column axis within the loop`}
+          >
+            ⊞ unrolled · {overlayRounds}r
+          </button>
+        </div>
+      ) : null}
 
       {view === 'plan' && workflow ? (
         <div className="run-header">
@@ -339,6 +457,24 @@ export function App() {
               : `${workflow.phases.length} ${workflow.phases.length === 1 ? 'phase' : 'phases'} · declared`}
           </span>
         </div>
+      ) : view === 'overlay' && run ? (
+        <div className="run-header">
+          <span className="run-header-name">{run.workflowName}</span>
+          <span className="run-badge run-badge-plan">morph</span>
+          <span className={`run-badge run-badge-${run.status}`}>{run.status}</span>
+          <span className="run-header-meta">
+            {overlayBound} bound
+            {overlayPartial > 0 ? ` · ${overlayPartial} partial` : ''}
+            {overlayNotRun > 0 ? ` · ${overlayNotRun} planned-not-run` : ''}
+            {overlayUnplanned > 0 ? ` · ${overlayUnplanned} unplanned` : ''}
+            {overlayRounds != null ? ` · ${overlayRounds} loop rounds` : ''}
+          </span>
+          {run.partialFailure.present ? (
+            <span className="run-badge run-badge-partial" title={run.partialFailure.lines[0] ?? ''}>
+              partial failure
+            </span>
+          ) : null}
+        </div>
       ) : view === 'execution' && run ? (
         <div className="run-header">
           <span className="run-header-name">{run.workflowName}</span>
@@ -355,6 +491,14 @@ export function App() {
         </div>
       ) : null}
 
+      {/* P2: unplanned agents (label matched no plan node) surfaced honestly. */}
+      {view === 'overlay' && overlayUnplanned > 0 ? (
+        <div className="overlay-unplanned" role="note" title="run agents whose label matched no plan node">
+          <span className="overlay-unplanned-glyph" aria-hidden="true">⚠</span>
+          {overlayUnplanned} unplanned agent{overlayUnplanned === 1 ? '' : 's'}
+        </div>
+      ) : null}
+
       {!hasContent ? (
         <div className="argus-empty" role="status">
           <div className="argus-wordmark">argus</div>
@@ -366,7 +510,11 @@ export function App() {
                 ? 'loading…'
                 : view === 'plan'
                   ? 'no declared workflows found for this project'
-                  : 'no runs found in ~/.claude'}
+                  : view === 'overlay'
+                    ? overlayError
+                      ? 'could not lay out this run’s plan'
+                      : 'no plan source found for this run'
+                    : 'no runs found in ~/.claude'}
           </div>
         </div>
       ) : null}

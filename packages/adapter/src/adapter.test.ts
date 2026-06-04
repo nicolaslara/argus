@@ -7,9 +7,12 @@ import {
   deriveSlug,
   recoverProjectPath,
   parseFinalizedRun,
+  perRunScriptBasename,
+  loadRunPlan,
   PREVIEW_TRUNCATED_RAW_LEN,
   PREVIEW_EMIT_CAP,
   type AdapterContext,
+  type FileSystemPort,
 } from './index.ts';
 import type { RunModel, RunRef } from '@argus/contract';
 
@@ -514,5 +517,90 @@ describe('adapter source never imports node:fs', () => {
       expect(src).not.toMatch(/from\s+['"]node:fs\/promises['"]/);
       expect(src).not.toMatch(/require\(['"]node:fs['"]\)/);
     }
+  });
+});
+
+// =========================================================================
+// P2 — per-run persisted plan source (perRunScriptBasename + loadRunPlan)
+// =========================================================================
+
+describe('perRunScriptBasename — recover the per-run persisted script', () => {
+  it('prefers the persisted scriptPath basename when it is the cache-shape (2) path', () => {
+    const header = {
+      workflowName: 'modal-rust-poc-loop',
+      scriptPath:
+        '/Users/nicolas/.claude/projects/-slug/sess/workflows/scripts/modal-rust-poc-loop-wf_c4c14a7c-058.js',
+    };
+    expect(perRunScriptBasename(header, 'wf_c4c14a7c-058')).toBe(
+      'modal-rust-poc-loop-wf_c4c14a7c-058.js',
+    );
+  });
+
+  it('falls back to `<workflowName>-<runId>.js` when scriptPath is the shape-(1) project path', () => {
+    const header = {
+      workflowName: 'modal-rust-plan-research',
+      scriptPath: '/Users/nicolas/devel/modal-rust/.claude/workflows/plan-research.js',
+    };
+    expect(perRunScriptBasename(header, 'wf_9f32796b-c0b')).toBe(
+      'modal-rust-plan-research-wf_9f32796b-c0b.js',
+    );
+  });
+
+  it('returns null when neither a cache scriptPath nor a workflowName is present', () => {
+    expect(perRunScriptBasename({}, 'wf_x')).toBeNull();
+    expect(perRunScriptBasename(null, 'wf_x')).toBeNull();
+  });
+});
+
+describe('loadRunPlan — parse a run’s persisted script THROUGH the port', () => {
+  const SCRIPT = `
+export const meta = {
+  name: 'modal-rust-poc-loop',
+  description: 'loop the milestones',
+  phases: [{ title: 'M0', detail: null }, { title: 'Record', detail: null }],
+};
+phase('M0')
+const r = await agent('do M0', { label: 'M0', phase: 'M0' })
+phase('Record')
+const rec = await agent('record', { label: 'record', phase: 'Record' })
+return { r, rec }
+`;
+  const SCRIPT_PATH = '/home/.claude/projects/-slug/sess/workflows/scripts/modal-rust-poc-loop-wf_x.js';
+
+  function fakePort(): FileSystemPort {
+    return {
+      async readFile(path: string) {
+        if (path === SCRIPT_PATH) return SCRIPT;
+        throw new Error(`ENOENT: ${path}`);
+      },
+      async readJson() {
+        throw new Error('unused');
+      },
+      async listDir() {
+        return [];
+      },
+      async stat() {
+        return null;
+      },
+      async exists(path: string) {
+        return path === SCRIPT_PATH;
+      },
+      watch() {
+        return () => {};
+      },
+    };
+  }
+
+  it('parses the persisted script into a static-source PlanModel (the per-run plan)', async () => {
+    const plan = await loadRunPlan(fakePort(), SCRIPT_PATH, 'modal-rust-poc-loop-wf_x.js');
+    expect(plan.derivedFrom).toBe('static-source');
+    expect(plan.workflowName).toBe('modal-rust-poc-loop');
+    expect(plan.lanes.map((l) => l.title)).toEqual(['M0', 'Record']);
+    expect(plan.nodes.some((n) => n.kind === 'agent' && n.labelTemplate?.raw === 'record')).toBe(true);
+    expect(plan.format).toBe(ADAPTER_FORMAT);
+  });
+
+  it('propagates a read miss (the route maps it to 404 — never a 500/leak)', async () => {
+    await expect(loadRunPlan(fakePort(), '/home/.claude/projects/-slug/sess/workflows/scripts/missing.js')).rejects.toThrow();
   });
 });

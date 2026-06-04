@@ -756,3 +756,131 @@ body {
   border-top: 1px solid #1c2128;
   margin-top: 8px;
 }
+
+/* ===== P2 — Plan⟷Execution MORPH overlay ================================== */
+
+/* The painted aggregate chip on a plan agent ('7/7 done' | '3/4 done · 1 failed').
+   One chip — never a per-member explosion (folded mode). Color carries run STATUS. */
+.plan-bind-chip {
+  font-variant-numeric: tabular-nums;
+}
+.plan-bind-complete {
+  color: #3fb950;
+}
+.plan-bind-partial {
+  color: #d29922;
+}
+.plan-bind-not-run {
+  color: #6b7280;
+}
+/* The first-class 'ambiguous' state — a run agent matched >1 plan node (never resolved). */
+.plan-bind-ambiguous {
+  color: #f0883e;
+  border-color: rgba(240, 136, 62, 0.5);
+}
+
+/* planned-not-run: a ghosted template node (dimmed, no status saturation). */
+.plan-bind-ghost {
+  opacity: 0.42;
+  filter: saturate(0.4);
+}
+
+/* gate-skipped phase lane → ghosted + a 'not run' tag. */
+.phase-lane-ghost {
+  opacity: 0.5;
+  filter: saturate(0.4);
+}
+.plan-lane-skipped {
+  color: #d29922 !important;
+  font-style: italic;
+}
+
+/* loop — observed run rounds + the horizontal round-column axis (unrolled mode). */
+.plan-loop-rounds {
+  margin-left: auto;
+  color: #d29922;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.plan-loop-unrolled {
+  background: rgba(210, 153, 34, 0.07);
+}
+.plan-loop-round-axis {
+  display: flex;
+  flex-direction: row; /* HORIZONTAL round-column axis within ONE loop container */
+  gap: 6px;
+  padding: 4px 14px 10px;
+  flex-wrap: wrap;
+}
+.plan-loop-round-col {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  padding: 2px 8px;
+  border: 1px solid #d29922;
+  border-radius: 6px;
+  background: rgba(210, 153, 34, 0.1);
+  color: #e3b341;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* folded↔unrolled MODE switch (top-center, under the view toggle). */
+.mode-toggle {
+  position: absolute;
+  top: 54px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  background: rgba(22, 27, 34, 0.85);
+  border: 1px solid #232a31;
+  border-radius: 999px;
+  backdrop-filter: blur(6px);
+  z-index: 5;
+}
+.mode-toggle-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--argus-dim);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease;
+}
+.mode-toggle-btn:hover {
+  color: var(--argus-fg);
+}
+.mode-toggle-btn.is-active {
+  background: #9e6a1b;
+  color: #fff;
+}
+
+/* unplanned-agent note (top-left, below the run header). */
+.overlay-unplanned {
+  position: absolute;
+  top: 60px;
+  left: 68px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: rgba(240, 136, 62, 0.12);
+  border: 1px solid rgba(240, 136, 62, 0.4);
+  border-radius: 6px;
+  color: #f0883e;
+  font-size: 11px;
+  font-weight: 600;
+  z-index: 4;
+}
+.overlay-unplanned-glyph {
+  font-size: 12px;
+}

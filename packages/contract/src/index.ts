@@ -295,6 +295,73 @@ export interface PlanModel {
 }
 
 // ============================================================================
+// Overlay (P2) — the WEB-SIDE Plan⟷Execution morph binding. ADDITIVE & web-side:
+// `AgentNode`/`RunModel`/`PlanModel` above are byte-UNCHANGED. Binding lives ONLY in
+// these types, produced by the PURE web-side `buildOverlay(plan, run)` join — never by
+// the adapter, never on the wire as a new run/agent field (Stance 4: no invented edges/
+// states; execution inherits Plan edges via the binding, not from timing).
+//
+// Design: workpads/architecture/plan-view-design.md §4.3 + §6 (3-way classification).
+// The join keys are the agent label-prefix (PlanNode.labelTemplate.literalPrefix vs the
+// run AgentNode.label) and the 1-based phase index (resolved to a title via Phase.title,
+// NOT a phaseTitle field — AgentNode has none).
+// ============================================================================
+
+/**
+ * The binding confidence of a single plan node's painted instances (§6 tie-break):
+ * - `high`   : an EXACT labelTemplate literal match (the static label === the run label).
+ * - `medium` : a prefix + phaseIndex match that is UNIQUE (one plan node owns it).
+ * - `low`    : a prefix+index that is AMBIGUOUS, or a phase-only group — rendered as a
+ *   coarse group with NO winner picked (see `ambiguous`).
+ */
+export type BindingConfidence = 'high' | 'medium' | 'low';
+
+/**
+ * One plan node painted with the run instances bound to it. `status` aggregates the
+ * bound agents' states; for a fan-out, `succeeded`/`total` drive the aggregate chip
+ * ('6/7 done · 1 failed'). `total` is `'N'` when the plan multiplicity is unbounded and
+ * no concrete instance count is known. `ambiguous` is a FIRST-CLASS visible state: when
+ * a single run agent matches >1 plan node it is flagged here and NEVER silently resolved.
+ */
+export interface PlanBinding {
+  /** The PlanNode.id this binding paints onto. */
+  planNodeId: string;
+  /** The run AgentNode.agentId values bound to this plan node (may be empty = not-run). */
+  agentIds: string[];
+  /** Aggregate run status painted onto the template node. */
+  status: 'not-run' | 'partial' | 'complete';
+  /** Bound agents that reached a terminal success (done AND produced a result). */
+  succeeded: number;
+  /**
+   * Bound members that ran but FAILED to produce a result — the observed
+   * `parallel[N] failed: subagent completed without calling StructuredOutput` signature
+   * (state not done, OR done-with-0-tokens-after-tool-use). Drives the fan-out aggregate
+   * chip's `· K failed` segment. Never inferred from timing.
+   */
+  failed: number;
+  /** Bound agent count, or `'N'` when the template multiplicity is unbounded/unknown. */
+  total: number | 'N';
+  /** The §6 classification of this binding. */
+  confidence: BindingConfidence;
+  /** True iff a bound run agent ALSO matched another plan node (never auto-resolved). */
+  ambiguous: boolean;
+}
+
+/**
+ * The complete Plan⟷Execution overlay for one (plan, run) pair. Web-side only.
+ * - `bindings`: one entry per plan node that bound at least one agent OR is a planned
+ *   node with no run instance (planned-not-run → `status:'not-run'`, ghosted in the UI).
+ * - `unplannedAgentIds`: run agents whose label matched NO plan node (unplanned-agent).
+ * - `rounds`: the observed loop-round count when the run unrolled a loop body more than
+ *   once (drives the folded↔unrolled mode switch); `null` when no loop unrolling is seen.
+ */
+export interface Overlay {
+  bindings: PlanBinding[];
+  unplannedAgentIds: string[];
+  rounds: number | null;
+}
+
+// ============================================================================
 // Explanation layer (PX) — ADDITIVE wire types. Per-node LLM captions enriched
 // by a background `claude -p` pool, served via a separate poll endpoint, swapped
 // into the node subtitle/caption slot when ready. ANNOTATION-ONLY: these types

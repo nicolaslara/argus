@@ -124,3 +124,38 @@ transcripts for live/inspect. M1 (adapter) and M3 (render) build against these.
   `verify-p0-plan.png` repo-root leak still unresolved (recommend `git rm`), and the untested pure
   `format.ts` helpers (add `format.test.ts` when the test count may grow). **VCS note: M4 is
   uncommitted on `main`; the user should branch + commit, not commit to `main` directly.**
+
+## P2 — Execution overlay: Plan⟷Execution morph (2026-06-04)
+
+- **Per-run plan source verified on real `~/.claude`:** the per-run PERSISTED script is the
+  authoritative source — `<session>/workflows/scripts/<name>-wf_<id>.js` (cache-shape-(2) path),
+  recovered + parsed via the adapter `perRunScriptBasename`/`loadRunPlan` over the existing PURE
+  `parsePlan`/`loadPlan`, served by `GET /api/runs/:slug/:session/:runId/plan` (token-gated,
+  path-guarded, project-`.js` fallback when no per-run script exists). Confirmed the **app-cache**
+  run serves its plan from the per-run persisted file; the **14-agent plan-research** and
+  **refine-plan** runs use the documented project-workflow FALLBACK (shape-(1) scriptPath, no
+  per-run script on disk) — per-run path proven on app-cache, fallback proven on the headline runs.
+- **UI-smoke screenshots (gitignored `.argus/screenshots/`):**
+  - Implementer: `argus-p2-morph-14agent.png` (14-agent plan-research painted onto its plan: 4
+    lanes, `research:* 7/7 done`, `review:* 3/4 done · 1 failed` partial-instance amber),
+    `argus-p2-loop-folded.png` / `argus-p2-loop-unrolled.png` (refine-plan killed: `↻ loop · until
+    done · max 3`, `↻ 2 rounds`, `critique:* 6/8 done · 2 failed`, `finalize` planned·not-run
+    ghost; folded↔unrolled re-paints the loop header only), `argus-p2-morph-1agent.png` (app-cache
+    killed: `AC-build` → `⚠ 1 unplanned agent`, `record` planned·not-run ghost).
+  - Verifier (independent live, Playwright 1440×900, warm server): `verify-p2-morph-14agent-live.png`,
+    `verify-p2-loop-live.png`, `verify-p2-loop-folded-live.png`.
+- **Verifier independent re-run (2026-06-04):** verdict COMPLETE, capability_proven: true. Re-ran
+  tsc/eslint/build green + vitest **118/118**; confirmed the Morph view paints run STATUS onto the
+  plan as one shared graph with all three §6 mismatches first-class; folded⟷unrolled is a loop-header
+  mode switch (loop position byte-identical); contract additive-only (`AgentNode`/`RunModel`
+  byte-identical), `mapping.ts`/`plan-model-mapping.ts`/`plan.ts`/PX layer byte-unchanged; server
+  security matrix re-confirmed (200/200/401/403/400/404). Six follow-ups logged in `knowledge.md`
+  (P2 verifier block): a MEDIUM `buildOverlay` crash-safety gap (non-`PlanModel` 404 body →
+  `plan.lanes is not iterable` on cold start, contradicts its "never throws" docstring + Stance 4;
+  recommend an `Array.isArray` guard); the "0 console errors" claim is steady-state only (cold start
+  hits that TypeError); a morph run-header badge collision at 1440px; the per-run-source self-report
+  imprecision (headline screenshots use the fallback, not the per-run script); the 1-agent
+  decision-diamond/ghost-lane overlap; and the still-unresolved pre-existing `verify-p0-plan.png`
+  repo-root leak (recommend `git rm`). **VCS note: P2 is uncommitted on `main` (overlay.ts /
+  overlay-paint.ts / overlay.test.ts untracked); the user should branch + commit, not commit to
+  `main` directly.**

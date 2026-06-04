@@ -21,6 +21,8 @@ import {
   discoverWorkflowMetas,
   loadPlan,
   loadRun,
+  loadRunPlan,
+  perRunScriptBasename,
   recoverProjectPath,
   type FileSystemPort,
   type AdapterContext,
@@ -78,6 +80,33 @@ export function safeRunJsonPath(
   const homeAbs = resolve(claudeHome);
   const candidate = resolve(homeAbs, 'projects', slug, session, 'workflows', `${runId}.json`);
   // Must be strictly inside the claude home (prefix + path separator).
+  if (candidate !== homeAbs && !candidate.startsWith(homeAbs + sep)) {
+    return null;
+  }
+  return candidate;
+}
+
+/**
+ * Build the absolute per-run persisted script path
+ *   `<claudeHome>/projects/<slug>/<session>/workflows/scripts/<file>`
+ * for a run (P2) and resolve()-verify it stays strictly inside `claudeHome`. The slug/
+ * session/runId charset is checked first (M3 pattern); `file` is the persisted script
+ * basename (a `.js` file — validated by isValidWorkflowFile). Returns null on any escape
+ * or bad segment (belt-and-suspenders on top of the charset check). NEVER throws.
+ */
+export function safeRunScriptPath(
+  claudeHome: string,
+  slug: string,
+  session: string,
+  runId: string,
+  file: string,
+): string | null {
+  if (!isValidSegment(slug) || !isValidSegment(session) || !isValidRunId(runId)) {
+    return null;
+  }
+  if (!isValidWorkflowFile(file)) return null;
+  const homeAbs = resolve(claudeHome);
+  const candidate = resolve(homeAbs, 'projects', slug, session, 'workflows', 'scripts', file);
   if (candidate !== homeAbs && !candidate.startsWith(homeAbs + sep)) {
     return null;
   }
@@ -345,4 +374,70 @@ export async function handleRunSnapshot(
     deps.explain.warm(runTargetId(slug, session, runId), runArtifacts(model));
   }
   return { status: 200, body: model };
+}
+
+/**
+ * GET /api/runs/:slug/:session/:runId/plan -> PlanModel (P2, the per-run plan source).
+ * Returns the plan THIS run executed, PREFERRING the EXACT persisted per-run script
+ *   `<session>/workflows/scripts/<name>-wf_<id>.js`
+ * (what actually ran). When a run has no persisted per-run script (its scriptPath is the
+ * shape-(1) project path — e.g. the 14-agent plan-research run), it FALLS BACK to the
+ * recovered project workflow `<project>/.claude/workflows/<name>.js` — the SAME documented
+ * two-shape fallback discovery's recoverFromScriptPath uses (boundaries.md). The project
+ * file MAY have drifted since the run; the per-run script is authoritative when present.
+ *
+ * Same M3 security posture as the run snapshot route: charset-validate slug/session/runId
+ * (400) + resolve()-inside-claudeHome guard on the per-run scripts path, and the M3
+ * project-workflow path guard on the fallback. A read miss of BOTH sources is a 404 —
+ * never a 500 / leak.
+ */
+export async function handleRunPlan(
+  deps: RouteDeps,
+  slug: string,
+  session: string,
+  runId: string,
+): Promise<RouteResult> {
+  // Reuse the snapshot path guard to validate slug/session/runId BEFORE any FS access.
+  const wfPath = safeRunJsonPath(deps.claudeHome, slug, session, runId);
+  if (wfPath === null) return err(400, 'bad_request');
+
+  // Read the run header (for the per-run script basename + the project-path fallback).
+  let header: unknown;
+  try {
+    header = await deps.port.readJson(wfPath);
+  } catch {
+    return err(404, 'not_found');
+  }
+
+  // 1) PREFERRED: the persisted per-run script under <session>/workflows/scripts/.
+  const file = perRunScriptBasename(header, runId);
+  if (file !== null) {
+    const scriptsPath = safeRunScriptPath(deps.claudeHome, slug, session, runId, file);
+    if (scriptsPath === null) return err(400, 'bad_request');
+    try {
+      return { status: 200, body: await loadRunPlan(deps.port, scriptsPath, file) };
+    } catch {
+      // No persisted per-run script — fall through to the project-workflow fallback.
+    }
+  }
+
+  // 2) FALLBACK: the recovered project workflow `.js` (shape-(1) scriptPath). Same path
+  //    guard as the M3 project plan route.
+  const o = header && typeof header === 'object' ? (header as Record<string, unknown>) : {};
+  const scriptPath = typeof o.scriptPath === 'string' ? o.scriptPath : undefined;
+  const projectPath = scriptPath ? recoverProjectPath(scriptPath) : null;
+  if (projectPath !== null && scriptPath) {
+    const wfFile = scriptPath.split(/[/\\]/).pop() ?? '';
+    const jsPath = isValidWorkflowFile(wfFile) ? safeWorkflowJsPath(projectPath, wfFile) : null;
+    if (jsPath !== null) {
+      try {
+        return { status: 200, body: await loadPlan(deps.port, jsPath, wfFile) };
+      } catch {
+        // fall through to 404
+      }
+    }
+  }
+
+  // Neither a per-run script nor a recoverable project script is readable → 404.
+  return err(404, 'not_found');
 }

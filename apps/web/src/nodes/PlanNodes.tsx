@@ -20,13 +20,42 @@
 
 import { memo } from 'react';
 import { Handle, Position } from '@xyflow/react';
-import type { Confidence, Multiplicity } from '@argus/contract';
+import type { Confidence, Multiplicity, PlanBinding } from '@argus/contract';
 import { MultiplicityChip, isFanned } from './MultiplicityChip.tsx';
 import {
   AgentCardShell,
   CARD_SHELL_WIDTH,
   CARD_SHELL_HEIGHT_PLAN,
 } from './AgentCardShell.tsx';
+
+// P2 overlay: the run-status palette painted onto the plan template. Reuses the shared
+// state hues (saturation reserved for run state) — complete=green, partial=amber,
+// not-run=neutral (ghosted). The plan template's own rail (no run) stays the accent.
+export const BIND_STATUS_COLOR: Record<PlanBinding['status'], string> = {
+  complete: '#3fb950',
+  partial: '#d29922',
+  'not-run': '#3a414c',
+};
+
+/** P2 binding fields painted onto a plan node's data by paintOverlay (all optional). */
+export interface PaintedBindingFields {
+  bindStatus?: PlanBinding['status'];
+  bindSucceeded?: number;
+  bindFailed?: number;
+  bindTotal?: number | 'N';
+  bindConfidence?: PlanBinding['confidence'];
+  bindAmbiguous?: boolean;
+  painted?: boolean;
+}
+
+/** The fan-out / instance aggregate chip text: '7/7 done' | '3/4 done · 1 failed'. */
+export function aggregateChipText(b: PaintedBindingFields): string | null {
+  if (!b.painted || b.bindStatus === undefined) return null;
+  if (b.bindStatus === 'not-run') return 'planned · not run';
+  const total = b.bindTotal === 'N' ? 'N' : String(b.bindTotal);
+  const done = `${b.bindSucceeded ?? 0}/${total} done`;
+  return (b.bindFailed ?? 0) > 0 ? `${done} · ${b.bindFailed} failed` : done;
+}
 
 // --- shared node geometry (kept in sync with plan-model-mapping.ts) -----------
 // The plan agent IS the shared card shell (U1) — same width as the execution card,
@@ -51,7 +80,7 @@ const hidden = { opacity: 0, pointerEvents: 'none' as const };
 // ============================================================================
 // agent
 // ============================================================================
-export interface PlanAgentData {
+export interface PlanAgentData extends PaintedBindingFields {
   title: string;
   /** The structured label raw (e.g. `research:${r.key}`) — hover detail only. */
   labelRaw: string | null;
@@ -66,10 +95,30 @@ export interface PlanAgentData {
 
 export const PlanAgentNode = memo(function PlanAgentNode({ data }: { data: PlanAgentData }) {
   const fanned = isFanned(data.multiplicity);
-  // The PLAN footer: ×N multiplicity + typed / optional chips (vs execution's pills).
+  const chip = aggregateChipText(data);
+  // P2: when a run is painted, the rail color carries run STATUS (saturation reserved for
+  // state); the un-painted plan template keeps the neutral accent rail.
+  const railColor =
+    data.painted && data.bindStatus ? BIND_STATUS_COLOR[data.bindStatus] : 'var(--argus-accent)';
+  // The PLAN footer: ×N multiplicity + typed / optional chips. When painted, the aggregate
+  // status chip leads (one chip, never a per-member explosion — folded mode).
   const footer = (
     <div className="agent-shell-chips">
-      <MultiplicityChip multiplicity={data.multiplicity} variant="inline" />
+      {chip ? (
+        <span className={`agent-chip plan-bind-chip plan-bind-${data.bindStatus}`} title={chip}>
+          {chip}
+        </span>
+      ) : (
+        <MultiplicityChip multiplicity={data.multiplicity} variant="inline" />
+      )}
+      {data.bindAmbiguous ? (
+        <span
+          className="agent-chip plan-bind-ambiguous"
+          title="one run agent matched more than one plan node — not auto-resolved"
+        >
+          ambiguous
+        </span>
+      ) : null}
       {data.typed ? (
         <span className="agent-chip agent-chip-typed" title="StructuredOutput schema declared">
           typed
@@ -82,6 +131,7 @@ export const PlanAgentNode = memo(function PlanAgentNode({ data }: { data: PlanA
       ) : null}
     </div>
   );
+  const ghost = data.painted && data.bindStatus === 'not-run' ? ' plan-bind-ghost' : '';
   return (
     <AgentCardShell
       label={data.title}
@@ -91,9 +141,9 @@ export const PlanAgentNode = memo(function PlanAgentNode({ data }: { data: PlanA
           <span className="plan-agent-hole">{data.labelRaw.slice(data.title.length)}</span>
         ) : null
       }
-      railColor="var(--argus-accent)"
+      railColor={railColor}
       height={CARD_SHELL_HEIGHT_PLAN}
-      className={`agent-shell-plan plan-node plan-agent ${confidenceClass(data.confidence)}${data.optional ? ' is-optional' : ''}${fanned ? ' is-fanned' : ''}`}
+      className={`agent-shell-plan plan-node plan-agent ${confidenceClass(data.confidence)}${data.optional ? ' is-optional' : ''}${fanned ? ' is-fanned' : ''}${ghost}`}
       handles={
         <>
           <Handle type="target" position={Position.Left} style={hidden} />
@@ -177,12 +227,25 @@ export interface PlanLoopData {
   stopCondition: string;
   maxRounds: number | null;
   confidence: Confidence;
+  /**
+   * P2 folded↔unrolled MODE switch. `observedRounds` = the run's actual round count (from
+   * the Overlay); `unrolled` toggles the horizontal round-column axis WITHIN this loop
+   * container vs the folded single-body view. The MODE is a switch, never a per-node
+   * explosion, and toggling it does NOT relayout the canvas (it re-renders this header).
+   */
+  observedRounds?: number | null;
+  unrolled?: boolean;
   [key: string]: unknown;
 }
 
 export const LoopContainer = memo(function LoopContainer({ data }: { data: PlanLoopData }) {
+  const rounds = data.observedRounds ?? null;
+  // The round count shown: the observed run rounds (painted) else the static cap.
+  const roundLabel =
+    rounds != null ? `↻ ${rounds} round${rounds === 1 ? '' : 's'}` : data.maxRounds != null ? `↻ max ${data.maxRounds}` : '↻';
+  const showAxis = !!data.unrolled && rounds != null && rounds > 1;
   return (
-    <div className={`plan-loop ${confidenceClass(data.confidence)}`}>
+    <div className={`plan-loop ${confidenceClass(data.confidence)}${showAxis ? ' plan-loop-unrolled' : ''}`}>
       <Handle type="target" position={Position.Left} style={hidden} />
       <Handle type="source" position={Position.Right} style={hidden} />
       <div className="plan-loop-header">
@@ -191,7 +254,24 @@ export const LoopContainer = memo(function LoopContainer({ data }: { data: PlanL
         </span>
         <span className="plan-loop-title">{data.title}</span>
         <span className="plan-loop-stop">{data.stopCondition}</span>
+        {rounds != null ? (
+          <span className="plan-loop-rounds" title={`observed ${rounds} round${rounds === 1 ? '' : 's'} (folded↔unrolled)`}>
+            {roundLabel}
+          </span>
+        ) : null}
       </div>
+      {showAxis ? (
+        // The HORIZONTAL round-column axis: one column marker per observed round, INSIDE
+        // the one loop container. Folded collapses back to a single body (the affordance
+        // is the App-level mode toggle). The primary phase axis stays vertical.
+        <div className="plan-loop-round-axis" aria-label={`${rounds} rounds`}>
+          {Array.from({ length: rounds! }, (_, i) => (
+            <span key={i} className="plan-loop-round-col">
+              r{i + 1}
+            </span>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 });

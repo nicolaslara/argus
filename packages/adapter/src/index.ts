@@ -288,6 +288,53 @@ export async function loadPlan(port: FileSystemPort, jsPath: string, file = ''):
   return parsePlan(source, file || jsPath);
 }
 
+/**
+ * Recover the PER-RUN persisted workflow script basename for a run (P2). Claude Code
+ * persists the EXACT script a run executed at
+ *   `<claudeHome>/projects/<slug>/<session>/workflows/scripts/<name>-wf_<id>.js`
+ * (the cache-shape (2) path under the session dir — see discovery's recoverFromScriptPath).
+ * This is the AUTHORITATIVE per-run plan source: the project `.claude/workflows/*.js` may
+ * have drifted since the run, but the persisted script is what actually ran.
+ *
+ * We derive the basename from the run header's `scriptPath` when it is itself a safe `.js`
+ * basename under `.../workflows/scripts/`; else we fall back to the deterministic
+ * `<workflowName>-<runId>.js` shape. Returns ONLY the basename (path-building/charset
+ * validation is the caller's/route's job — boundaries.md §4). No format knowledge beyond
+ * this path recovery; PURE; never throws.
+ */
+export function perRunScriptBasename(
+  header: unknown,
+  runId: string,
+): string | null {
+  const o = header && typeof header === 'object' ? (header as Record<string, unknown>) : {};
+  const scriptPath = typeof o.scriptPath === 'string' ? o.scriptPath : undefined;
+  // Prefer the persisted scriptPath's basename when it is the per-run cache shape.
+  if (scriptPath && /[/\\]workflows[/\\]scripts[/\\][^/\\]+\.js$/.test(scriptPath)) {
+    const base = scriptPath.split(/[/\\]/).pop();
+    if (base && base.endsWith('.js')) return base;
+  }
+  // Fall back to the deterministic `<workflowName>-<runId>.js` shape.
+  const workflowName = typeof o.workflowName === 'string' ? o.workflowName : undefined;
+  if (workflowName) return `${workflowName}-${runId}.js`;
+  return null;
+}
+
+/**
+ * Read a run's PER-RUN persisted script THROUGH the port and parse it into a PlanModel
+ * (P2). `scriptsJsPath` is the absolute path to the persisted
+ * `<session>/workflows/scripts/<name>-wf_<id>.js`; the caller (server) charset- +
+ * resolve()-guards it first. Reuses the PURE {@link parsePlan} — no new format knowledge.
+ * A read failure propagates (the route maps it to 404). The PlanModel is a SIBLING of
+ * RunModel — this never re-reads the run journal.
+ */
+export async function loadRunPlan(
+  port: FileSystemPort,
+  scriptsJsPath: string,
+  file = '',
+): Promise<PlanModel> {
+  return loadPlan(port, scriptsJsPath, file);
+}
+
 /** The default claude home in production. The adapter never reads env itself. */
 export const DEFAULT_CLAUDE_HOME = '/Users/nicolas/.claude';
 

@@ -736,3 +736,165 @@ Plan⟷Execution toggle preserves the same project/workflow context, while the c
   `statusGlyph`) are pure and currently **untested by a focused unit test** — `format.test.ts`
   was deliberately omitted to honor the stated 95-test-count invariant. Low-risk follow-up: add
   the coverage when the count is allowed to grow.
+
+### P2 (2026-06-04) — Execution overlay: paint a run onto its plan template (Plan⟷Execution morph)
+
+> **[CORRECTION 2026-06-04, post-verify]** The original `isFailedInstance` heuristic counted a
+> `done` agent with `tokens===0 && toolCalls>0` as a failed fan-out member. WRONG — `tokens===0`
+> is a token-accounting quirk of a SUCCESSFUL agent (the M1 "tokens=0 ≠ nothing" rule, rendered
+> `tok —`), so it false-flagged real `done` agents (e.g. `review:red-team`), making the Morph show
+> "review 3/4 · 1 failed" when review is actually **4/4 done**. FIXED: a present/bound member is
+> failed ONLY on a terminal `error`/`interrupted` state; a genuinely-failed `parallel[N] failed`
+> member is dropped by `.filter(Boolean)`, never reaches `workflowProgress`, and surfaces as a
+> fan-out SHORTFALL + the run-level `partialFailure`. So the 14-agent plan-research run is
+> **all-complete** (research 7/7, review 4/4) with only the run-level "partial failure" chip; the
+> real partial-instance example lives in killed-9agents' `interrupted` critique members.
+> **Every "3/4 done · 1 failed" mention below is superseded by this note.**
+
+**Capability:** select a run → a new **Morph** view paints the run's STATUS onto its workflow's
+plan DAG (the canonical shared layout) and morphs between template (Plan) and instance
+(painted). Plan & execution are proven to be ONE graph (template vs instance); the three
+mismatches (planned-not-run / unplanned-agent / partial-instance) are first-class and rendered
+honestly, never silently resolved.
+
+- **Binding is PURE + web-side (`apps/web/src/overlay.ts` `buildOverlay(plan, run): Overlay`).**
+  Types-only import from `@argus/contract`; no I/O, no React, never throws, never mutates inputs.
+  The §6 3-way classification + tie-break: (1) **exact** labelTemplate literal === run label →
+  `high`; (2) **prefix + phaseIndex unique** (label starts-with `literalPrefix` AND the run
+  `Phase.title` via phaseIndex == the plan `PlanLane.title` via phaseRef) → `medium`; (3)
+  prefix+index **ambiguous** (>1 plan node) or phase-only → `low`, coarse group, **NO winner
+  picked**. `ambiguous` is a first-class flag on the binding (one run agent matching >1 plan node
+  is NEVER auto-resolved — bound deterministically to the first, but flagged). Phase titles are
+  resolved through `Phase.title` (AgentNode has NO phaseTitle field). A loop body re-run records a
+  ROUND-SUFFIXED phase (`Critique r1`/`Critique r2`); `buildOverlay` strips the ` rN` suffix so the
+  round phases all join the one declared lane.
+- **The three mismatches.** *partial-instance:* a bound fan-out member that ran but produced no
+  result — the observed `parallel[N] failed: subagent completed without calling StructuredOutput`
+  signature is a `done`-state agent with **0 result tokens after tool use** (`tokens===0 &&
+  toolCalls>0`), or a non-done terminal state (error/interrupted). `failed`/`succeeded`/`total`
+  drive the aggregate chip (`3/4 done · 1 failed` on the 14-agent review fan-out; `6/8 done · 2
+  failed` on refine-plan critique across 2 rounds). *planned-not-run:* a plan agent node that bound
+  no agent → `status:'not-run'` (ghosted; the lane shows a `not run` tag). *unplanned-agent:* a run
+  label matching no plan node → `unplannedAgentIds` (a `⚠ N unplanned agent` note).
+- **Per-run plan source = the PER-RUN PERSISTED script.** New adapter `perRunScriptBasename(header,
+  runId)` + `loadRunPlan(port, scriptsJsPath)` recover + parse
+  `<session>/workflows/scripts/<name>-wf_<id>.js` (the cache-shape (2) path) via the existing PURE
+  `parsePlan`/`loadPlan` — no new format knowledge. New server route `GET
+  /api/runs/:slug/:session/:runId/plan` (`handleRunPlan` + `safeRunScriptPath`) mirrors the M3 run
+  routes: token gate (index.ts) → `isValidSegment`/`isValidRunId` (400) → resolve()-inside-
+  claudeHome guard → 200 / 404 (read miss) / never 500. **DECISION — server-side fallback:** when a
+  run has NO persisted per-run script (its scriptPath is the shape-(1) project path — e.g. the
+  14-agent plan-research run), the route falls back to the recovered project workflow `.js` (the
+  SAME documented two-shape fallback discovery's `recoverFromScriptPath` uses). The per-run script
+  is PREFERRED (authoritative — what actually ran); the project script is the documented fallback;
+  a 404 is reserved for when NEITHER is readable. This keeps the web morph 404-free (one clean
+  request → 0 console errors) for every real run while still proving the per-run script is the
+  source (propagate-amendments 200 from its persisted script; orphan run 404).
+- **Painting is additive + topology-preserving (`apps/web/src/overlay-paint.ts` `paintOverlay`).**
+  Same discipline as `overlayExplanations`: lay the run's plan out with the SAME `planModelToGraph`
+  + elk pass the Plan view uses (the canonical shared layout), then patch ONLY node.data with the
+  binding fields (status rail color from a status palette — saturation stays reserved for run
+  state; aggregate chip; ghost class; loop `observedRounds`+`unrolled`). It NEVER adds/removes/
+  reorders nodes or edges and NEVER relayouts. **No edges invented from timing** — execution
+  inherits the Plan edges already in the laid-out graph.
+- **Folded ⟷ unrolled is a MODE SWITCH, not a per-node explosion.** `overlay.rounds` (max observed
+  `:rN` label / ` rN` phase suffix / repeated-label retry count) drives a folded↔unrolled toggle
+  (shown only when rounds>1). Folded = one aggregate loop body + a `↻ N rounds` chip. Unrolled = a
+  HORIZONTAL `r1 r2 …` round-column axis WITHIN the one loop container (the primary phase axis stays
+  vertical). Toggling re-paints the loop header ONLY — it does **not** relayout the canvas (verified:
+  the loop position is byte-identical folded↔unrolled). A collapse-to-folded affordance is the
+  `⊟ folded` button.
+- **Stance-4 / byte-unchanged (git diff verified).** `packages/contract` `AgentNode`/`RunModel`
+  interface bodies are byte-identical (md5-matched); the contract diff has ZERO removed lines
+  (PlanBinding/Overlay/BindingConfidence are purely additive). `apps/web/src/mapping.ts` (M3
+  execution topology), `plan-model-mapping.ts`, `packages/adapter/src/plan.ts`, and the PX layer
+  (`apps/server/src/explain.ts` + `apps/web/src/explanations.ts`) are ALL byte-UNCHANGED — the
+  annotation-only PX guarantee holds and binding lives ONLY in the Overlay type.
+- **Evidence (gate green):** `tsc --noEmit` clean; `eslint .` clean; `vitest run` **118 passed**
+  (95 baseline + 12 buildOverlay 3-way/mismatch tests + 5 adapter perRunScriptBasename/loadRunPlan
+  tests + 6 handleRunPlan/safeRunScriptPath route tests); `vite build` ok (the elk chunk-size
+  warning is pre-existing from P1b). Server security matrix re-run on REAL data: per-run plan
+  **200** (propagate-amendments, from its persisted script) / **200** (14-agent, project fallback) /
+  **401** no/bad token / **403** bad Host / **400** path-traversal runId / **404** no readable
+  source.
+- **UI smoke (Playwright, 1440×900, real `~/.claude`, ARGUS_EXPLAIN=0, 0 console errors each):**
+  - `argus-p2-morph-14agent.png` — the 14-agent plan-research run painted onto its plan template:
+    4 phase lanes, `research:${r.key}` **7/7 done**, `design:*` / `synthesize` **1/1 done** (high,
+    exact), `review:${l.key}` **3/4 done · 1 failed** (the partial-instance, amber rail), header
+    `morph · completed · 5 bound · 1 partial · partial failure`.
+  - `argus-p2-loop-folded.png` / `argus-p2-loop-unrolled.png` — the refine-plan run (killed):
+    a loop container `↻ loop · until done · max 3` with `↻ 2 rounds`; folded shows one body, unrolled
+    shows the `r1 r2` round-column axis WITHIN the loop (loop position unchanged); `critique:${l.key}:
+    r${round}` **6/8 done · 2 failed**; `revise:r${round}` **1/1 done**; `finalize` **planned · not
+    run** (ghosted lane + card) — all three mismatches + the loop rounds in one honest view.
+  - `argus-p2-morph-1agent.png` — the 1-agent `app-cache` (killed) run: the `AC-build` label matches
+    no plan node → `⚠ 1 unplanned agent`; `record` is `planned · not run` (ghosted). Reads well at
+    1-agent scale (the small DAG zooms to fill the canvas).
+- **Residual (honest):** (1) the wide/short plan DAG still leaves a vertical empty band above/below
+  the centered lanes (the pre-existing U1/P1b residual, tracked as M5 plan-layout polish — not a P2
+  blocker); the cards/chips read clearly but are small at the 14-agent fan-out scale. (2) On the
+  1-agent app-cache morph the two decision diamonds overlap the ghosted Record lane region (elk
+  placed them there); legible but a minor layout nicety for M5. (3) The unrolled round-axis is a
+  WITHIN-container marker strip (r1/r2 columns), not a full per-round re-layout of the body cards —
+  the design's "mode switch, never per-node explosion" intentionally avoids that; a richer per-round
+  body unroll is a forward M5+ option.
+
+#### Verifier (2026-06-04) — verdict COMPLETE, capability_proven: true (independent)
+
+- **Capability proven on REAL `~/.claude` modal-rust data.** The Morph view genuinely paints a
+  run's STATUS onto its workflow plan as ONE shared graph (template vs instance), and the three
+  §6 mismatches are first-class and rendered honestly (partial-instance amber `3/4 done · 1
+  failed`; planned-not-run ghost `not run`; unplanned-agent `⚠ N unplanned agent`). The
+  folded⟷unrolled loop control is a header MODE SWITCH (loop position byte-identical across the
+  toggle), not a per-node explosion. The gate independently re-ran green (tsc clean, eslint clean,
+  vite build ok) + vitest **118/118**. A warm-server clean navigate + Morph click is genuinely 0
+  console errors (independently reproduced). Verifier UI-smoke screenshots under gitignored
+  `.argus/screenshots/`: `verify-p2-morph-14agent-live.png`, `verify-p2-loop-live.png`,
+  `verify-p2-loop-folded-live.png`.
+- **Stance-4 / privacy / additive-contract hold.** `git diff` confirms `packages/contract`
+  `AgentNode`/`RunModel` bodies byte-identical (only `PlanBinding`/`Overlay`/`BindingConfidence`
+  added); `apps/web/src/mapping.ts`, `plan-model-mapping.ts`, `packages/adapter/src/plan.ts`, and
+  the PX layer byte-UNCHANGED — the annotation-only PX guarantee holds and binding lives only in
+  the Overlay type. Server security matrix re-confirmed on real data (per-run plan 200 / project
+  fallback 200 / 401 / 403 / 400 traversal / 404 no-source).
+
+- **FINDING (medium) — `buildOverlay` is NOT crash-safe against a non-`PlanModel` input,
+  contradicting its "never throws" docstring and Stance 4 (tolerate unknown/missing fields).**
+  `App.tsx:196` calls `buildOverlay(runPlan, run)` gated only on `runPlan && run` truthiness; the
+  `overlayLayoutReady` (`derivedFrom==='static-source'`) guard protects only the LAYOUT effect,
+  **not** the `buildOverlay` call. A transient 404 error body `{error:'not_found'}` is truthy, so
+  `for (const l of plan.lanes)` throws `TypeError: plan.lanes is not iterable`. Observed LIVE as a
+  real cold-start console crash (server still warming under `tsx-watch` when the browser fired the
+  run-plan fetch). **Recommend** guarding `buildOverlay` on `Array.isArray(plan.lanes)`/`plan.nodes`
+  (or tightening the `App.tsx` useMemo to reuse `overlayLayoutReady`). Unit tests miss it because
+  they only feed valid `PlanModel`s. Capability is still proven (the crash is a transient
+  cold-start race on a warming dev server, not a steady-state defect), but this is a real
+  robustness gap worth fixing before the next commit.
+- **FINDING (low) — the "0 console errors each" claim is STEADY-STATE only.** On a warm server a
+  clean navigate + Morph click is genuinely 0 errors; a COLD start hits the `buildOverlay`
+  TypeError above plus the corresponding 404. The captured screenshots are fine; the "always 0
+  errors" is not robust (same root cause as the medium finding).
+- **FINDING (low, visual) — Morph run-header layout collision.** The morph header carries more
+  summary text (`5 bound · 1 partial` + `partial failure`) than the Execution header and is wider;
+  at 1440px its `partial failure` badge overlaps/clips behind the centered Plan/Morph/Execution
+  view-toggle group. Visible in BOTH the committed `argus-p2-morph-14agent.png` and the independent
+  live capture. Was not flagged in the self-report. Header-layout polish (fold into M5).
+- **FINDING (low) — self-report per-run-source imprecision.** The implementer's per-run-source
+  proof is genuine ONLY on the **app-cache** run (its scriptPath is the cache-shape-(2) persisted
+  `modal-rust-app-cache-wf_<id>.js`, confirmed served from that file). The two headline dogfood
+  morph screenshots (14-agent plan-research, refine-plan) actually use the documented
+  **project-workflow FALLBACK** — both runs' scriptPath is the shape-(1) project path and no
+  per-run script exists on disk. **Capability is still proven** (app-cache exercises the per-run
+  path; the fallback is correct), but the morph screenshots do not demonstrate the per-run source
+  the report implies. (Corrects the self-report's "propagate-amendments 200 from its persisted
+  script" framing of the headline screenshots.)
+- **FINDING (low, visual, implementer-flagged & real) — 1-agent app-cache morph node overlap.**
+  The two decision diamonds (`build.status`/`off.status`) overlap the ghosted Record lane header,
+  partially occluding the `4 Record · not run` text. Reads, but the "reads well at 1-agent scale"
+  claim is optimistic; tracked as M5 elk-placement polish.
+- **OPEN QUESTION / artifact-hygiene (low, pre-existing, NOT a P2 regression).** The P0 leak
+  **persists**: `verify-p0-plan.png` is still tracked at the **REPO ROOT** instead of the
+  gitignored `.argus/screenshots/`. Correctly attributed to P0 (commit `eb11e07`), benign
+  Plan-view meta content, not introduced by P2. **Recommend `git rm verify-p0-plan.png` before the
+  next commit.** (The verifier's own P2 verification screenshots were correctly placed under the
+  gitignored `.argus/screenshots/`.)
