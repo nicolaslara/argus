@@ -234,8 +234,8 @@ body {
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: 7px;
-  padding: 11px 13px;
+  gap: 6px; /* M5: tighter row rhythm */
+  padding: 10px 12px;
   border: 1px solid #232a31;
   border-left: 3px solid #6b7280;
   border-radius: 10px;
@@ -268,7 +268,7 @@ body {
 .agent-shell-footer {
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 5px; /* M5: tighter footer (state-meta row + pill row) */
   margin-top: auto;
 }
 .agent-shell-meta {
@@ -326,7 +326,7 @@ body {
   display: inline-flex;
   align-items: baseline;
   gap: 4px;
-  padding: 2px 8px;
+  padding: 2px 7px; /* M5: slightly denser pills */
   border-radius: 6px;
   background: #1b2128;
   font-size: 11px;
@@ -361,6 +361,10 @@ body {
   line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  /* M5 caption-fit: a long unbroken token (path / identifier) can never widen the card. */
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  max-width: 100%;
 }
 .agent-caption[data-source='baseline'] {
   border-left-color: #2d333b;

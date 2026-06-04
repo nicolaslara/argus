@@ -289,10 +289,18 @@ export function App() {
     if (graph.nodes.length === 0) return;
     const inst = rfRef.current;
     if (!inst) return;
+    // M5 empty-band fix: the Plan/Morph DAG is wide-but-short, so a uniform 0.12 padding +
+    // the default maxZoom=2 fit it to WIDTH and left a tall empty band. Give those two views
+    // a tighter padding AND a higher maxZoom so the graph is allowed to zoom up and FILL the
+    // canvas (paired with the taller elk lanes above). Execution keeps the comfortable 0.12.
+    const isWideShort = view === 'plan' || view === 'overlay';
+    const opts = isWideShort
+      ? { padding: 0.06, duration: 240, maxZoom: 2.6 }
+      : { padding: 0.12, duration: 240 };
     // Defer one frame so React Flow has measured the new nodes before fitting.
-    const raf = requestAnimationFrame(() => inst.fitView({ padding: 0.12, duration: 240 }));
+    const raf = requestAnimationFrame(() => inst.fitView(opts));
     return () => cancelAnimationFrame(raf);
-  }, [fitSignature, graph.nodes.length]);
+  }, [fitSignature, graph.nodes.length, view]);
 
   // --- M4 selection handlers (mutate the shared state, not the canvas). ---
   // Picking a project re-scopes everything: clear the dependent run + workflow choice
@@ -349,6 +357,7 @@ export function App() {
         fitView
         fitViewOptions={{ padding: 0.12 }}
         minZoom={0.1}
+        maxZoom={3}
         proOptions={{ hideAttribution: true }}
         nodesDraggable={false}
         nodesConnectable={false}

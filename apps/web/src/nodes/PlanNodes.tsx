@@ -151,7 +151,15 @@ export const PlanAgentNode = memo(function PlanAgentNode({ data }: { data: PlanA
         </>
       }
       silhouette={<MultiplicityChip multiplicity={data.multiplicity} variant="corner" />}
-      caption={data.subtitle ? <div className="agent-caption" data-source="baseline">{data.subtitle}</div> : null}
+      caption={
+        data.subtitle ? (
+          // M5 caption-fit: 2-line clamped (CSS) AND a native title so the full text is
+          // reachable on hover and never overflows the card (the popover stays PX-fit).
+          <div className="agent-caption" data-source="baseline" title={data.subtitle}>
+            {data.subtitle}
+          </div>
+        ) : null
+      }
       footer={footer}
     />
   );
@@ -181,7 +189,12 @@ export const PlanProcessNode = memo(function PlanProcessNode({ data }: { data: P
       <Handle type="source" position={Position.Right} style={hidden} />
       <MultiplicityChip multiplicity={data.multiplicity} />
       <span className="plan-process-label">{data.title}</span>
-      {data.subtitle ? <div className="plan-process-sub">{data.subtitle}</div> : null}
+      {/* M5 caption-fit: 2-line clamp + native title for the full text (PX caption). */}
+      {data.subtitle ? (
+        <div className="plan-process-sub" title={data.subtitle}>
+          {data.subtitle}
+        </div>
+      ) : null}
     </div>
   );
 });

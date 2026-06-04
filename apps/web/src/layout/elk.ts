@@ -94,13 +94,17 @@ export async function planLayout(input: PlanLayoutInput): Promise<PlanLayoutResu
     layoutOptions: {
       'elk.algorithm': 'layered',
       'elk.direction': 'RIGHT',
-      // U1: tighter inter-LAYER spacing keeps each phase lane narrow (fan-out → agent →
-      // merge no longer stretches a lane to ~680px); generous intra-layer (nodeNode)
-      // spacing spreads parallel fan-out arms VERTICALLY so the lanes gain height. Both
-      // together pull the wide/flat DAG toward the canvas aspect ratio, so all phase lanes
-      // fit fullscreen side-by-side and the canvas no longer reads as a mostly-empty band.
-      'elk.layered.spacing.nodeNodeBetweenLayers': '44',
-      'elk.spacing.nodeNode': '52',
+      // M5 empty-band fix: the Plan/Morph DAG is intrinsically WIDE (4 sequential phase
+      // lanes laid out left→right) but SHORT, so fitView (which fits the limiting — width —
+      // dimension) used to leave ~60% of the canvas as an empty vertical band. Counter it by
+      // pushing the aspect ratio back toward the canvas: keep inter-LAYER spacing tight
+      // (narrow lanes) AND open the intra-layer (nodeNode) gap WIDE so parallel fan-out arms
+      // spread vertically — the 7-arm research fan now stacks tall enough that the laid-out
+      // graph is much closer to 16:9, and fitView fills the height far better. U1 set 44/52;
+      // M5 widens nodeNode to 88 (taller lanes) which, combined with the App's tuned fitView
+      // padding + raised maxZoom, fills the canvas without clipping at the 1- or 14-agent ends.
+      'elk.layered.spacing.nodeNodeBetweenLayers': '40',
+      'elk.spacing.nodeNode': '88',
       'elk.layered.spacing.edgeNodeBetweenLayers': '24',
       'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
       'elk.layered.mergeEdges': 'true',

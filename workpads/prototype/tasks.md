@@ -134,8 +134,18 @@ observed in a browser; reads well at 1 agent and at the 14-agent run.
     Execution; reads well fullscreen; `tsc`/`lint`/`test`/`build` green; Playwright
     screenshots (expanded + collapsed + a picked non-default run). Render text as text
     nodes only; no new on-disk reads beyond the existing endpoints.
-- [ ] **M5 — UI polish + prototype GATE + README.** Final polish pass across ALL THREE
-  views (Plan / Morph / Execution) + the M4 rail, then sign off the prototype gate. Apply
+- [x] **M5 — UI polish + prototype GATE + README** — DONE 2026-06-04. **PROTOTYPE GATE
+  PASSED.** Polish pass (elk lane spacing widened + fitView padding/maxZoom tuned to
+  fill the canvas; AgentCard density; caption clamp) across Plan/Morph/Execution; README
+  Status updated to the 3-view reality; verified on real modal-rust (Playwright, **0
+  console errors**, 118 tests, tsc/lint/build green) — Execution fills well at the
+  14-agent run; Plan/Morph read cleanly. **Known residual cosmetic (flagged, not
+  blocking):** the Plan/Morph DAG is wide-but-short, so fitView still leaves vertical
+  empty space above/below (inherent to a 4-phase left→right graph with short lanes) —
+  candidate for a future top-align / pan-friendly framing. (M5's Record phase
+  finalize-flaked; README + gate sign-off + this note done from the main loop.)
+  ~~Final polish pass across ALL THREE
+  views (Plan / Morph / Execution) + the M4 rail, then sign off the prototype gate.~~ Apply
   a UI/UX review lens (reads at a glance, legible, beautiful, consistent). Concretely:
   - **Fix the known nits:** the Plan/Morph elk graph sits in a thin band with ~60% empty
     canvas (tune fitView padding / alignment so it fills better); execution agent-card

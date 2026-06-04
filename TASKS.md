@@ -33,9 +33,10 @@ journal tail) as budget allows. Plus PX-fit (better/expandable captions) and #9
   ratifies the adapter, run model, server↔client API, live path, render/layout
   pipeline, shell/IA, failure modes, and format-version policy — derived from the
   adversarially-reviewed synthesis.
-- [ ] **prototype** — Smallest e2e: pick a local project → list its runs → render
-  **one finished run** as a fullscreen phase/agent graph from `wf_*.json`. Gate: a
-  real `modal-rust` run renders correctly, observed in a browser.
+- [x] **prototype** — GATE PASSED 2026-06-04 (M0–M5 + P0/P1/P2/PX/U1). A real modal-rust
+  run renders correctly fullscreen in **three views** (Plan AST DAG / Morph overlay /
+  Execution) with Claude captions + a project/run rail; 118 tests; 0 console errors.
+  Known residual cosmetic: Plan/Morph wide-short DAG leaves vertical empty space.
 - [ ] **live** — File-watching → live progress as a workflow runs (`journal.jsonl`
   + `agent-*.jsonl` tail → incremental graph updates). Gate: a live (or replayed)
   run animates correctly to completion.

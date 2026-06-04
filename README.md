@@ -20,15 +20,23 @@ Early build, end-to-end and on real data at every step. What actually works toda
   [`workpads/architecture/boundaries.md`](./workpads/architecture/boundaries.md)
   (the adapter, the normalized run model, the server↔client API, the live path, the
   render/layout pipeline, the shell, failure modes, and format-version policy).
-- **Prototype M0–M4 — done.** The 4-package monorepo is scaffolded; the adapter parses
-  finalized runs + discovers projects/runs/workflows; the Node backend serves the typed
-  read API; and the web app renders real runs on a fullscreen `@xyflow/react` canvas —
-  both an **Execution** view (the phase/agent graph of a finished run) and a run-free
-  **Plan** view (the declared workflow DAG). A **collapsible left icon-rail** (M4) lets you
-  switch between any discovered project and pick any of its runs.
+- **Prototype gate — passed.** The web app renders real runs on a fullscreen
+  `@xyflow/react` canvas (left→right phase lanes) in **three views**, switchable from a
+  top toggle:
+  - **Plan** — the workflow's *intended* DAG, parsed from its `.js` with an acorn AST
+    walk: fan-out/merge, decision diamonds, loop containers, `×N` multiplicity (the
+    "review-the-workflow" mode; renders run-free).
+  - **Execution** — a finished run's phase/agent graph with per-agent state, tokens,
+    tools, and a run-level partial-failure chip.
+  - **Morph** — the run *painted onto its plan template* (one graph, template vs
+    instance: `7/7 done`, ghosted not-run lanes, partial chips).
+  - **Claude captions** — every node gets a one-line plain-language explanation from
+    headless `claude -p`, content-addressed-cached + generated in the background.
+  - A **collapsible left icon-rail** switches between any discovered project and any of
+    its runs; Plan and Execution share one unified card + lane visual language.
 
-**Now usable:** with the dev servers running (see **Try it** below), the app opens on the
-richest discovered run, and the left rail lets you navigate any project / any run.
+**Now usable:** `npm run dev`, open `http://localhost:5173`, toggle **Plan / Morph /
+Execution**, and use the left rail to pick any project / run.
 
 See [`project.md`](./project.md) for the product vision and the four design stances,
 [`TASKS.md`](./TASKS.md) for the active phase, and [`workpads/`](./workpads/) for the

@@ -19,8 +19,12 @@ import type { ReactNode } from 'react';
 // One width keeps plan/execution cards visually identical side-by-side. The plan card
 // is slightly shorter (no metric pill row), but shares width, radius, bg, rail, type.
 export const CARD_SHELL_WIDTH = 248;
-export const CARD_SHELL_HEIGHT_EXEC = 124;
-export const CARD_SHELL_HEIGHT_PLAN = 92;
+// M5 density pass: the exec card was 124px tall with the footer pinned to the bottom
+// (margin-top:auto), so a caption-less card carried a dead gap between the label and the
+// pills. Tightened to 110 — the 4 content rows (label / caption / state-meta / pills) now
+// sit close together and the card reads at a glance. Plan stays a touch shorter (no pills).
+export const CARD_SHELL_HEIGHT_EXEC = 110;
+export const CARD_SHELL_HEIGHT_PLAN = 88;
 
 export interface AgentCardShellProps {
   /** The mono primary label (ellipsised). */
