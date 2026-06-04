@@ -43,7 +43,14 @@ observed in a browser; reads well at 1 agent and at the 14-agent run.
     killed-9, resumed-13) + an unknown-field and a missing-field case; assert the
     14-agent run yields a run-level partial-failure and zero mis-attributed agents;
     add `zod` to `packages/adapter`; `tsc`/`lint`/`test`/`build` all green.
-- [ ] **M2 — Discovery.** Implement `discoverProjects(port, claudeHome)` +
+- [x] **M2 — Discovery** — DONE 2026-06-04 (54 tests green: 38 M1 + 16 M2;
+  tsc/lint/build clean; dogfood vs real `~/.claude` → 3 projects, modal-rust 20 runs).
+  `packages/adapter/src/discovery.ts` (`discoverProjects`/`discoverRuns`/
+  `discoverWorkflowMetas`/`parseWorkflowMeta`, all node:fs-free via the injected
+  port) replaces the two M1 stubs; `WorkflowMeta` added to `packages/contract`. Key
+  findings (scriptPath two-shape split + per-slug recovered-sibling fallback;
+  deriveSlug pinned/verified; header-only discovery) recorded in `knowledge.md`.
+  Implement `discoverProjects(port, claudeHome)` +
   `discoverRuns(port, project)` (replace the M1 stubs), per `boundaries.md` §4 — all
   disk access THROUGH the `FileSystemPort` (the adapter stays node:fs-free). Walk
   `~/.claude/projects/<slug>/<session>/workflows/wf_*.json`; **recover the

@@ -128,6 +128,27 @@ export interface RunSummary {
   partialFailure: boolean;
 }
 
+/** A declared phase inside a static workflow `meta` (no run yet; titles/details only). */
+export interface WorkflowMetaPhase {
+  title: string;
+  detail: string | null;
+}
+
+/**
+ * The static `export const meta = {...}` of a `<project>/.claude/workflows/*.js`
+ * file — used for the "available workflows without a run" view. All fields tolerant;
+ * an unparseable file yields `null` (never a crash). `file` is the basename only.
+ */
+export interface WorkflowMeta {
+  /** Basename of the source .js (path-building / display only). */
+  file: string;
+  name: string;
+  description: string;
+  whenToUse: string | null;
+  phases: WorkflowMetaPhase[];
+  model: string | null;
+}
+
 /** A page of an agent's transcript (lazy, paginated). */
 export interface TranscriptPage {
   agentId: string;

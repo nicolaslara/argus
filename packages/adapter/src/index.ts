@@ -12,7 +12,14 @@ import type {
   PhaseEdge,
   AgentNode,
   AdapterWarning,
+  WorkflowMeta,
 } from '@argus/contract';
+import {
+  discoverProjectsReport,
+  discoverRunsReport,
+  discoverWorkflowMetasReport,
+  type DiscoveryReport,
+} from './discovery.ts';
 import {
   RawAgentNodeSchema,
   RawPhaseNodeSchema,
@@ -255,12 +262,70 @@ export async function loadRun(
   return parseFinalizedRun(raw, ctx);
 }
 
-/** Discover projects under a claude home. (M2) */
-export function discoverProjects(_port: FileSystemPort, _claudeHome: string): Promise<ProjectRef[]> {
-  throw new Error('discoverProjects: not implemented until prototype M2');
+/** The default claude home in production. The adapter never reads env itself. */
+export const DEFAULT_CLAUDE_HOME = '/Users/nicolas/.claude';
+
+/** Re-export discovery helpers (all node:fs-free; disk via the injected port). */
+export { parseWorkflowMeta } from './discovery.ts';
+export type { DiscoveryReport } from './discovery.ts';
+
+/**
+ * Discover a claude home's projects, keyed/de-duped by the AUTHORITATIVE recovered
+ * absolute `projectPath` (not the lossy slug). Reads each run's HEADER only (for its
+ * `scriptPath`); zero transcript / workflowProgress I/O; all disk via the injected
+ * port. NEVER throws — a bogus/missing path yields `[]` (see {@link discoverProjectsWithReason}).
+ */
+export async function discoverProjects(port: FileSystemPort, claudeHome: string): Promise<ProjectRef[]> {
+  return (await discoverProjectsReport(port, claudeHome)).items;
 }
 
-/** List a project's runs (header fields only; zero transcript I/O). (M2) */
-export function discoverRuns(_port: FileSystemPort, _project: ProjectRef): Promise<RunSummary[]> {
-  throw new Error('discoverRuns: not implemented until prototype M2');
+/** Report variant: `{ items, reasons }` so a bogus/missing path is observable, not silent. */
+export function discoverProjectsWithReason(
+  port: FileSystemPort,
+  claudeHome: string,
+): Promise<DiscoveryReport<ProjectRef>> {
+  return discoverProjectsReport(port, claudeHome);
+}
+
+/**
+ * List a project's runs — HEADER fields ONLY (workflowName/status/agentCount/
+ * durationMs/startTime/summary + partialFailure from a logs[] /failed/ scan). Does
+ * NOT walk `workflowProgress` or any transcript (zero per-agent I/O). Runs are keyed
+ * by the recovered authoritative `projectPath` and filtered to this project, so a
+ * slug collision splits runs across the matching ProjectRefs. NEVER throws.
+ *
+ * `claudeHome` defaults to the production home; the server/tests pass it explicitly.
+ */
+export async function discoverRuns(
+  port: FileSystemPort,
+  project: ProjectRef,
+  claudeHome: string = DEFAULT_CLAUDE_HOME,
+): Promise<RunSummary[]> {
+  return (await discoverRunsReport(port, claudeHome, project)).items;
+}
+
+/** Report variant of {@link discoverRuns}. */
+export function discoverRunsWithReason(
+  port: FileSystemPort,
+  project: ProjectRef,
+  claudeHome: string = DEFAULT_CLAUDE_HOME,
+): Promise<DiscoveryReport<RunSummary>> {
+  return discoverRunsReport(port, claudeHome, project);
+}
+
+/**
+ * List the static workflow definitions under `<projectPath>/.claude/workflows/*.js`
+ * via {@link parseWorkflowMeta} — the "available workflows without a run" view. An
+ * unparseable file is dropped (never a crash); a missing dir returns `[]`. NEVER throws.
+ */
+export async function discoverWorkflowMetas(port: FileSystemPort, projectPath: string): Promise<WorkflowMeta[]> {
+  return (await discoverWorkflowMetasReport(port, projectPath)).items;
+}
+
+/** Report variant of {@link discoverWorkflowMetas}. */
+export function discoverWorkflowMetasWithReason(
+  port: FileSystemPort,
+  projectPath: string,
+): Promise<DiscoveryReport<WorkflowMeta>> {
+  return discoverWorkflowMetasReport(port, projectPath);
 }

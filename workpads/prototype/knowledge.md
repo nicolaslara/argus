@@ -59,3 +59,101 @@ prototype phase. Blocked until the architecture gate passes.
   (workpad updates) is being done by hand here for the same reason.
 - **Evidence:** `npm test` → 2 files, 38 passed; `tsc --noEmit`, `eslint`, `vite
   build` all green.
+
+### M2 (2026-06-04) — discovery (projects + runs)
+
+- **Built:** `packages/adapter/src/discovery.ts` (the only module that knows the
+  on-disk *tree* layout) → `discoverProjects(port, claudeHome)`,
+  `discoverRuns(port, project, claudeHome?)`, `discoverWorkflowMetas(port,
+  projectPath)`, `parseWorkflowMeta(src, file?)` (re-exported from `index.ts`,
+  replacing the two M1 stubs). Each has a `…WithReason` report variant returning
+  `{ items, reasons }`. Added `WorkflowMeta`/`WorkflowMetaPhase` to
+  `packages/contract`. All disk access goes through the injected `FileSystemPort`;
+  the adapter stays **node:fs-free**. 16 new tests (deriveSlug, discoverRuns over a
+  fake in-memory port seeded from the 5 real `finished/*.wf.json`, slug-collision,
+  bogus/missing-path, `parseWorkflowMeta` over real `named-workflows/*.js` + null
+  cases). Dogfood vs the real `~/.claude` tree: `discoverProjects` → 3 projects;
+  `discoverRuns(modal-rust)` → 20 runs with correct header fields + abs-path keys, no
+  crash.
+
+- **FINDING — scriptPath has TWO observed shapes; recovery needs a per-slug
+  fallback.** (1) `<project>/.claude/workflows/<file>.js` → authoritative
+  `recoverProjectPath` (completed-14, killed-9, resumed-13). (2)
+  `~/.claude/projects/<slug>/<session>/workflows/scripts/<name>-wf_<id>.js` → NOT
+  project-recoverable: its prefix is the slug-dir cache path (it *also* contains
+  `.claude/workflows/`, so shape detection rejects any prefix under
+  `.claude/projects/`). completed-3 + failed-1 carry shape (2).
+  **`decodeSlug` is lossy** — `-Users-nicolas-devel-modal-rust` decodes to
+  `/Users/nicolas/devel/modal/rust` (the `-` in `modal-rust` becomes `/`), so naive
+  slug-decode would split one project. **Resolution (two-pass in `readAndResolve`):**
+  a shape-(2) run is grouped under a **UNIQUE recovered sibling** in the same slug dir
+  if one exists (the common case — earlier runs persist the real root); otherwise it
+  falls back to `decodeSlug` so the run still **surfaces, never drops**. Verified: all
+  4 modal-rust fixtures (2 recoverable + 2 cache-shape) group under one ProjectRef.
+
+- **deriveSlug PINNED + verified against disk.** The M1 regex `/[^a-zA-Z0-9]/g → '-'`
+  is correct unchanged: `/Users/nicolas/.config/ghostty → -Users-nicolas--config-ghostty`
+  (the leading `/` and the `.` of `.config` each map to `-`, giving the double dash).
+  Confirmed against the real on-disk dir name `~/.claude/projects/-Users-nicolas--config-ghostty`.
+
+- **Header-only discovery (zero per-agent/transcript I/O).** `discoverRuns` reads ONLY
+  the top-level header scalars `workflowName/status/agentCount/durationMs/startTime/
+  summary` (all 5 fixtures DO carry a header `agentCount`) + `partialFailure` from a
+  `logs[]` `/failed/` scan via the shared `findFailureLogLines`. It never walks
+  `workflowProgress` or any `agent-*.jsonl`. `RunRef`/`ProjectRef` keyed/de-duped by
+  the recovered **absolute projectPath** (slug kept only for path-building), so a slug
+  collision (two cwds → one slug dir) surfaces as **multiple switcher entries**.
+
+- **parseWorkflowMeta runs the meta LITERAL, not the script BODY (precise scope).** It
+  extracts the balanced `{…}` literal after `export const meta =` (string-aware brace
+  matching) and evaluates ONLY that literal in a no-arg `Function`. The workflow script
+  **body never executes** (verified 2026-06-04: a `globalThis` side-effect in the body
+  did not fire and `agent()` was never called), and the Workflow-tool globals
+  (`agent`/`phase`/`log`/`parallel`) are not provided. **CAVEAT (corrects an earlier
+  "execution-free / no access to globals" overstatement):** the `new Function` eval of
+  the extracted literal *does* execute any arbitrary JS expression embedded inside that
+  literal — verified an IIFE placed in the meta object ran and set a global. This is
+  **not** an RCE concern under the local-first / read-only stance (the input is the
+  user's own `.claude/workflows/*.js` on their own machine, not untrusted), but the
+  guarantee is "the script body is sandboxed away", **not** "no code runs". Unparseable
+  / no-`meta` / unbalanced / empty → `null`, never a crash. (Open follow-up: if we ever
+  want a hard guarantee, swap the `Function` eval for a JSON5/AST-literal parse so even
+  embedded expressions cannot run.)
+
+- **CONTRACT DRIFT (accepted, documented) — `discoverRuns` gained an optional 3rd
+  param.** boundaries.md §2.2 specifies `discoverRuns(port, project)`; the
+  implementation is `discoverRuns(port, project, claudeHome?)`. **Why it is justified:**
+  a `ProjectRef` alone cannot recover `claudeHome`, and Stance 4 forbids the adapter
+  from reading `env`/`process` — so the home must be injected. The 3rd param **defaults
+  to the production home**, making it backward-compatible with the ratified 2-arg
+  signature (every existing call site and the boundaries surface still type-check). This
+  is minor, defensible drift, recorded here so the contract and the code do not silently
+  diverge; fold the optional param into a future boundaries.md §2.2 revision if/when
+  that doc is next touched.
+
+- **Robustness:** every dir/file access is try/guarded → a coded `reason`
+  (`projects-dir-unreadable`, `slug-dir-unreadable`, `run-header-unreadable`,
+  `workflows-dir-unreadable`, `workflow-meta-unparseable`, …) and the item is omitted.
+  Nothing throws; a bogus/missing `claudeHome` returns `[]` + a reason.
+
+- **Evidence:** `npm test` → 3 files, **54 passed** (38 M1 + 16 M2); `tsc --noEmit`
+  clean; `eslint .` clean; `vite build` ok (190 modules, 372.88 KB JS). Dogfood smoke
+  vs real `~/.claude`: 3 projects, modal-rust 20 runs, no crash.
+- **Verifier (2026-06-04) — verdict COMPLETE, capability_proven.** Independent re-run
+  of the gate reproduced green (tsc clean, eslint clean, vitest 54 passed, build 190
+  modules). Confirmed on REAL data via the production `NodeFileSystemPort`:
+  `discoverProjects` → 3 projects (unique abs-path keys, no reason codes);
+  `discoverRuns(modal-rust)` → **20 runs** (completed 16 / killed 3 / failed 1), all
+  abs-path-keyed; each `RunSummary` carries exactly the 8 ratified header fields and
+  none of `agents`/`phases`/`logs`/`workflowProgress`. Stance 4 + privacy verified
+  honored: zero `node:fs` imports in adapter *source* (the two matches are
+  `*.test.ts` harnesses seeding the fake port from real fixtures — allowed); discovery
+  touches disk only via `port.readJson` (headers) / `port.readFile`
+  (`.claude/workflows/*.js`) / `port.listDir`, never `agent-*.jsonl` or
+  `workflowProgress`; no write op anywhere (port has no write method); every access is
+  try-guarded to a coded reason and never throws (cache-only fallback still surfaces
+  the run). The M1 `'not implemented until prototype M2'` stubs are genuinely
+  removed/replaced (verified in `git diff` + a repo-wide grep finds none). Two
+  low-severity precision notes from the verifier are folded into the findings above
+  (parseWorkflowMeta literal-eval caveat; `discoverRuns` 3rd-param contract drift) —
+  neither blocks completion.
