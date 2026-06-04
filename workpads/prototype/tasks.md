@@ -106,6 +106,51 @@ observed in a browser; reads well at 1 agent and at the 14-agent run.
   run; screenshot/Playwright; pass the UI/UX review lens (reads at a glance,
   legible, beautiful defaults). Update README "Try it".
 
+## Plan view (P-series — design: `../architecture/plan-view-design.md`)
+
+User chose (2026-06-04) to build the **Plan view** next (the "what it's supposed to
+do" DAG), starting run-free. Key facts from the design doc: `acorn` (in lockfile)
+wrap-parses the body as `async function __wf(agent,parallel,…){…}` (all 9 real scripts
+parse); the `agent()` `label:` opt **==** the journal's `workflow_agent.label` (the
+overlay join key); `PlanModel` is a **sibling** of `RunModel` (RunModel UNCHANGED); the
+parser lives in `packages/adapter` (`plan.ts`); our M3 vertical-lane render is the
+degenerate execution case. Defaults adopted (overridable): plan source = both behind
+one parser; tournament/quarantine vocab = stub until a real run exhibits them; loops =
+folded in plan / unrolled on overlay; unbounded fan-out = `1..N` chip + sourceExpr on
+hover.
+
+- [ ] **P0 — Plan view, meta-only (run-free).** Deliver the **review-the-workflow**
+  mode: a run-free plan rendered from a workflow's declared `meta.phases` (already
+  parsed via `discoverWorkflowMetas`/`parseWorkflowMeta`, shipped in M2 — no new parser).
+  - Server: expose the existing `discoverWorkflowMetas` as `GET /api/projects/:slug/
+    workflows` → `WorkflowMeta[]` (token-gated + path-guarded, same pattern as the M3
+    routes).
+  - Web: a **Plan view** that lists a project's named workflows and renders the selected
+    one's declared phases as ordered vertical lanes + a **subtitle** slot (from
+    `meta.phases[].detail`); a minimal **Plan ⟷ Execution view toggle** (this view IS
+    review-the-workflow mode). Reuse the M3 dark canvas + `PhaseLane`; NO AST, NO agents,
+    NO edges beyond the phase spine, NO overlay, NO RunModel change.
+  - Acceptance: pick modal-rust → list its workflows → render `plan-research`'s declared
+    phases (Research/Design/Review/Synthesize) as a run-free plan with subtitles, reads
+    well fullscreen; toggling to Execution still shows the M3 run; `tsc`/`lint`/`test`/
+    `build` green; Playwright screenshot.
+- [ ] **P1 — AST plan DAG.** `parsePlan(source)` in `packages/adapter/src/plan.ts`: add
+  `acorn` as an explicit adapter dep; wrap-parse + recursive **default-deny** walk →
+  `PlanModel` nodes (agent/process/decision/loop/unparsed) + edges (flow/fan-out/merge/
+  optional/loop-back) + groups (phase/loop) + multiplicity (`{fixed,n}` when the mapped
+  array is a static const literal, else `1..N`). Render the richer vocabulary (adopt
+  elkjs for the plan view's layered/compound layout; execution keeps hand-rolled lanes).
+  Fixtures: plan-research (fan-out), implement (linear), refine-plan (loop),
+  build-modal-rust (decision/nesting). Full contract in design doc §2–§4.
+- [ ] **P2 — Execution overlay.** `buildOverlay` (label-prefix + phaseIndex 3-way bind);
+  per-run plan from the persisted script; Plan⟷Execution morph; status-painted shared
+  layout; folded↔unrolled loop mode switch. Design doc §6.
+- [ ] **PX — Explanation layer (default-on, `claude -p`, cached).** Per-node LLM
+  captions/simplifications grounded in (node identity + the artifact it represents);
+  annotation-only on topology; content-addressed cache (`hash(data)`, bust-and-
+  regenerate) under `.argus/cache/`; background + parallel; feeds subtitles across views.
+  Depends on P0; runs in parallel. Design doc §10.
+
 ## knowledge
 
 Evidence (screenshots, the rendered run, test output) and decisions land in
