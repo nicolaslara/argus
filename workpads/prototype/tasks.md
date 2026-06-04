@@ -66,9 +66,32 @@ observed in a browser; reads well at 1 agent and at the 14-agent run.
   tree** (built from the `.argus/fixtures` files) returns the right status mix and
   abs-path keys; a bogus-path test returns empty-with-reason; `tsc`/`lint`/`test`/
   `build` green.
-- [ ] **M3 — Render one run.** Run model → fullscreen phase/agent graph (the chosen
-  graph lib + layout). Phases group agents; nodes show label/state/model; the graph
-  pans/zooms.
+- [ ] **M3 — Render one finished run** (server API + web canvas), per `boundaries.md`
+  §4–§7. Three parts:
+  1. **Server API** (`apps/server`): add token-gated, path-escape-guarded routes using
+     `NodeFileSystemPort` + the M2 discovery + M1 `loadRun`: `GET /api/projects`,
+     `GET /api/projects/:slug/runs` (RunSummary[]), `GET /api/runs/:slug/:session/:runId`
+     (the RunModel snapshot). Keep the M0 security (127.0.0.1 bind, Host/Origin
+     allowlist, per-launch token, path-escape `resolve()`-inside-claudeHome guard).
+  2. **Dev token wiring** (no insecure shortcuts): use a shared `ARGUS_TOKEN` env for
+     both apps in dev and have the **Vite proxy inject `Authorization: Bearer
+     $ARGUS_TOKEN`** (via `proxy.configure`/`headers`) so the browser stays token-free
+     and the server's token check still passes server-side. Do NOT disable the token
+     or expose it to client JS. (Production same-origin token handoff is a later note.)
+  3. **Web render** (`apps/web`): a TanStack Query data layer fetches the run list and
+     auto-selects the 14-agent `modal-rust-plan-research` run (fallback: first run);
+     map `RunModel` → `@xyflow/react` as **fullscreen vertical phase-lanes** (phases
+     stacked top→down by `index`; agents wrapped in a grid inside their lane) behind a
+     **swappable `layout` module** (deterministic hand-rolled lane layout default,
+     elk lazy fallback — M3 acceptance is engine-agnostic); custom **AgentCard** node
+     (state dot + mono label + model badge + metric pills duration/tokens/tools;
+     `tokens=0`→`—`); the single synthesized `phase_i→phase_i+1` spine edge only (no
+     agent edges); `MiniMap`/`Controls`/dotted `Background`; `colorMode="dark"`;
+     pan/zoom/fitView. Render text as text nodes only (no `dangerouslySetInnerHTML`).
+  - **Acceptance:** with `dev:server` + `dev:web` running, the web renders the real
+    14-agent run as crisp vertical phase-lanes (4 lanes, 7/2/4/1) AND a 1-agent run
+    renders clean; `tsc`/`lint`/`build` green; a Playwright fullscreen screenshot is
+    captured. (Deep visual polish + the gate sign-off are M5 — M3 just renders correctly.)
 - [ ] **M4 — Shell.** Collapsible minimal left toolbar (switch project / pick run);
   canvas is the focus.
 - [ ] **M5 — UI smoke + polish.** Render the 14-agent `modal-rust-plan-research`
