@@ -83,7 +83,7 @@ phase('Select')
 const selection = await agent(
   `${CONTEXT}\n\nResolve the active workpad${WORKPAD ? ` (use "${WORKPAD}")` : ' from TASKS.md (first unchecked, honoring Notes overrides)'} and read its tasks.md. ` +
     `${TASK_HINT ? `Select task "${TASK_HINT}".` : 'Select the next pending/unblocked task that proves the next un-proven capability.'} ` +
-    `Return the task, the single capability it validates, its acceptance criteria, its evidence requirements, and an ordered implementation plan. If it is blocked, set blocked_reason.`,
+    `Return the task, the single capability it validates, its acceptance criteria, its evidence requirements, and an ordered implementation plan. If it is blocked, set blocked_reason. CRITICAL — you MUST end your turn by calling the StructuredOutput tool with a CONCISE payload; ending your turn or replying with prose WITHOUT calling StructuredOutput discards your work and FAILS the workflow.`,
   { label: 'select', phase: 'Select', schema: SELECT_SCHEMA },
 )
 
@@ -98,7 +98,7 @@ const impl = await agent(
   `${CONTEXT}\n\nImplement ${selection.workpad} task ${selection.task_id} (${selection.task_title}). Capability: ${selection.capability}. ` +
     `Acceptance:\n${selection.acceptance.map((a) => `- ${a}`).join('\n')}\nRequired evidence:\n${selection.evidence.map((e) => `- ${e}`).join('\n')}\n` +
     `Plan:\n${selection.plan.map((p, i) => `${i + 1}. ${p}`).join('\n')}\n\n` +
-    `Write the code/files and run the local verification you can (tsc --noEmit, lint, unit tests, build). For a visual milestone, run the app and capture a UI smoke (screenshot/Playwright) of the target real run. Report files changed, commands run (with ok/output), per-criterion acceptance status, and notes. If a step needs a running browser you cannot drive headlessly, implement everything up to it and clearly note the exact command/check left for the user.`,
+    `Write the code/files and run the local verification you can (tsc --noEmit, lint, unit tests, build). For a visual milestone, run the app and capture a UI smoke (screenshot/Playwright) of the target real run. Report files changed, commands run (with ok/output), per-criterion acceptance status, and notes. If a step needs a running browser you cannot drive headlessly, implement everything up to it and clearly note the exact command/check left for the user. CRITICAL — do ALL file edits and command runs FIRST, then IMMEDIATELY end your turn by calling the StructuredOutput tool with a CONCISE payload (keep notes/output short; the full code lives in the files you wrote, NOT in the tool call). Ending your turn or replying with prose WITHOUT calling StructuredOutput discards ALL your work and FAILS the entire workflow.`,
   { label: `implement:${selection.task_id}`, phase: 'Implement', schema: IMPL_SCHEMA },
 )
 log(`Implemented ${selection.task_id}: ${impl.files_changed.length} file(s) changed`)
@@ -108,7 +108,7 @@ const verify = await agent(
   `${CONTEXT}\n\nAdversarially VERIFY that ${selection.workpad} task ${selection.task_id} actually proves its capability: "${selection.capability}". ` +
     `Do NOT trust the implementer's self-report — re-read the changed files (${impl.files_changed.join(', ')}) and re-run/inspect the evidence yourself where possible. ` +
     `Check: the capability is truly isolated and demonstrable on REAL data; all on-disk-format knowledge stayed behind the adapter (stance 4) and the parsing tolerates unknown/missing fields; nothing writes into or drives another project's .claude tree and no run/transcript content leaks off-machine (privacy); and — for a visual milestone — the UI genuinely READS WELL fullscreen (at 1 agent and at the 14-agent run), not merely "renders". Implementer notes:\n${impl.notes}\nAcceptance self-report:\n${JSON.stringify(impl.acceptance_status, null, 2)}\n` +
-    `Return whether the capability is proven, any findings (with severity), and a verdict.`,
+    `Return whether the capability is proven, any findings (with severity), and a verdict. CRITICAL — after re-reading/re-running, you MUST end your turn by calling the StructuredOutput tool with a CONCISE payload; ending your turn or replying with prose WITHOUT calling StructuredOutput discards your work and FAILS the workflow.`,
   { label: `verify:${selection.task_id}`, phase: 'Verify', schema: VERIFY_SCHEMA },
 )
 
