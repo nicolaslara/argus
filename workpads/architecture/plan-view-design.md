@@ -643,3 +643,30 @@ caption) and runs **in parallel** with P1/P2, enriching captions in every view. 
 keeps the annotation-only-on-topology guarantee from §2.5's red-team fix. Re-id as
 **PX — Explanation layer (default-on, `claude -p`, cached, background)**; it depends on
 P0, not on P1/P2.
+
+---
+
+## 11. Forward direction — generative sub-UIs (Claude-authored visualization fragments)
+
+User note (2026-06-04): beyond text captions (§10), use Claude to **build better
+sub-UIs for complex things we want to visualize**. This is a forward extension of the
+Explanation layer (PX), not v1.
+
+- **The idea:** for a node/pattern whose data is too complex for the default
+  vocabulary (a bespoke `result` object, a tournament bracket, a domain-specific
+  metric/table), the same engine (§10: `claude -p`, `hash(data)` cache, background)
+  returns not a caption but a tailored **sub-UI** that renders inside the node's detail
+  panel (or as a custom node body).
+- **The one design fork — spec vs code (safety + determinism):** prefer Claude
+  returning a **constrained, declarative spec** that argus renders with **vetted
+  components / a sub-viz registry** (bracket renderer, table, chart, key-value panel,
+  diff view) and which it merely *selects + parameterizes* — NOT arbitrary executable
+  React. Arbitrary generated component code is powerful but needs **sandboxing**
+  (iframe + strict CSP, no host/network access) and is non-deterministic, so defer it.
+  **Start:** Claude classifies the data shape → picks + fills a registered sub-viz.
+  **Later (optional):** sandboxed generated components for the long tail.
+- **When it fires:** only as an *escape hatch* for nodes the default lanes/cards/
+  captions serve poorly — the common case stays on the deterministic vocabulary.
+- **Where in the roadmap:** an extension of PX, after the core plan/execution + caption
+  layer is solid — naturally an inspect/interact-era capability. Same cache + `claude -p`
+  engine, so it reuses PX's infrastructure.
