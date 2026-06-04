@@ -8,24 +8,17 @@ override it. Check items off when a phase is finished, not when pausing mid-phas
 
 ## Active Now
 
-**architecture** is active (2026-06-04). The **research gate passed**: the synthesis
-is in `workpads/research/synthesis.md` (Verified Facts → Locked Decisions → Milestone
-Plan M0–M11 → User Questions → Residual Risks), produced by `argus-plan-research` and
-hardened by adversarial review. The four user-facing decisions are **confirmed**:
+**prototype** is active (2026-06-04). The **research and architecture gates have
+passed**: the research synthesis is in `workpads/research/synthesis.md` and the
+ratified contracts are in `workpads/architecture/boundaries.md` (adapter / run model
+/ API / live path / render-layout / shell / failure modes / format-version). The four
+user-facing decisions are confirmed and recorded in `project.md`.
 
-1. **Web app + local Node/TS backend** for v1 (Tauri deferred as a cheap sidecar swap).
-2. **React 19 + `@xyflow/react`** (React Flow), hand-rolled phase-lane layout default
-   (elkjs lazy fallback).
-3. **Read-only v1, reserve the interact seam** (no write/drive built now; architect
-   `FileSystemPort` + a future control channel so it's cheap to add).
-4. **Prototype-first (M0–M5), then live (M6–M8) gated on a real captured run.** Binding
-   caveat: **use REAL captured data from the start** (this project + `../modal-rust`)
-   so rendering is proven on real, messy runs — fixtures live under `.argus/fixtures/`.
-
-Next: the architecture workpad ratifies `boundaries.md` (adapter / run model / API /
-render / shell / failure modes) from the synthesis, then prototype M0 scaffolds the
-4-package monorepo. Consider `argus-refine-plan architecture` to harden the plan and
-`argus-implement` to execute milestones.
+Next: prototype milestones **M0–M5** (gate at M5 — one finished run renders beautifully
+fullscreen on real data). M0 scaffolds the 4-package monorepo (`packages/adapter`,
+`packages/contract`, `apps/server`, `apps/web`) per `boundaries.md` §1 + synthesis
+§2.8. Build against the real fixtures in `.argus/fixtures/` from M1 on. Use
+`argus-implement prototype` to execute milestones with adversarial verification.
 
 ## Workpad Queue
 
@@ -34,10 +27,10 @@ render / shell / failure modes) from the synthesis, then prototype M0 scaffolds 
   w/ reserved interact seam; prototype-first then live, on real captured data). Client
   availability, connection strategy, the hardened data contract, the graph-viz library
   + UI direction, and the TS stack are all locked.
-- [ ] **architecture** — Ratify the adapter contract, the normalized run model, the
-  server↔client API (snapshot + incremental), the render/layout pipeline, the
-  shell/IA, and the failure modes, in `workpads/architecture/boundaries.md`. Gate:
-  boundaries doc ratified.
+- [x] **architecture** — DONE 2026-06-04. `workpads/architecture/boundaries.md`
+  ratifies the adapter, run model, server↔client API, live path, render/layout
+  pipeline, shell/IA, failure modes, and format-version policy — derived from the
+  adversarially-reviewed synthesis.
 - [ ] **prototype** — Smallest e2e: pick a local project → list its runs → render
   **one finished run** as a fullscreen phase/agent graph from `wf_*.json`. Gate: a
   real `modal-rust` run renders correctly, observed in a browser.
