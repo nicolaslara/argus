@@ -186,7 +186,30 @@ hover.
   captions/simplifications grounded in (node identity + the artifact it represents);
   annotation-only on topology; content-addressed cache (`hash(data)`, bust-and-
   regenerate) under `.argus/cache/`; background + parallel; feeds subtitles across views.
-  Depends on P0; runs in parallel. Design doc §10.
+  Design doc §10. Concrete v1 contract:
+  - **Engine** (`apps/server`): a service that shells out to **headless `claude -p
+    --model haiku --output-format json`** (reuses the user's Claude Code auth; the
+    server already has process access). Detect `claude` on PATH; if absent/erroring,
+    **degrade gracefully** (no captions, never crash). NO privacy gate (the user's own
+    local code/data via their own auth). API fallback (claude-api) is out of scope for v1.
+  - **What it explains:** given a node's identity (kind/label/phase/pattern) **and** the
+    artifact it represents — the **code slice** for a plan node, the **prompt + schema**
+    for an agent, the **state / last-~2k-token window** for an execution node — return a
+    one-line caption + optional pattern name. **Annotation-only** (never alters topology).
+  - **Cache:** `.argus/cache/explanations/<hash>.json`, `hash` = sha256 of the artifact
+    (+ a small prompt-version tag). Hit → instant; miss → enqueue. v1 invalidation =
+    bust-and-regenerate when the hash changes.
+  - **Scheduling:** a bounded background pool warms explanations **eagerly** when a
+    plan/run is opened; the UI never blocks; results delivered via a poll/SSE endpoint
+    and **swap into the node subtitle** when ready (baseline = meta detail / prompt first
+    line until then).
+  - **Wire:** plan agent/process nodes and execution agent cards show the enriched
+    caption when available, in both views.
+  - **Acceptance:** with a plan or run open, captions get enriched by `claude -p` and a
+    reload is a cache hit (instant); `claude` absent → graceful baseline, no crash;
+    a server unit test of the cache (hit/miss/hash) with `claude` stubbed; `tsc`/`lint`/
+    `test`/`build` green; a Playwright UI smoke showing an enriched caption. Do NOT block
+    the snapshot on generation.
 
 ## knowledge
 
