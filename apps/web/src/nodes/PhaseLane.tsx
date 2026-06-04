@@ -23,8 +23,9 @@ export interface PhaseLaneData {
 export const PhaseLaneNode = memo(function PhaseLaneNode({ data }: { data: PhaseLaneData }) {
   return (
     <div className="phase-lane">
-      <Handle type="target" position={Position.Top} className="lane-handle" />
-      <Handle type="source" position={Position.Bottom} className="lane-handle" />
+      {/* Left→right flow: the phase spine docks Right(of i) → Left(of i+1). */}
+      <Handle type="target" position={Position.Left} className="lane-handle" />
+      <Handle type="source" position={Position.Right} className="lane-handle" />
       <div className="phase-lane-header">
         <span className="phase-lane-index">{data.index}</span>
         <span className="phase-lane-title">{data.title}</span>

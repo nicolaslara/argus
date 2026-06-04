@@ -3,13 +3,18 @@
 // cross-phase DAG (not wired for M3 — see boundaries.md §6).
 
 import type { LayoutEngine } from './types.ts';
+import { horizontalLaneLayout } from './horizontal-lanes.ts';
 import { verticalLaneLayout } from './vertical-lanes.ts';
 
 export type { LayoutEngine, LayoutInput, LayoutResult, Placement } from './types.ts';
-export { CARD_WIDTH, CARD_HEIGHT } from './vertical-lanes.ts';
+export { CARD_WIDTH, CARD_HEIGHT } from './horizontal-lanes.ts';
+export { horizontalLaneLayout, verticalLaneLayout };
 
-/** The default, engine-agnostic layout used by the M3 canvas. */
-export const defaultLayout: LayoutEngine = verticalLaneLayout;
+/**
+ * The default layout: horizontal phase columns (left→right), matching the article's
+ * flow. `verticalLaneLayout` stays available behind the same seam (swappable).
+ */
+export const defaultLayout: LayoutEngine = horizontalLaneLayout;
 
 /**
  * Lazily load the elkjs-backed engine (deferred fallback). NOT used by M3; present

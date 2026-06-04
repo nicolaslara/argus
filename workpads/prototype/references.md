@@ -30,3 +30,13 @@ transcripts for live/inspect. M1 (adapter) and M3 (render) build against these.
   `argus-p0-plan-research-plan.png` (the run-free Plan view: 4 declared lanes +
   subtitles, Playwright 1440×900) and `argus-p0-execution-toggle-back.png` (the
   Plan→Execution toggle returning to the unchanged M3 14-agent run).
+- **Verifier independent re-run (2026-06-04):** live server on the real `~/.claude` →
+  10 `WorkflowMeta`; token/Host/method/slug gates re-confirmed (401/403/405/400);
+  emitted keys exactly the allowlisted `WorkflowMeta` set (no `scriptPath` leak); Stance 4
+  diff-clean (`packages/adapter`, `packages/contract`, `apps/web/src/mapping.ts`
+  byte-identical vs HEAD). Live Playwright on the 14-agent run + Plan view, 0 app console
+  errors. Verdict: COMPLETE, capability_proven: true. Commits: `baf8769` + `eb11e07` on
+  branch `phase1-scaffold-and-research`.
+- **Stray/misplaced artifact (to remove):** `verify-p0-plan.png` was committed to the
+  REPO ROOT in `eb11e07` (should live under gitignored `.argus/screenshots/`); Plan-view
+  only, no run/transcript content. See `knowledge.md` P0 open question.

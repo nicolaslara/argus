@@ -247,9 +247,49 @@ prototype phase. Blocked until the architecture gate passes.
   `discoverProjects` already reads to recover `projectPath` — **never** transcripts,
   `workflowProgress`, or `agent-*.jsonl`. Read-only (the port has no write method).
   No run/transcript content copied off-machine or into logs (coded errors only).
-- **Visual note (deferred to M5 polish, not a P0 blocker):** the agent-free Plan lanes
-  inherit the M3 lane height (one card-row reserved even with 0 agents), so each lane has
-  generous empty space below its subtitle. It reads cleanly fullscreen; a future
-  plan-specific lane-height (header + subtitle only) is a nice-to-have.
+- **Visual note (deferred to M5 polish, not a P0 blocker; verifier-confirmed):** the
+  agent-free Plan lanes inherit the M3 lane height (one card-row reserved even with 0
+  agents), so each lane has generous empty space below its subtitle (visible in the live
+  Playwright smoke + screenshots). It reads cleanly fullscreen; a future plan-specific
+  lane-height (header + subtitle only) is a nice-to-have, correctly deferred to M5.
+- **OPEN QUESTION / artifact-hygiene convention violation (low severity, do before
+  merge).** Commit `eb11e07` committed **`verify-p0-plan.png` (67 KB) into the REPO ROOT
+  (tracked)** instead of the gitignored `.argus/screenshots/` that project policy mandates
+  for generated/captured artifacts (`.gitignore`: `.argus/` may contain run content). The
+  image depicts ONLY the Plan view (declared workflow meta + the user's own static phase
+  subtitles) with NO run/transcript/agent content or secrets, so the leak severity is low;
+  the intended P0 screenshots are correctly under gitignored `.argus/screenshots/`.
+  **Action:** `git rm` the root `verify-p0-plan.png` and keep captured screenshots under
+  `.argus/screenshots/` only.
 - **Evidence (toolchain green):** `tsc --noEmit` clean; `eslint .` clean; `vitest run`
   **57 passed** (4 files: 54 prior + 3 P0 route tests); `vite build` ok (415.05 KB JS).
+- **Workflow picker (commit `eb11e07`, was undisclosed in the first self-report):** the
+  Plan view ships a workflow `<select>` picker (`apps/web/src/App.tsx` `selectedWorkflow`
+  state + `index.css` `.wf-picker`) that lists ALL named workflows and renders the
+  selected one — not just the auto-select-`plan-research` path the report described. This
+  is **in-scope** per the P0 text ("lists a project's named workflows and renders the
+  selected one") and remains run-free / meta-only / no-AST; it passes the full gate
+  (tsc / eslint / vitest 57 / build all green on current HEAD).
+- **Verifier (2026-06-04) — verdict COMPLETE, capability_proven: true.** Independent
+  re-run on REAL data (not trusting the report): live server on the real `~/.claude` →
+  **10 workflows** incl. `modal-rust-plan-research` with 4 phases
+  `[Research, Design, Review, Synthesize]`; token gate holds (no/bad token → 401), bad
+  slug `..%2Fetc` → 400, bad Host → 403, POST → 405, unknown slug → 200 `[]`. Emitted
+  keys are exactly the allowlisted `WorkflowMeta` set — **no `scriptPath` leak**. Stance 4
+  honored: `packages/adapter`, `packages/contract`, `apps/web/src/mapping.ts` byte-identical
+  (empty diff vs HEAD); no new parser / AST / acorn; `parseWorkflowMeta` tolerates
+  missing/non-string fields and try/catches to `null`; the route reads ONLY
+  `.claude/workflows/*.js` + run headers, **never** transcripts/`workflowProgress`/
+  `agent-*.jsonl`; no `node:fs` in `routes.ts`; web imports no adapter/`node:*`; read-only
+  port. Server log free of `/Users/` and `$bunfs`. Live Playwright: Execution = unchanged
+  M3 (7/2/4/1, completed + partial-failure with the verbatim hidden `parallel[0] failed`,
+  `review:red-team tok —`); Plan = 4 ordered lanes + subtitles + 3 spine edges only, no
+  agent cards; reads well fullscreen; **0 console errors from our app** (the 2 console
+  errors observed were 401s from an unrelated stray node process on :5173, not the app
+  under test on :5174).
+- **VCS-state correction (the first self-report was stale/inaccurate).** The report
+  claimed P0 was "NOT committed... 11 tracked + 2 new files staged on disk." In reality
+  the working tree is **CLEAN** and all P0 work is **COMMITTED** across two commits on
+  branch **`phase1-scaffold-and-research`** (not `main`): `baf8769` ("run-free Plan view +
+  Plan/Execution toggle") and HEAD `eb11e07` ("workflow picker in the Plan view"). The
+  capability is unaffected; the record now matches the repo.

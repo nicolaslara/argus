@@ -130,8 +130,14 @@ hover.
   `apps/web/src/mapping.ts`, `RunModel` all UNCHANGED. Live: modal-rust → **10
   workflows** incl. `plan-research`; Plan view renders the 4 declared lanes
   (Research/Design/Review/Synthesize) + subtitles fullscreen; toggle returns the M3
-  14-agent run unchanged. Screenshots `.argus/screenshots/argus-p0-plan-research-plan.png`
+  14-agent run unchanged. The Plan view also ships a **workflow `<select>` picker**
+  (`App.tsx` `selectedWorkflow` state + `.wf-picker` CSS, commit `eb11e07`) — lists all
+  named workflows and renders the chosen one (in-scope per "lists a project's named
+  workflows and renders the selected one"; still run-free/meta-only/no-AST). Screenshots
+  `.argus/screenshots/argus-p0-plan-research-plan.png`
   + `argus-p0-execution-toggle-back.png`. Details in `knowledge.md` (P0 section).
+  COMMITTED (verifier-confirmed 2026-06-04) on branch `phase1-scaffold-and-research`:
+  `baf8769` (run-free Plan view + toggle) + `eb11e07` (workflow picker); working tree clean.
   Deliver the **review-the-workflow**
   mode: a run-free plan rendered from a workflow's declared `meta.phases` (already
   parsed via `discoverWorkflowMetas`/`parseWorkflowMeta`, shipped in M2 — no new parser).
