@@ -21,6 +21,7 @@ import {
   handleProjects,
   handleProjectRuns,
   handleProjectWorkflows,
+  handleProjectPlan,
   handleRunSnapshot,
   type RouteDeps,
   type RouteResult,
@@ -93,6 +94,16 @@ async function dispatchApi(pathname: string): Promise<RouteResult | null> {
     const slug = decodeSegment(runsMatch[1]!);
     if (slug === null) return { status: 400, body: { error: 'bad_request' } };
     return handleProjectRuns(deps, slug);
+  }
+
+  // GET /api/projects/:slug/workflows/:file/plan (P1: the run-free static plan DAG).
+  // More specific than the listing route → matched first.
+  const planMatch = /^\/api\/projects\/([^/]+)\/workflows\/([^/]+)\/plan$/.exec(pathname);
+  if (planMatch) {
+    const slug = decodeSegment(planMatch[1]!);
+    const file = decodeSegment(planMatch[2]!);
+    if (slug === null || file === null) return { status: 400, body: { error: 'bad_request' } };
+    return handleProjectPlan(deps, slug, file);
   }
 
   // GET /api/projects/:slug/workflows (P0: the run-free declared-workflow listing)

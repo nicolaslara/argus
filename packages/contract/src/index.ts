@@ -149,6 +149,151 @@ export interface WorkflowMeta {
   model: string | null;
 }
 
+// ============================================================================
+// PlanModel — the STATIC plan DAG (P1). A SIBLING of RunModel (NOT a superset,
+// NOT a parent). Derived run-free from a workflow `.js` source by the adapter's
+// `parsePlan` (acorn wrap-parse, recursive default-deny walk). RunModel/AgentNode
+// above are byte-unchanged: binding is an overlay-time, web-side concern (P2).
+//
+// Design: workpads/architecture/plan-view-design.md §4.2. The two join keys onto
+// RunModel are the agent() label (== workflow_agent.label) and the 1-based phase
+// index (Phase.title via phaseIndex) — used by the P2 overlay, not by this model.
+// ============================================================================
+
+export type PlanNodeKind =
+  | 'input'
+  | 'output'
+  | 'process'
+  | 'agent'
+  | 'decision'
+  | 'loop'
+  | 'subworkflow'
+  | 'pipeline'
+  | 'unparsed';
+
+/** Per-node provenance: declared(meta) > static(AST) > heuristic(LLM/inference). */
+export type Confidence = 'declared' | 'static' | 'heuristic';
+
+/**
+ * Template multiplicity of a node.
+ * - `one`: a single instance.
+ * - `fixed`: exactly `n` instances — ONLY for an in-scope const array-of-literals.
+ * - `unbounded`: runtime-computed count; `min` is the statically-known literal floor
+ *   (e.g. the spread-mix `[...ARR.map(...), ()=>agent(...)]` → min = literalCount).
+ */
+export type Multiplicity =
+  | { kind: 'one' }
+  | { kind: 'fixed'; n: number }
+  | { kind: 'unbounded'; min: number; max: 'N'; sourceExpr?: string };
+
+/**
+ * A structured label template (Tier-3) — distinguishes a static prefix from a
+ * runtime hole, e.g. `research:${r.key}` → { literalPrefix:'research:', holes:['r.key'] }.
+ * This is the overlay join key (P2). `raw` keeps the source label expression.
+ */
+export interface LabelTemplate {
+  literalPrefix: string;
+  holes: string[];
+  raw: string;
+}
+
+export interface PlanAnnotation {
+  /** T1/T3 deterministic; a T4 LLM pass (PX) MAY enrich it (then source='heuristic'). */
+  subtitle: string | null;
+  /** T4-only pattern name (PX). */
+  patternName?: string | null;
+  /** A StructuredOutput `schema` was present on the opts. */
+  typed: boolean;
+  /** Provenance of the subtitle. */
+  source: Confidence;
+  /** Byte offsets into the source (unparsed / view-source). */
+  span?: { start: number; end: number };
+}
+
+export interface PlanNode {
+  /** Stable id: labelTemplate.raw | phaseRef | ordinal. */
+  id: string;
+  kind: PlanNodeKind;
+  title: string;
+  /** Overlay join key (structured); null for non-agent nodes. */
+  labelTemplate: LabelTemplate | null;
+  agentType: string | null;
+  /** 1-based, into PlanModel.lanes; null if outside any declared phase. */
+  phaseRef: number | null;
+  multiplicity: Multiplicity;
+  /** Discovered inside a decision branch → rendered dashed. */
+  optional: boolean;
+  /** Enclosing loop node id, if any. */
+  loopRef: string | null;
+  /** Enclosing decision node id, if any. */
+  parentDecisionId: string | null;
+  annotation: PlanAnnotation;
+  confidence: Confidence;
+}
+
+export interface DecisionNode extends PlanNode {
+  kind: 'decision';
+  conditionKind: 'regex-verdict' | 'schema-field' | 'expr';
+  /** e.g. 'BUILD_GREEN?' | 'blocked_reason?'. */
+  conditionLabel: string;
+}
+
+export interface LoopNode extends PlanNode {
+  kind: 'loop';
+  /** e.g. 'until dry · max 3'. */
+  stopCondition: string;
+  /** Static cap when readable (e.g. the literal 3 in `(args&&args.maxRounds)||3`), else null. */
+  maxRounds: number | null;
+}
+
+export type PlanEdgeKind = 'flow' | 'fanout' | 'merge' | 'optional' | 'loop-back';
+
+export interface PlanEdge {
+  id: string;
+  from: string;
+  to: string;
+  kind: PlanEdgeKind;
+  label?: string;
+}
+
+export type ContainerKind = 'lane' | 'loop' | 'trust-boundary';
+
+export interface PlanContainer {
+  id: string;
+  kind: ContainerKind;
+  title: string;
+  detail: string | null;
+  /** Stub-only styling (no layout wiring in P1). */
+  trust?: 'trusted' | 'untrusted';
+  childIds: string[];
+}
+
+/** A primary phase-axis lane (seeded from meta.phases; the trustworthy spine). */
+export interface PlanLane {
+  index: number;
+  title: string;
+  detail: string | null;
+  confidence: Confidence;
+}
+
+export interface PlanModel {
+  /** Basename only. */
+  workflowFile: string;
+  workflowName: string;
+  /** Primary phase axis (meta.phases seed). */
+  lanes: PlanLane[];
+  nodes: PlanNode[];
+  edges: PlanEdge[];
+  containers: PlanContainer[];
+  /** Coded: 'unparsed-statement' | 'import-detected-fallback' | 'meta-only' | … */
+  warnings: AdapterWarning[];
+  derivedFrom: 'static-source' | 'meta-only';
+  /** recognized statements / total — an honest coverage signal (best-effort). */
+  coverageRatio: number;
+  /** ADAPTER_FORMAT pin. */
+  format: string;
+}
+
 /** A page of an agent's transcript (lazy, paginated). */
 export interface TranscriptPage {
   agentId: string;

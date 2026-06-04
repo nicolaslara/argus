@@ -19,12 +19,13 @@ import {
   discoverProjects,
   discoverRuns,
   discoverWorkflowMetas,
+  loadPlan,
   loadRun,
   recoverProjectPath,
   type FileSystemPort,
   type AdapterContext,
 } from '@argus/adapter';
-import type { ProjectRef, RunModel, RunRef, RunSummary, WorkflowMeta } from '@argus/contract';
+import type { PlanModel, ProjectRef, RunModel, RunRef, RunSummary, WorkflowMeta } from '@argus/contract';
 
 /**
  * Strict path-segment charset. Slug dirs are `-Users-...` (alnum + dash), session ids
@@ -65,6 +66,34 @@ export function safeRunJsonPath(
   if (candidate !== homeAbs && !candidate.startsWith(homeAbs + sep)) {
     return null;
   }
+  return candidate;
+}
+
+/**
+ * A workflow source filename: a `.js` basename of safe charset (alnum + dash +
+ * underscore + dot), with NO path separators and NO `..`. Enforced BEFORE any FS read.
+ */
+const WORKFLOW_FILE_RE = /^[A-Za-z0-9_-]+\.js$/;
+
+export function isValidWorkflowFile(file: string): boolean {
+  return (
+    file.length > 0 &&
+    file.length <= 256 &&
+    WORKFLOW_FILE_RE.test(file) &&
+    !file.includes('..')
+  );
+}
+
+/**
+ * Build the absolute `<projectPath>/.claude/workflows/<file>` path and resolve()-verify
+ * it stays strictly inside `projectPath/.claude/workflows`. Returns null on any escape
+ * (belt-and-suspenders on top of the charset check). NEVER throws.
+ */
+export function safeWorkflowJsPath(projectPath: string, file: string): string | null {
+  if (!isValidWorkflowFile(file)) return null;
+  const wfDir = resolve(projectPath, '.claude', 'workflows');
+  const candidate = resolve(wfDir, file);
+  if (candidate !== wfDir && !candidate.startsWith(wfDir + sep)) return null;
   return candidate;
 }
 
@@ -138,6 +167,42 @@ export async function handleProjectWorkflows(
   }
   const workflows = [...byFile.values()].sort((a, b) => a.name.localeCompare(b.name));
   return { status: 200, body: workflows };
+}
+
+/**
+ * GET /api/projects/:slug/workflows/:file/plan -> PlanModel (P1, run-free).
+ * Statically derives the workflow `.js` script's control-flow structure via the
+ * adapter's PURE parsePlan (acorn wrap-parse + recursive default-deny walk). Reads ONLY
+ * `<project>/.claude/workflows/<file>` THROUGH the FileSystemPort — never a run journal,
+ * transcript, or workflowProgress. Mirrors handleProjectWorkflows: validate the slug
+ * (400), resolve it to its ProjectRef(s), path-escape-guard the `.js` file (400 on a bad
+ * file), then loadPlan. parsePlan never throws; a read miss is a 404 (never 500/leak).
+ */
+export async function handleProjectPlan(
+  deps: RouteDeps,
+  slug: string,
+  file: string,
+): Promise<RouteResult> {
+  if (!isValidSegment(slug)) return err(400, 'bad_request');
+  if (!isValidWorkflowFile(file)) return err(400, 'bad_request');
+
+  const projects = await discoverProjects(deps.port, deps.claudeHome);
+  const matching = projects.filter((p) => p.slug === slug);
+  if (matching.length === 0) return err(404, 'not_found');
+
+  // Try each ProjectRef sharing this slug; return the first that has the named workflow.
+  for (const project of matching) {
+    const jsPath = safeWorkflowJsPath(project.projectPath, file);
+    if (jsPath === null) return err(400, 'bad_request');
+    let plan: PlanModel;
+    try {
+      plan = await loadPlan(deps.port, jsPath, file);
+    } catch {
+      continue; // not present under this recovered cwd; try the next
+    }
+    return { status: 200, body: plan };
+  }
+  return err(404, 'not_found');
 }
 
 /** GET /api/runs/:slug/:session/:runId -> RunModel snapshot. */

@@ -1,10 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import {
   handleProjectWorkflows,
+  handleProjectPlan,
   isValidSegment,
+  isValidWorkflowFile,
   type RouteDeps,
 } from './routes.ts';
 import type { FileSystemPort } from '@argus/adapter';
+import type { PlanModel } from '@argus/contract';
 
 // P0 server-route test (boundaries.md §4 pattern, mirrors fs-port.test.ts's fake-port
 // approach but for routing): exercise GET /api/projects/:slug/workflows over a small
@@ -35,7 +38,17 @@ export const meta = {
     { title: 'Synthesize', detail: 'consolidate into one authoritative synthesis' },
   ],
 };
-export async function __wf(agent, parallel) { /* body never runs */ }
+
+const RESEARCH = [{ key: 'a' }, { key: 'b' }, { key: 'c' }];
+
+phase('Research')
+const research = (
+  await parallel(RESEARCH.map((r) => () => agent(r.key, { label: \`research:\${r.key}\`, phase: 'Research' })))
+).filter(Boolean)
+
+phase('Synthesize')
+const synthesis = await agent('synthesize', { label: 'synthesize', phase: 'Synthesize' })
+return { research, synthesis }
 `;
 
 const IMPLEMENT_SRC = `
@@ -139,5 +152,44 @@ describe('handleProjectWorkflows (P0 route)', () => {
     const res = await handleProjectWorkflows(deps, '-no-such-project');
     expect(res.status).toBe(200);
     expect(res.body).toEqual([]);
+  });
+});
+
+describe('handleProjectPlan (P1 route — run-free static plan DAG)', () => {
+  const deps: RouteDeps = { port: makeFakePort(), claudeHome: CLAUDE_HOME };
+
+  it('rejects a bad slug / bad workflow file (400) before any FS access', async () => {
+    expect(isValidWorkflowFile('plan-research.js')).toBe(true);
+    expect(isValidWorkflowFile('../etc/passwd.js')).toBe(false);
+    expect(isValidWorkflowFile('plan-research.ts')).toBe(false);
+    expect((await handleProjectPlan(deps, '../etc', 'plan-research.js')).status).toBe(400);
+    expect((await handleProjectPlan(deps, SLUG, '../escape.js')).status).toBe(400);
+  });
+
+  it('returns a static-source PlanModel with a fan-out for plan-research.js', async () => {
+    const res = await handleProjectPlan(deps, SLUG, 'plan-research.js');
+    expect(res.status).toBe(200);
+    const plan = res.body as PlanModel;
+    expect(plan.derivedFrom).toBe('static-source');
+    expect(plan.workflowName).toBe('modal-rust-plan-research');
+    expect(plan.lanes.map((l) => l.title)).toEqual([
+      'Research',
+      'Design',
+      'Review',
+      'Synthesize',
+    ]);
+    // The RESEARCH fan-out (3 literal objects) → a fixed-3 process split + fanout edges.
+    expect(
+      plan.nodes.some((n) => n.kind === 'process' && n.multiplicity.kind === 'fixed' && n.multiplicity.n === 3),
+    ).toBe(true);
+    expect(plan.edges.some((e) => e.kind === 'fanout')).toBe(true);
+    expect(plan.edges.some((e) => e.kind === 'merge')).toBe(true);
+    // The format pin is stamped.
+    expect(plan.format).toBe('cc-workflow/observed-2026-06-04');
+  });
+
+  it('404 (never 500) for an unknown slug or an unknown workflow file', async () => {
+    expect((await handleProjectPlan(deps, '-no-such-project', 'plan-research.js')).status).toBe(404);
+    expect((await handleProjectPlan(deps, SLUG, 'nonexistent.js')).status).toBe(404);
   });
 });

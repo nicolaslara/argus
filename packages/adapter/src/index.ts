@@ -13,7 +13,10 @@ import type {
   AgentNode,
   AdapterWarning,
   WorkflowMeta,
+  PlanModel,
 } from '@argus/contract';
+import { parsePlan } from './plan.ts';
+export { parsePlan };
 import {
   discoverProjectsReport,
   discoverRunsReport,
@@ -260,6 +263,29 @@ export async function loadRun(
 ): Promise<RunModel> {
   const raw = await port.readJson(wfJsonPath);
   return parseFinalizedRun(raw, ctx);
+}
+
+/**
+ * Read a workflow `.js` SOURCE through the injected FileSystemPort (the lazy
+ * "view source" surface — the script is NOT in the default RunModel). `jsPath` is the
+ * absolute path to `<project>/.claude/workflows/<file>.js`; the caller (server)
+ * path-escape-guards it first. Disk-only via the port (no node:fs). Built BEFORE
+ * loadPlan, which depends on it (plan-view-design.md §2.2 review fix). May throw on a
+ * hard read error; the route layer maps that to a 404, never a 500/leak.
+ */
+export async function loadWorkflowSource(port: FileSystemPort, jsPath: string): Promise<string> {
+  return port.readFile(jsPath);
+}
+
+/**
+ * Read a workflow `.js` source THROUGH the port and parse it into a PlanModel (P1,
+ * run-free). LAZY: depends on {@link loadWorkflowSource}. `parsePlan` is PURE and never
+ * throws; a read failure here propagates (the route maps it to 404). The PlanModel is a
+ * SIBLING of RunModel — this path never touches a run journal.
+ */
+export async function loadPlan(port: FileSystemPort, jsPath: string, file = ''): Promise<PlanModel> {
+  const source = await loadWorkflowSource(port, jsPath);
+  return parsePlan(source, file || jsPath);
 }
 
 /** The default claude home in production. The adapter never reads env itself. */

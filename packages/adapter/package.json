@@ -10,6 +10,7 @@
   "types": "./src/index.ts",
   "dependencies": {
     "@argus/contract": "*",
+    "acorn": "^8.16.0",
     "zod": "^4.4.3"
   }
 }

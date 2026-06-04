@@ -379,8 +379,12 @@ export function parseWorkflowMeta(src: string, file = ''): WorkflowMeta | null {
   }
 }
 
-/** Return the balanced { ... } substring starting at `open` (an index of '{'). */
-function extractBalanced(src: string, open: number): string | null {
+/**
+ * Return the balanced { ... } substring starting at `open` (an index of '{'),
+ * ignoring braces inside strings. Reused by plan.ts to precisely locate+remove the
+ * meta literal (the single source of brace-balancing — no second weaker regex).
+ */
+export function extractBalanced(src: string, open: number): string | null {
   let depth = 0;
   let inStr: string | null = null;
   let escaped = false;

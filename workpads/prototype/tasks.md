@@ -153,14 +153,22 @@ hover.
     phases (Research/Design/Review/Synthesize) as a run-free plan with subtitles, reads
     well fullscreen; toggling to Execution still shows the M3 run; `tsc`/`lint`/`test`/
     `build` green; Playwright screenshot.
-- [ ] **P1 — AST plan DAG.** `parsePlan(source)` in `packages/adapter/src/plan.ts`: add
-  `acorn` as an explicit adapter dep; wrap-parse + recursive **default-deny** walk →
-  `PlanModel` nodes (agent/process/decision/loop/unparsed) + edges (flow/fan-out/merge/
-  optional/loop-back) + groups (phase/loop) + multiplicity (`{fixed,n}` when the mapped
-  array is a static const literal, else `1..N`). Render the richer vocabulary (adopt
-  elkjs for the plan view's layered/compound layout; execution keeps hand-rolled lanes).
-  Fixtures: plan-research (fan-out), implement (linear), refine-plan (loop),
-  build-modal-rust (decision/nesting). Full contract in design doc §2–§4.
+- [x] **P1a — AST plan parser** — DONE 2026-06-04. `parsePlan(source)` in
+  `packages/adapter/src/plan.ts` (1170 LOC) + `plan.test.ts`; `acorn` added; `PlanModel`
+  contract (nodes agent/process/decision/loop/output/unparsed; edges flow/fanout/merge/
+  optional/loop-back; containers; lanes; multiplicity). `GET /api/projects/:slug/
+  workflows/:file/plan` endpoint + web `api` client. 83 tests green. **Verified on real
+  scripts:** plan-research → fan-out ×7/×2/×4 + merges (multiplicity read from the static
+  `RESEARCH`/`LENSES` arrays); refine-plan → loop node + loop-back edge + decision;
+  implement → linear chain + decision + optional early-exit. Parser is excellent.
+- [ ] **P1b — Plan-DAG web render.** Consume the `PlanModel` over the `/plan` endpoint
+  and render the richer vocabulary on the canvas: node types (agent/process/decision-
+  diamond/loop-container/output), edge types (flow/fanout/merge/optional-dashed/
+  loop-back), **multiplicity badge** (`×N` / `1..N`), phase/loop containers, via **elkjs**
+  layered layout (execution keeps the hand-rolled horizontal lanes). Wire it as the Plan
+  view's AST mode (the meta-only P0 plan stays the run-free fallback). Acceptance:
+  plan-research renders its fan-out, refine-plan its loop, observed in a browser
+  (Playwright); `tsc`/`lint`/`build` green. Design doc §3.
 - [ ] **P2 — Execution overlay.** `buildOverlay` (label-prefix + phaseIndex 3-way bind);
   per-run plan from the persisted script; Plan⟷Execution morph; status-painted shared
   layout; folded↔unrolled loop mode switch. Design doc §6.
