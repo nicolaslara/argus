@@ -8,9 +8,12 @@ observed in a browser; reads well at 1 agent and at the 14-agent run.
 
 ## Tasks (draft)
 
-- [ ] **M0 — Scaffold the app** per the R5 stack (frontend + local backend, dev
-  server, typecheck/lint/test wired). `tsc --noEmit` + build green; empty app
-  loads fullscreen.
+- [x] **M0 — Scaffold the app** — DONE 2026-06-04. 4-package npm-workspaces monorepo
+  (`packages/{contract,adapter}`, `apps/{server,web}`); React 19 + Vite 7 +
+  `@xyflow/react` v12; Node server binds 127.0.0.1 only + Host/Origin allowlist +
+  per-launch token (`/health` open, `/api`+`/stream` token-gated). `tsc --noEmit`,
+  eslint, vitest (4 tests), and `vite build` all green; 0 audit vulns; empty app
+  loads fullscreen (evidence: `.argus/screenshots/argus-m0-empty-shell.png`).
 - [ ] **M1 — Adapter v0.** Read one `wf_*.json` → normalized run model. Unit-tested
   against a captured `modal-rust` journal (incl. unknown-field tolerance).
 - [ ] **M2 — Discovery.** Given a local project path, derive the slug, list its

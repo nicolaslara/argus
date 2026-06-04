@@ -1,0 +1,30 @@
+{
+  "name": "argus",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "lint": "eslint .",
+    "build": "npm run build --workspace @argus/web",
+    "dev": "npm run dev --workspace @argus/web",
+    "dev:server": "npm run dev --workspace @argus/server",
+    "dev:web": "npm run dev --workspace @argus/web"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.18.0",
+    "@types/node": "^24.0.0",
+    "eslint": "^9.18.0",
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.20.0",
+    "vitest": "^4.1.8"
+  }
+}

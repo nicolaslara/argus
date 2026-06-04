@@ -1,0 +1,71 @@
+:root {
+  --argus-bg: #0b0d10;
+  --argus-fg: #e6e8eb;
+  --argus-dim: #6b7280;
+  --argus-accent: #5b9dff;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--argus-bg);
+  color: var(--argus-fg);
+  font-family:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.argus-app {
+  position: relative;
+  height: 100%;
+  width: 100%;
+}
+
+.argus-app .react-flow {
+  background: var(--argus-bg);
+}
+
+/* Centered empty-state overlay; non-interactive so the canvas stays pannable. */
+.argus-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  pointer-events: none;
+  user-select: none;
+}
+
+.argus-wordmark {
+  font-size: 44px;
+  font-weight: 650;
+  letter-spacing: 0.12em;
+  text-transform: lowercase;
+  color: var(--argus-fg);
+}
+
+.argus-tagline {
+  font-size: 14px;
+  color: var(--argus-dim);
+}
+
+.argus-hint {
+  margin-top: 4px;
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--argus-accent);
+  opacity: 0.7;
+}
