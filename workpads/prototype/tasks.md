@@ -241,6 +241,34 @@ hover.
     `test`/`build` green; a Playwright UI smoke showing an enriched caption. Do NOT block
     the snapshot on generation.
 
+## Design / polish (added 2026-06-04, user-requested)
+
+- [ ] **U1 — Unify the Plan & Execution visual language.** User: the two views "don't
+  look the same" but **should look quite similar** (one is the template, the other an
+  instance of the same graph). **Analyze** the current divergence and converge it:
+  - *Today:* Execution = phase-lane container boxes + `AgentCard` (260×132: state dot,
+    mono label, model badge, dur/tok/tools pills, PX caption) on the hand-rolled
+    horizontal lane layout. Plan = no phase containers; small `fan-out`/`merge` process
+    boxes + smaller `plan-agent` cards (220×76: label, `typed`/`×N` chips, PX caption) +
+    decision diamonds + loop containers on the elk DAG.
+  - *Target:* **(a)** one **shared agent-card shell** used by BOTH views — same size,
+    radius, dark bg, kind/state-colored left rail, mono label (ellipsis), 2-line caption,
+    a footer row whose slots differ by view (execution → state + dur/tok/tools; plan →
+    `×N` multiplicity + `typed`/optional) but share typography/colors, so a plan agent and
+    an execution agent are recognizably the same component. **(b)** draw **phase grouping
+    in BOTH** — give the Plan-AST view the same phase-lane containers execution uses
+    (group the DAG by `phaseIndex`), so both read as "phase lanes of agent cards"; the
+    plan just adds the structural connectors (fan-out/merge/decision/loop) + multiplicity.
+    **(c)** consistent state/kind palette, chip styles, edge styles. Also fold the
+    cosmetic nits (fitView centering / empty band; card density). Record the unified
+    visual-language spec in `knowledge.md`. Acceptance: side-by-side screenshots of Plan
+    vs Execution for `plan-research` look visibly consistent; tsc/lint/test/build green.
+- [ ] **PX-fit — Better + expandable/fitting captions.** Iterate the PX captions:
+  improve explanation quality, and either **expand** them (hover/click → full text in a
+  popover or the node detail panel) or **guarantee they fit** the node (consistent clamp
+  + sizing). Iterate later; keep in the list. Acceptance: a long caption is fully
+  readable (expand) and never overflows/breaks the card; screenshot.
+
 ## knowledge
 
 Evidence (screenshots, the rendered run, test output) and decisions land in

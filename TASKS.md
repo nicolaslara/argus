@@ -8,17 +8,19 @@ override it. Check items off when a phase is finished, not when pausing mid-phas
 
 ## Active Now
 
-**prototype** is active (2026-06-04). The **research and architecture gates have
-passed**: the research synthesis is in `workpads/research/synthesis.md` and the
-ratified contracts are in `workpads/architecture/boundaries.md` (adapter / run model
-/ API / live path / render-layout / shell / failure modes / format-version). The four
-user-facing decisions are confirmed and recorded in `project.md`.
+**prototype** is active (2026-06-04). Research + architecture gates passed. **Shipped
+& on GitHub (`github.com/nicolaslara/argus`, branch `main`):** M0 scaffold, M1 adapter,
+M2 discovery, M3 execution render (horizontal lanes), P0 meta-plan, P1a AST parser, P1b
+plan-DAG render (article vocabulary, horizontal, elk), PX explanation layer (`claude -p`
+captions, cached). Both **Plan** and **Execution** views render real data with a toggle
++ workflow picker; 95 tests green.
 
-Next: prototype milestones **M0–M5** (gate at M5 — one finished run renders beautifully
-fullscreen on real data). M0 scaffolds the 4-package monorepo (`packages/adapter`,
-`packages/contract`, `apps/server`, `apps/web`) per `boundaries.md` §1 + synthesis
-§2.8. Build against the real fixtures in `.argus/fixtures/` from M1 on. Use
-`argus-implement prototype` to execute milestones with adversarial verification.
+**Remaining (this is the overnight order — see the AFK note below):** U1 (unify the
+Plan/Execution visual language — user-requested), M4 (left toolbar: project + run
+picker), P2 (execution overlay — plan⟷run morph), M5 (UI polish + prototype gate +
+README "Try it"), then inspect M9 (node detail) and live M6 (running detection +
+journal tail) as budget allows. Plus PX-fit (better/expandable captions) and #9
+(generative sub-UIs) tracked in `workpads/prototype/tasks.md`.
 
 ## Workpad Queue
 
@@ -64,3 +66,24 @@ fullscreen on real data). M0 scaffolds the 4-package monorepo (`packages/adapter
   explicit questions rather than guessing (defaults noted in `project.md`).
 - Research and architecture may overlap only when task boundaries are independent
   and findings are recorded before the dependent architecture decision is made.
+
+- **AFK AUTONOMOUS RUN (2026-06-04 night → 2026-06-05 morning).** The user is asleep and
+  authorized iterating through the remaining tasks **without waiting for feedback**:
+  proceed step by step, **commit + push between tasks**, **validate visual work with
+  Playwright screenshots** (saved under gitignored `.argus/screenshots/`), and keep going
+  until the user returns in the morning — then **summarize everything overnight for
+  review**. This **overrides the default "confirm before commit"** for this run (commit +
+  push freely). Still: never log/commit secrets; `.argus/` stays gitignored; read-only
+  toward other projects' `.claude` trees.
+  - **The loop:** launch the next task via `.claude/workflows/implement.js` (or a design
+    pass where analysis is needed) → on completion **verify the gate (tsc/lint/test/build)
+    + screenshot visual work + fix any gaps from the main loop** → commit + push → launch
+    the next. Workflows often finalize-flake on heavy tasks but **leave the work on disk**
+    (esp. they ship components without CSS/wiring) — assemble/fix from the main loop, then
+    verify (see the `workflow-authoring-gotchas` memory).
+  - **Overnight order:** U1 (unify Plan/Execution visual language) → M4 (left toolbar:
+    project + run picker) → P2 (execution overlay) → M5 (polish + prototype gate + README)
+    → inspect M9 (node detail) → live M6 (running detection + journal tail).
+  - **A fresh context (after compaction) should:** read this note + `git log` (recent
+    commits) + `workpads/prototype/{tasks,knowledge}.md` + `workpads/architecture/
+    plan-view-design.md`, find the first unchecked task in the order above, and continue.
