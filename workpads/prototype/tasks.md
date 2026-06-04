@@ -43,8 +43,22 @@ observed in a browser; reads well at 1 agent and at the 14-agent run.
     killed-9, resumed-13) + an unknown-field and a missing-field case; assert the
     14-agent run yields a run-level partial-failure and zero mis-attributed agents;
     add `zod` to `packages/adapter`; `tsc`/`lint`/`test`/`build` all green.
-- [ ] **M2 — Discovery.** Given a local project path, derive the slug, list its
-  sessions + runs (name, status, agentCount, duration, time).
+- [ ] **M2 — Discovery.** Implement `discoverProjects(port, claudeHome)` +
+  `discoverRuns(port, project)` (replace the M1 stubs), per `boundaries.md` §4 — all
+  disk access THROUGH the `FileSystemPort` (the adapter stays node:fs-free). Walk
+  `~/.claude/projects/<slug>/<session>/workflows/wf_*.json`; **recover the
+  authoritative `projectPath` from each run's `scriptPath`** (strip the trailing
+  `.claude/workflows/<file>`) and key/dedup `RunRef`/`ProjectRef` by abs path (when
+  multiple cwds share one slug dir → multiple switcher entries). `discoverRuns` reads
+  **header fields only** (workflowName/status/agentCount/durationMs/startTime/summary
+  + `partialFailure` from `logs[]`) — do NOT walk `workflowProgress`/transcripts.
+  A bogus/missing path → empty-with-reason, never a crash. Also parse
+  `<project>/.claude/workflows/*.js` `meta` for the static workflow listing.
+  Acceptance: deterministic `deriveSlug` tests incl. `/Users/nicolas/.config/ghostty`
+  → `-Users-nicolas--config-ghostty`; `discoverRuns` over a **fake-port synthetic
+  tree** (built from the `.argus/fixtures` files) returns the right status mix and
+  abs-path keys; a bogus-path test returns empty-with-reason; `tsc`/`lint`/`test`/
+  `build` green.
 - [ ] **M3 — Render one run.** Run model → fullscreen phase/agent graph (the chosen
   graph lib + layout). Phases group agents; nodes show label/state/model; the graph
   pans/zooms.
