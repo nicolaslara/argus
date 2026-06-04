@@ -33,3 +33,29 @@ prototype phase. Blocked until the architecture gate passes.
   `vite build` ok (190 modules, ~373 KB JS); `npm audit` 0 vulns. Server smoke:
   `/health`→200 (no token), `/api/ping`→401 (no token)/200 (token), bad `Host`→403,
   listener bound to `127.0.0.1` only.
+
+### M1 (2026-06-04) — adapter + node FS port
+
+- **Built:** `packages/adapter/src/raw.ts` (the only raw-format-aware module: zod
+  `.passthrough()/.catch()` schemas + projection/sanitize/derive helpers) →
+  `parseFinalizedRun(raw, ctx)` (`index.ts`, pure, emit-allowlisted) → `loadRun(port,
+  wfJsonPath, ctx)` reads through the injected port. `apps/server/src/fs-port.ts` is
+  the **read-only** `NodeFileSystemPort` (no write method; `watch` is a minimal
+  `fs.watch` stub — chokidar lands at M6). 38 tests over all 5 fixtures + a port
+  contract test.
+- **Decision — emitted content is shown verbatim; redaction is scoped.** `$bunfs`
+  (Claude's internal cli.js bundle path) must not appear in any **default-rendered**
+  field; it is allowed ONLY in the collapsed `error.internalDetail` (per
+  `boundaries.md` §2.3). `/Users/` and other user paths in previews/logs/args are the
+  user's OWN content shown back locally → **not scrubbed** (capped + text-node
+  rendered). Redaction applies to server **logs** and the collapsed `$bunfs` stack,
+  not to emitted user content. (Resolved two contradictory assertions the M1
+  implementer wrote; the adapter itself was correct per boundaries.)
+- **Process note (see the workflow-authoring-gotchas memory):** `argus-implement`
+  failed 3× on the final `StructuredOutput` call even after hardening — but the
+  **implement agent did the real work on disk** each time. Pragmatic pattern: let the
+  workflow implement, then **verify + fix + commit from the main loop** (run the gate,
+  resolve any issues) rather than chasing the flaky finalization. The Record phase
+  (workpad updates) is being done by hand here for the same reason.
+- **Evidence:** `npm test` → 2 files, 38 passed; `tsc --noEmit`, `eslint`, `vite
+  build` all green.

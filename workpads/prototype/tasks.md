@@ -14,7 +14,11 @@ observed in a browser; reads well at 1 agent and at the 14-agent run.
   per-launch token (`/health` open, `/api`+`/stream` token-gated). `tsc --noEmit`,
   eslint, vitest (4 tests), and `vite build` all green; 0 audit vulns; empty app
   loads fullscreen (evidence: `.argus/screenshots/argus-m0-empty-shell.png`).
-- [ ] **M1 — Adapter v0 + FS port.** Implement `parseFinalizedRun(raw, ctx): RunModel`
+- [x] **M1 — Adapter v0 + FS port** — DONE 2026-06-04 (38 tests green over all 5 real
+  fixtures + a port contract test; tsc/lint/build clean). `packages/adapter/src/raw.ts`
+  (zod schemas + projection helpers) + `parseFinalizedRun` (`index.ts`) + `loadRun`
+  through the port; `apps/server/src/fs-port.ts` (read-only `NodeFileSystemPort`).
+  Implement `parseFinalizedRun(raw, ctx): RunModel`
   in `packages/adapter` per `boundaries.md` §2–§3, plus a `NodeFileSystemPort`
   (`apps/server`) + a port contract test (a `loadRun` that reads one real `wf_*.json`
   through the port). Use zod `.passthrough()/.catch()`; **emit-allowlisted** (project

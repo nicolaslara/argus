@@ -9,6 +9,7 @@
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "dependencies": {
-    "@argus/contract": "*"
+    "@argus/contract": "*",
+    "zod": "^4.4.3"
   }
 }
