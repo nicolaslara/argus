@@ -100,8 +100,25 @@ observed in a browser; reads well at 1 agent and at the 14-agent run.
     14-agent run as crisp vertical phase-lanes (4 lanes, 7/2/4/1) AND a 1-agent run
     renders clean; `tsc`/`lint`/`build` green; a Playwright fullscreen screenshot is
     captured. (Deep visual polish + the gate sign-off are M5 — M3 just renders correctly.)
-- [ ] **M4 — Shell.** Collapsible minimal left toolbar (switch project / pick run);
-  canvas is the focus.
+- [ ] **M4 — Shell (collapsible left toolbar).** A minimal, collapsible left icon-rail
+  (collapsed by default; keeps >90% of the viewport for the canvas) per `boundaries.md`
+  §7 / design §2.7. Contents:
+  - **Project switcher** — list `GET /api/projects` (decoded absolute path as the label,
+    `modal-rust` etc.); selecting one re-scopes the runs + workflows. Replaces the
+    hardcoded `pickProject` (modal-rust default → first).
+  - **Run picker** — for the selected project, list `GET /api/projects/:slug/runs`
+    (name · status icon · agentCount · duration · time, newest first); selecting a run
+    loads it in the Execution view. Today execution auto-selects the richest run — M4
+    lets you pick **any** of them. (The Plan view's in-canvas workflow picker can move
+    into this rail or stay; keep it reachable.)
+  - **Settings** stub (icon only is fine for now).
+  - Lift project/run/workflow selection into shared app state so the Plan⟷Execution
+    toggle keeps the same project/workflow context.
+  - Acceptance: collapse/expand works (canvas stays >90% when collapsed); switching
+    project reloads its runs/workflows; picking a non-default run renders it in
+    Execution; reads well fullscreen; `tsc`/`lint`/`test`/`build` green; Playwright
+    screenshots (expanded + collapsed + a picked non-default run). Render text as text
+    nodes only; no new on-disk reads beyond the existing endpoints.
 - [ ] **M5 — UI smoke + polish.** Render the 14-agent `modal-rust-plan-research`
   run; screenshot/Playwright; pass the UI/UX review lens (reads at a glance,
   legible, beautiful defaults). Update README "Try it".
