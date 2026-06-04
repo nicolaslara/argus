@@ -187,3 +187,69 @@ prototype phase. Blocked until the architecture gate passes.
   centering, label tooltips), and the gate sign-off (M5). M3 proves the render works.
 - **Evidence:** `tsc --noEmit` clean; `eslint` clean; `vitest` 54 passed; `vite build`
   ok (now ~413 KB JS — TanStack Query + render code); 0 console errors on the live run.
+
+### P0 (2026-06-04) — Plan view, meta-only (run-free; review-the-workflow mode)
+
+- **Built (smallest correct change, no new parser / no AST / no acorn):**
+  - **Server:** `handleProjectWorkflows(deps, slug)` in `apps/server/src/routes.ts`,
+    mirroring `handleProjectRuns` — `isValidSegment(slug)` (400 on fail) → resolve the
+    slug to its `ProjectRef(s)` via `discoverProjects` → `discoverWorkflowMetas(port,
+    project.projectPath)` for each → union + dedup by **file basename** → sort by name →
+    `WorkflowMeta[]`. Unknown slug / no workflows dir → `[]` (never 500). Wired in
+    `apps/server/src/index.ts` behind the same token gate as the M3 routes, via the
+    regex `^/api/projects/([^/]+)/workflows$` (decode-guarded, identical pattern to
+    `/runs`). Reuses the shipped `discoverWorkflowMetas` + `parseWorkflowMeta` — **no new
+    format knowledge added.**
+  - **Server test:** `apps/server/src/routes.test.ts` (3 tests, fake in-memory port
+    seeded to reproduce the real tree — a finalized `wf_*.json` whose shape-(1)
+    `scriptPath` recovers `/Users/nicolas/devel/modal-rust` + that root's
+    `.claude/workflows/plan-research.js` + `implement.js`): bad slug `../etc` → **400**;
+    valid slug → `WorkflowMeta[]` incl. `modal-rust-plan-research` with its **4 declared
+    phases** `[Research, Design, Review, Synthesize]`, sorted + deduped; unknown slug →
+    **[]**. Test count: 54 → **57**, all green.
+  - **Web:** `fetchProjectWorkflows(slug)` in `api.ts` (same token-free same-origin
+    `getJson`); a pure `planMetaToGraph(meta)` in **new module** `plan-mapping.ts` that
+    maps `meta.phases` → 1-based vertical `phaseLane` nodes (reusing the **M3
+    vertical-lanes layout** with EMPTY agentIds) + the single synthesized
+    `phase_i→phase_i+1` spine edge (**no agentCard nodes, no edges beyond the spine**);
+    `PhaseLane.tsx` gained an **optional** `subtitle` (from `meta.phases[].detail`,
+    2-line clamp) + `hideAgentCount` slot — both gated so the M3 run render (which
+    passes neither) is **byte-unaffected**; `App.tsx` got a minimal local-state
+    **Plan ⟷ Execution toggle** (Execution = the unchanged M3 14-agent path; Plan =
+    `fetchProjectWorkflows` → auto-select `plan-research`, fallback first →
+    `planMetaToGraph` + the subtitle `PhaseLane`). Text rendered as **text nodes only**
+    (no `dangerouslySetInnerHTML`).
+- **UNCHANGED (verified via `git diff --name-only`):** `packages/adapter`,
+  `packages/contract`, `apps/web/src/mapping.ts` — zero changes. `RunModel` and the
+  M1/M2/M3 adapter+render code paths are untouched. The Execution view renders the M3
+  run byte-identically (re-observed live after a Plan→Execution toggle: 4 lanes 7/2/4/1,
+  `completed` + `partial failure`, `review:red-team` `tok —`).
+- **Backend evidence (manual, real `~/.claude`, server on :4317 token-gated):**
+  `GET /api/projects/-Users-nicolas-devel-modal-rust/workflows` (token) → **10
+  workflows** incl. `modal-rust-plan-research` with phases `[Research, Design, Review,
+  Synthesize]` (others: build-modal-rust-sdk, deploy-path, facade-local-orchestration,
+  harden-image-upload, modal-rust-implement, modal-rust-materialize-workpads,
+  modal-rust-refine-plan, remote-live-resilience, source-upload-remote). **No token →
+  401**; **bad slug `..%2Fetc` → 400 `bad_request`**. Proxied (browser-equivalent)
+  `GET /api/projects/.../workflows` via the Vite proxy → 200.
+- **UI smoke (Playwright, 1440×900 fullscreen, real run):** default Execution view =
+  the M3 14-agent run unchanged; click **Plan** → the run-free declared plan: **4
+  ordered vertical lanes (1 Research / 2 Design / 3 Review / 4 Synthesize)** connected by
+  the phase spine, each with its `meta.phases[].detail` **subtitle** (2-line clamp),
+  header `modal-rust-plan-research · plan · 4 phases · declared`. Reads well at-a-glance.
+  **0 console errors** across the full Plan↔Execution↔Plan cycle. Click **Execution** →
+  the M3 run renders again unchanged. Screenshots:
+  `.argus/screenshots/argus-p0-plan-research-plan.png` (the Plan view) +
+  `.argus/screenshots/argus-p0-execution-toggle-back.png` (the toggle returning to M3).
+- **Privacy check (honored):** the new endpoint reads ONLY `<project>/.claude/
+  workflows/*.js` meta (via `discoverWorkflowMetas` → `port.listDir` + `port.readFile`
+  on `*.js`, then the existing literal-eval `parseWorkflowMeta`) plus the run **headers**
+  `discoverProjects` already reads to recover `projectPath` — **never** transcripts,
+  `workflowProgress`, or `agent-*.jsonl`. Read-only (the port has no write method).
+  No run/transcript content copied off-machine or into logs (coded errors only).
+- **Visual note (deferred to M5 polish, not a P0 blocker):** the agent-free Plan lanes
+  inherit the M3 lane height (one card-row reserved even with 0 agents), so each lane has
+  generous empty space below its subtitle. It reads cleanly fullscreen; a future
+  plan-specific lane-height (header + subtitle only) is a nice-to-have.
+- **Evidence (toolchain green):** `tsc --noEmit` clean; `eslint .` clean; `vitest run`
+  **57 passed** (4 files: 54 prior + 3 P0 route tests); `vite build` ok (415.05 KB JS).

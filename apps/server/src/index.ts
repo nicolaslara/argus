@@ -20,6 +20,7 @@ import { NodeFileSystemPort } from './fs-port.ts';
 import {
   handleProjects,
   handleProjectRuns,
+  handleProjectWorkflows,
   handleRunSnapshot,
   type RouteDeps,
   type RouteResult,
@@ -92,6 +93,14 @@ async function dispatchApi(pathname: string): Promise<RouteResult | null> {
     const slug = decodeSegment(runsMatch[1]!);
     if (slug === null) return { status: 400, body: { error: 'bad_request' } };
     return handleProjectRuns(deps, slug);
+  }
+
+  // GET /api/projects/:slug/workflows (P0: the run-free declared-workflow listing)
+  const workflowsMatch = /^\/api\/projects\/([^/]+)\/workflows$/.exec(pathname);
+  if (workflowsMatch) {
+    const slug = decodeSegment(workflowsMatch[1]!);
+    if (slug === null) return { status: 400, body: { error: 'bad_request' } };
+    return handleProjectWorkflows(deps, slug);
   }
 
   // GET /api/runs/:slug/:session/:runId

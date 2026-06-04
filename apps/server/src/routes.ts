@@ -18,12 +18,13 @@ import { resolve, sep } from 'node:path';
 import {
   discoverProjects,
   discoverRuns,
+  discoverWorkflowMetas,
   loadRun,
   recoverProjectPath,
   type FileSystemPort,
   type AdapterContext,
 } from '@argus/adapter';
-import type { ProjectRef, RunModel, RunRef, RunSummary } from '@argus/contract';
+import type { ProjectRef, RunModel, RunRef, RunSummary, WorkflowMeta } from '@argus/contract';
 
 /**
  * Strict path-segment charset. Slug dirs are `-Users-...` (alnum + dash), session ids
@@ -106,6 +107,37 @@ export async function handleProjectRuns(deps: RouteDeps, slug: string): Promise<
   // Newest first (startTime desc), nulls last — same order discovery uses per-project.
   runs.sort((a, b) => (b.startTime ?? -Infinity) - (a.startTime ?? -Infinity));
   return { status: 200, body: runs };
+}
+
+/**
+ * GET /api/projects/:slug/workflows -> WorkflowMeta[] (the "review-the-workflow"
+ * listing). Mirrors handleProjectRuns: validate the slug (400 on fail), resolve it to
+ * its ProjectRef(s) via discovery, read each project's declared `.claude/workflows/*.js`
+ * meta via discoverWorkflowMetas, union + dedup by file basename, sort by name. Reads
+ * ONLY the static workflow meta — never transcripts, workflowProgress, or agent-*.jsonl.
+ * Empty-with-reason (unknown slug / no workflows dir) -> [], never a 500.
+ */
+export async function handleProjectWorkflows(
+  deps: RouteDeps,
+  slug: string,
+): Promise<RouteResult> {
+  if (!isValidSegment(slug)) return err(400, 'bad_request');
+
+  const projects = await discoverProjects(deps.port, deps.claudeHome);
+  const matching = projects.filter((p) => p.slug === slug);
+  if (matching.length === 0) return { status: 200, body: [] as WorkflowMeta[] };
+
+  // Union the declared workflows of every ProjectRef sharing this slug, deduping by
+  // file basename (the same workflow can surface under multiple recovered cwds).
+  const byFile = new Map<string, WorkflowMeta>();
+  for (const project of matching) {
+    const metas = await discoverWorkflowMetas(deps.port, project.projectPath);
+    for (const meta of metas) {
+      if (!byFile.has(meta.file)) byFile.set(meta.file, meta);
+    }
+  }
+  const workflows = [...byFile.values()].sort((a, b) => a.name.localeCompare(b.name));
+  return { status: 200, body: workflows };
 }
 
 /** GET /api/runs/:slug/:session/:runId -> RunModel snapshot. */

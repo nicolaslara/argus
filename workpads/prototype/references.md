@@ -16,3 +16,17 @@ transcripts for live/inspect. M1 (adapter) and M3 (render) build against these.
 
 > A fresh **live** run still needs capturing before the M7/M8 live gate (capture a
 > `subagents/workflows/wf_<id>/` dir while a workflow is mid-run).
+
+## P0 — Plan view sources (2026-06-04)
+
+- **Real on-disk meta verified:** `/Users/nicolas/devel/modal-rust/.claude/workflows/`
+  holds 10 `*.js` workflow definitions; `plan-research.js` declares
+  `meta.name = 'modal-rust-plan-research'` with `phases: [{title:'Research',...},
+  {title:'Design',...},{title:'Review',...},{title:'Synthesize',...}]` (each with a
+  `detail` string used as the Plan-view subtitle). Confirmed via
+  `GET /api/projects/-Users-nicolas-devel-modal-rust/workflows` against the real
+  `~/.claude` (token-gated server on :4317) → 10 `WorkflowMeta`.
+- **Screenshots (gitignored `.argus/screenshots/`):**
+  `argus-p0-plan-research-plan.png` (the run-free Plan view: 4 declared lanes +
+  subtitles, Playwright 1440×900) and `argus-p0-execution-toggle-back.png` (the
+  Plan→Execution toggle returning to the unchanged M3 14-agent run).

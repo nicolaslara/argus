@@ -119,7 +119,20 @@ one parser; tournament/quarantine vocab = stub until a real run exhibits them; l
 folded in plan / unrolled on overlay; unbounded fan-out = `1..N` chip + sourceExpr on
 hover.
 
-- [ ] **P0 — Plan view, meta-only (run-free).** Deliver the **review-the-workflow**
+- [x] **P0 — Plan view, meta-only (run-free).** DONE 2026-06-04 (57 tests green: 54 +
+  3 P0 route tests; tsc/eslint/build clean; 0 console errors). Server
+  `handleProjectWorkflows` → `GET /api/projects/:slug/workflows` → `WorkflowMeta[]`
+  (token-gated + path-guarded, M3 pattern; reuses `discoverWorkflowMetas` — no new
+  parser/AST/acorn); web `fetchProjectWorkflows` + pure `plan-mapping.ts`
+  (`planMetaToGraph` → vertical lanes + spine only, no agents/no extra edges) +
+  `PhaseLane` optional `subtitle`/`hideAgentCount` (gated → M3 render byte-unchanged) +
+  `App.tsx` Plan⟷Execution toggle. `packages/adapter`, `packages/contract`,
+  `apps/web/src/mapping.ts`, `RunModel` all UNCHANGED. Live: modal-rust → **10
+  workflows** incl. `plan-research`; Plan view renders the 4 declared lanes
+  (Research/Design/Review/Synthesize) + subtitles fullscreen; toggle returns the M3
+  14-agent run unchanged. Screenshots `.argus/screenshots/argus-p0-plan-research-plan.png`
+  + `argus-p0-execution-toggle-back.png`. Details in `knowledge.md` (P0 section).
+  Deliver the **review-the-workflow**
   mode: a run-free plan rendered from a workflow's declared `meta.phases` (already
   parsed via `discoverWorkflowMetas`/`parseWorkflowMeta`, shipped in M2 — no new parser).
   - Server: expose the existing `discoverWorkflowMetas` as `GET /api/projects/:slug/

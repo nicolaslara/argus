@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
   ReactFlow,
   Background,
@@ -9,14 +9,22 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { useQuery } from '@tanstack/react-query';
-import type { ProjectRef, RunSummary } from '@argus/contract';
-import { fetchProjects, fetchProjectRuns, fetchRunModel } from './api.ts';
+import type { ProjectRef, RunSummary, WorkflowMeta } from '@argus/contract';
+import {
+  fetchProjects,
+  fetchProjectRuns,
+  fetchProjectWorkflows,
+  fetchRunModel,
+} from './api.ts';
 import { runModelToGraph } from './mapping.ts';
+import { planMetaToGraph } from './plan-mapping.ts';
 import { AgentCardNode } from './nodes/AgentCard.tsx';
 import { PhaseLaneNode } from './nodes/PhaseLane.tsx';
 
 // Stable identity (a fresh object each render would make React Flow warn + re-mount).
 const nodeTypes: NodeTypes = { phaseLane: PhaseLaneNode, agentCard: AgentCardNode };
+
+type ViewMode = 'execution' | 'plan';
 
 /** Dogfood: prefer the modal-rust project; otherwise the first discovered project. */
 function pickProject(projects: ProjectRef[] | undefined): ProjectRef | undefined {
@@ -24,16 +32,25 @@ function pickProject(projects: ProjectRef[] | undefined): ProjectRef | undefined
   return projects.find((p) => p.projectPath.includes('modal-rust')) ?? projects[0];
 }
 
-/** M3 auto-selects the richest run (the 14-agent plan-research) for the first render. */
+/** Execution mode auto-selects the richest run (the 14-agent plan-research run). */
 function pickRun(runs: RunSummary[] | undefined): RunSummary | undefined {
   if (!runs || runs.length === 0) return undefined;
   return [...runs].sort((a, b) => b.agentCount - a.agentCount)[0];
 }
 
+/** Plan mode auto-selects plan-research; otherwise the first declared workflow. */
+function pickWorkflow(workflows: WorkflowMeta[] | undefined): WorkflowMeta | undefined {
+  if (!workflows || workflows.length === 0) return undefined;
+  return workflows.find((w) => w.name.includes('plan-research')) ?? workflows[0];
+}
+
 export function App() {
+  const [view, setView] = useState<ViewMode>('execution');
+
   const projectsQ = useQuery({ queryKey: ['projects'], queryFn: fetchProjects });
   const project = pickProject(projectsQ.data);
 
+  // --- Execution (M3) path — unchanged: list runs, auto-select the 14-agent run. ---
   const runsQ = useQuery({
     queryKey: ['runs', project?.slug],
     queryFn: () => fetchProjectRuns(project!.slug),
@@ -44,17 +61,34 @@ export function App() {
   const runQ = useQuery({
     queryKey: ['run', summary?.ref.slug, summary?.ref.sessionId, summary?.ref.runId],
     queryFn: () => fetchRunModel(summary!.ref),
-    enabled: !!summary,
+    enabled: !!summary && view === 'execution',
   });
 
-  const graph = useMemo(
-    () => (runQ.data ? runModelToGraph(runQ.data) : { nodes: [], edges: [] }),
-    [runQ.data],
-  );
+  // --- Plan (P0) path — run-free: list declared workflows, auto-select plan-research. ---
+  const workflowsQ = useQuery({
+    queryKey: ['workflows', project?.slug],
+    queryFn: () => fetchProjectWorkflows(project!.slug),
+    enabled: !!project && view === 'plan',
+  });
+  const workflow = pickWorkflow(workflowsQ.data);
 
   const run = runQ.data;
-  const error = projectsQ.error ?? runsQ.error ?? runQ.error;
-  const loading = projectsQ.isPending || (!!project && runsQ.isPending) || (!!summary && runQ.isPending);
+  const graph = useMemo(() => {
+    if (view === 'plan') {
+      return workflow ? planMetaToGraph(workflow) : { nodes: [], edges: [] };
+    }
+    return run ? runModelToGraph(run) : { nodes: [], edges: [] };
+  }, [view, run, workflow]);
+
+  const error =
+    projectsQ.error ?? runsQ.error ?? runQ.error ?? workflowsQ.error;
+  const loading =
+    projectsQ.isPending ||
+    (!!project && view === 'execution' && runsQ.isPending) ||
+    (!!summary && view === 'execution' && runQ.isPending) ||
+    (!!project && view === 'plan' && workflowsQ.isPending);
+
+  const hasContent = view === 'plan' ? !!workflow : !!run;
 
   return (
     <div className="argus-app">
@@ -76,7 +110,35 @@ export function App() {
         <Controls showInteractive={false} />
       </ReactFlow>
 
-      {run ? (
+      {/* Minimal Plan ⟷ Execution view toggle (this view IS review-the-workflow mode). */}
+      <div className="view-toggle" role="group" aria-label="view mode">
+        <button
+          type="button"
+          className={`view-toggle-btn${view === 'plan' ? ' is-active' : ''}`}
+          aria-pressed={view === 'plan'}
+          onClick={() => setView('plan')}
+        >
+          Plan
+        </button>
+        <button
+          type="button"
+          className={`view-toggle-btn${view === 'execution' ? ' is-active' : ''}`}
+          aria-pressed={view === 'execution'}
+          onClick={() => setView('execution')}
+        >
+          Execution
+        </button>
+      </div>
+
+      {view === 'plan' && workflow ? (
+        <div className="run-header">
+          <span className="run-header-name">{workflow.name}</span>
+          <span className="run-badge run-badge-plan">plan</span>
+          <span className="run-header-meta">
+            {workflow.phases.length} {workflow.phases.length === 1 ? 'phase' : 'phases'} · declared
+          </span>
+        </div>
+      ) : view === 'execution' && run ? (
         <div className="run-header">
           <span className="run-header-name">{run.workflowName}</span>
           <span className={`run-badge run-badge-${run.status}`}>{run.status}</span>
@@ -90,7 +152,9 @@ export function App() {
             </span>
           ) : null}
         </div>
-      ) : (
+      ) : null}
+
+      {!hasContent ? (
         <div className="argus-empty" role="status">
           <div className="argus-wordmark">argus</div>
           <div className="argus-tagline">Claude Code workflow visualizer</div>
@@ -99,10 +163,12 @@ export function App() {
               ? 'could not reach the local server — start it with `npm run dev:server`'
               : loading
                 ? 'loading…'
-                : 'no runs found in ~/.claude'}
+                : view === 'plan'
+                  ? 'no declared workflows found for this project'
+                  : 'no runs found in ~/.claude'}
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

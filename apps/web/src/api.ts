@@ -6,7 +6,7 @@
 // injected server-side by the Vite proxy, so there is no token handling here and
 // the browser stays token-free.
 
-import type { ProjectRef, RunModel, RunRef, RunSummary } from '@argus/contract';
+import type { ProjectRef, RunModel, RunRef, RunSummary, WorkflowMeta } from '@argus/contract';
 
 class ApiError extends Error {
   status: number;
@@ -35,6 +35,11 @@ export function fetchProjects(): Promise<ProjectRef[]> {
 
 export function fetchProjectRuns(slug: string): Promise<RunSummary[]> {
   return getJson<RunSummary[]>(`/api/projects/${encodeURIComponent(slug)}/runs`);
+}
+
+/** P0: the run-free declared-workflow listing for a project (the "review-the-workflow" view). */
+export function fetchProjectWorkflows(slug: string): Promise<WorkflowMeta[]> {
+  return getJson<WorkflowMeta[]>(`/api/projects/${encodeURIComponent(slug)}/workflows`);
 }
 
 export function fetchRunModel(ref: Pick<RunRef, 'slug' | 'sessionId' | 'runId'>): Promise<RunModel> {
