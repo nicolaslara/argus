@@ -69,6 +69,20 @@ export function fetchRunModel(ref: Pick<RunRef, 'slug' | 'sessionId' | 'runId'>)
 }
 
 /**
+ * L2 (live): the PARTIAL live snapshot of an IN-PROGRESS run, built from its
+ * `journal.jsonl` (no finalized `wf_<id>.json` yet). Returns a RunModel with
+ * `incomplete:true` / `status:'running'`; labels/phases are recovered from the persisted
+ * script when statically resolvable, else agents are anonymous. The caller polls this
+ * while the run is `running`, then switches to {@link fetchRunModel} once it finalizes.
+ */
+export function fetchRunLive(ref: Pick<RunRef, 'slug' | 'sessionId' | 'runId'>): Promise<RunModel> {
+  const { slug, sessionId, runId } = ref;
+  return getJson<RunModel>(
+    `/api/runs/${encodeURIComponent(slug)}/${encodeURIComponent(sessionId)}/${encodeURIComponent(runId)}/live`,
+  );
+}
+
+/**
  * P2: the PER-RUN plan DAG — parsed from the EXACT script a run executed (its persisted
  * `<session>/workflows/scripts/<name>-wf_<id>.js`), NOT the project `.claude/workflows/*.js`
  * (which may have drifted). Returns the adapter's PlanModel. A run with no persisted

@@ -129,7 +129,30 @@ body {
 .run-badge-completed { color: #3fb950; }
 .run-badge-failed { color: #f85149; }
 .run-badge-killed { color: #d29922; }
-.run-badge-running { color: #5b9dff; }
+.run-badge-running {
+  color: #5b9dff;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+/* L2 live: a pulsing dot marks an in-progress (journal-only) run, in the header + rail. */
+.run-badge-running::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: argus-pulse 1.2s ease-in-out infinite;
+}
+@keyframes argus-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.2;
+  }
+}
 .run-badge-partial { color: #d29922; border-style: dashed; }
 .run-badge-plan { color: #a371f7; }
 

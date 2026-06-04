@@ -23,12 +23,21 @@ lost/duplicated nodes and clean reconnect.
   (F4) else anonymous. Proven by an incremental journal-replay test on the real probe run.
   **Remaining:** server `/live` endpoint (`loadLiveModel`) + a `chokidar` watch re-reading
   on append. Transcripts are NOT reliable live (F5) — the journal `result` is the content.
-- [ ] **L3 — Push channel.** Stream deltas to the client (transport per R2/R5);
-  snapshot-on-connect + incremental thereafter.
-- [ ] **L4 — Live re-layout.** Apply deltas to the graph without jarring jumps;
-  show queued→running→done state transitions and the narrator `log()` lines.
+- [~] **L3 — Push channel.** FIRST CUT DONE 2026-06-05 via POLLING (a valid
+  snapshot-on-connect transport): `GET /api/runs/:slug/:session/:runId/live` serves the
+  partial model; the web fetches it for a `running` run and re-polls every 1.5 s, and
+  re-polls the run list every 2.5 s so a running→completed flip is noticed. **Remaining:**
+  the SSE/chokidar delta stream (incremental, not full re-fetch) per boundaries §4.
+- [~] **L4 — Live re-layout.** STATE-TRANSITIONS DONE 2026-06-05: the execution view
+  renders the live model with queued→running→done agent colors (running = blue) and a
+  pulsing "● running" run badge; verified on a frozen mid-run fixture (3 done + 1 running,
+  screenshot `.argus/screenshots/m6-live-execution.png`). **Remaining:** smooth re-layout
+  without jarring jumps as the node set grows; surface the narrator `log()` lines (the
+  journal has none — F2 — so logs come from the finalized model or a future event).
 - [ ] **L5 — Finalize reconciliation.** When `wf_*.json` lands, reconcile the live
-  model with the authoritative finalized one.
+  model with the authoritative finalized one. PARTIAL: the run list de-dups a finalized
+  runId over its running entry, and the web swaps `/live`→finalized `/run` once the status
+  flips. Remaining: a no-jump in-place swap keyed by agentId (vs. the current refetch).
 - [ ] **L6 — Robustness.** Reconnect after a dropped channel; handle killed/failed
   mid-run; replay a captured journal in a test.
 

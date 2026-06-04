@@ -17,6 +17,7 @@ import {
   fetchProjectWorkflows,
   fetchProjectPlan,
   fetchRunModel,
+  fetchRunLive,
   fetchRunPlan,
 } from './api.ts';
 import { runModelToGraph, type GraphResult } from './mapping.ts';
@@ -111,17 +112,26 @@ export function App() {
     queryKey: ['runs', project?.slug],
     queryFn: () => fetchProjectRuns(project!.slug),
     enabled: !!project,
+    // L1: while ANY run is in-progress, poll the list so a running→completed transition is
+    // noticed (which flips the run model from the live snapshot to the finalized one).
+    refetchInterval: (q) => (q.state.data?.some((r) => r.status === 'running') ? 2500 : false),
   });
   const runs = useMemo(() => runsQ.data ?? [], [runsQ.data]);
   const summary =
     runs.find((r) => r.ref.runId === selectedRunId) ?? defaultRun(runs);
 
+  // L2: a `running` run has no finalized wf_*.json yet — fetch its PARTIAL live snapshot
+  // (built from the journal) and POLL it; once it finalizes (summary.status flips via the
+  // runsQ poll) we fall back to the authoritative finalized snapshot and stop polling.
+  const isLiveRun = summary?.status === 'running';
+
   // The run model is needed by BOTH the execution view AND the P2 overlay (to build the
   // binding). Gate it on either.
   const runQ = useQuery({
-    queryKey: ['run', summary?.ref.slug, summary?.ref.sessionId, summary?.ref.runId],
-    queryFn: () => fetchRunModel(summary!.ref),
+    queryKey: ['run', summary?.ref.slug, summary?.ref.sessionId, summary?.ref.runId, isLiveRun ? 'live' : 'final'],
+    queryFn: () => (isLiveRun ? fetchRunLive(summary!.ref) : fetchRunModel(summary!.ref)),
     enabled: !!summary && (view === 'execution' || view === 'overlay'),
+    refetchInterval: isLiveRun ? 1500 : false,
   });
 
   // --- Workflows for the selected project (run-free Plan source). Loaded whenever a
