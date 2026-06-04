@@ -3,6 +3,7 @@ import {
   ExplanationEngine,
   hashArtifact,
   cleanCaption,
+  parsePattern,
   buildPrompt,
   planArtifacts,
   runArtifacts,
@@ -88,13 +89,49 @@ describe('cleanCaption', () => {
   });
 });
 
+describe('cleanCaption — caption: prefix', () => {
+  it('strips a leading "caption:" label from the 2-line format', () => {
+    expect(cleanCaption('caption: Fans out a verifier per claim\npattern: fan-out worker')).toBe(
+      'Fans out a verifier per claim',
+    );
+  });
+});
+
+describe('parsePattern', () => {
+  it('extracts + normalizes the pattern line (lowercase, de-quoted, capped)', () => {
+    expect(parsePattern('Fans out verifiers\npattern: Fan-Out Worker')).toBe('fan-out worker');
+    expect(parsePattern('cap\npattern: "adversarial review."')).toBe('adversarial review');
+    expect(parsePattern('cap\npattern: one two three four five six')).toBe('one two three four');
+  });
+  it('returns null for none / missing / empty', () => {
+    expect(parsePattern('just a caption, no pattern line')).toBeNull();
+    expect(parsePattern('cap\npattern: none')).toBeNull();
+    expect(parsePattern(null)).toBeNull();
+  });
+});
+
 describe('buildPrompt', () => {
-  it('grounds the prompt in BOTH identity and artifact evidence', () => {
+  it('grounds the prompt in BOTH identity and artifact evidence, and requests a pattern', () => {
     const p = buildPrompt(ARTIFACT);
     expect(p).toContain('node kind: agent');
     expect(p).toContain('label: research:a');
     expect(p).toContain('phase: Research');
     expect(p).toContain('multiplicity: fixed'); // the artifact evidence
+    expect(p).toContain('pattern:'); // PX-fit: asks for a structural pattern name
+  });
+});
+
+describe('ExplanationEngine — parses + caches the pattern (PX-fit)', () => {
+  it('a 2-line reply yields caption + pattern, both cached', async () => {
+    const { io, store } = memCache();
+    const runner: ClaudeRunner = async () => 'Fans out a verifier per claim\npattern: fan-out worker';
+    const engine = new ExplanationEngine({ cacheDir: '/unused', runner, cacheIO: io });
+    engine.warm('plan:s:f.js', [ARTIFACT]);
+    await settle(engine, 'plan:s:f.js');
+    const e = engine.batch('plan:s:f.js').explanations[0]!;
+    expect(e).toMatchObject({ caption: 'Fans out a verifier per claim', pattern: 'fan-out worker', source: 'llm' });
+    // the pattern is persisted to the cache (reload is a hit with the pattern).
+    expect([...store.values()][0]).toMatchObject({ pattern: 'fan-out worker' });
   });
 });
 

@@ -375,9 +375,13 @@ hover.
   `patternName` (overlayExplanations stamps captionSource/captionPattern onto node.data).
   Verified on the modal-rust 14-agent run (all 14 captions llm-ready, cached) — screenshot
   `.argus/screenshots/pxfit-detail-explanation.png`, 0 console errors.
-  **Remaining (future iterate):** explanation QUALITY — the `claude -p` prompt in
-  explain.ts could give richer, pattern-named captions (e.g. "fan-out verifier"); most
-  current captions are still the label-echo baseline-quality even when llm-sourced.
+  **Quality (DONE 2026-06-05):** the `claude -p` prompt now asks for the node's ROLE
+  (not a label restatement) + a 2nd line `pattern: <2-4 words>`; `parsePattern` extracts
+  it, it's cached, and the panel's pattern chip populates. `PROMPT_VERSION` → `px-v2`
+  busts the old cache; regenerating the 14-agent run yields e.g. pattern "primary-source
+  research" + caption "Maps modal-rs SDK capabilities and fallback gaps" (vs the old echo
+  "Survey modal-rs Rust SDK surface…"). Screenshot `.argus/screenshots/pxfit-pattern-caption.png`.
+  This task is effectively complete; further caption-prompt tuning is open-ended polish.
 
 ## knowledge
 
