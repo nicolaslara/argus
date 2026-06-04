@@ -29,9 +29,14 @@ tokens/tools/timing).
     contracts unchanged (panel reads existing data).
 - [ ] **I2 — Agent transcript.** Render `agent-<agentId>.jsonl` (user/assistant/
   tool messages) readably; link tool calls to `tool-results/*.txt` where present.
-- [ ] **I3 — Run structure navigation.** Navigate phases, pipeline stages, and
-  parallel groups; surface the `logs[]` narrator timeline and the persisted script
-  source.
+- [~] **I3 — Run structure navigation.** LOGS TIMELINE DONE 2026-06-05. A run-overview
+  panel (clicking the run-header name; node selection takes precedence) surfaces run
+  totals (status/agents/phases/model/duration/started), the sanitized run `error`, the
+  partial-failure line(s), and the **narrator `log()` timeline** as a numbered list with
+  failure lines flagged red — verified on the 14-agent run (5 logs + 1 partial-failure;
+  screenshot `.argus/screenshots/i3-run-overview.png`). **Remaining:** navigate pipeline
+  stages / parallel groups as structure, and the persisted-script "view source" (the
+  `/run/.../plan` source already exists — surface it read-only).
 - [ ] **I4 — Describe-a-workflow (Claude).** Use the Claude API on the script +
   run to generate a plain-language summary of what the workflow did. (First use of
   the Claude API — read-only over local content; privacy stance applies.)

@@ -43,6 +43,7 @@ import {
 } from './nodes/PlanNodes.tsx';
 import { Rail, type RailSection } from './shell/Rail.tsx';
 import { DetailPanel } from './nodes/DetailPanel.tsx';
+import { RunOverviewPanel } from './nodes/RunOverviewPanel.tsx';
 
 // Stable identity (a fresh object each render would make React Flow warn + re-mount).
 // Execution-view types (M3, unchanged) + the P1b Plan-AST types — one shared registry.
@@ -100,6 +101,9 @@ export function App() {
   // I1: the node whose detail panel is open (by id; null = closed). Resolved against the
   // CURRENT graph, so switching view/run/workflow (a new node set) auto-closes a stale panel.
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  // I3: the run-overview panel (logs timeline + run totals), opened from the run-header
+  // name. A node selection takes precedence over it (node detail wins).
+  const [overviewOpen, setOverviewOpen] = useState(false);
 
   const projectsQ = useQuery({ queryKey: ['projects'], queryFn: fetchProjects });
   const projects = projectsQ.data;
@@ -382,8 +386,14 @@ export function App() {
         nodesDraggable={false}
         nodesConnectable={false}
         elementsSelectable={false}
-        onNodeClick={(_, n) => setSelectedNodeId(n.id)}
-        onPaneClick={() => setSelectedNodeId(null)}
+        onNodeClick={(_, n) => {
+          setSelectedNodeId(n.id);
+          setOverviewOpen(false); // node detail takes precedence over the run overview
+        }}
+        onPaneClick={() => {
+          setSelectedNodeId(null);
+          setOverviewOpen(false);
+        }}
       >
         <Background variant={BackgroundVariant.Dots} gap={24} size={1} />
         <MiniMap pannable zoomable />
@@ -490,7 +500,14 @@ export function App() {
         </div>
       ) : view === 'overlay' && run ? (
         <div className="run-header">
-          <span className="run-header-name">{run.workflowName}</span>
+          <button
+            type="button"
+            className="run-header-name run-header-name-btn"
+            onClick={() => setOverviewOpen((v) => !v)}
+            title="run overview — narrator log timeline + totals"
+          >
+            {run.workflowName}
+          </button>
           <span className="run-badge run-badge-plan">morph</span>
           <span className={`run-badge run-badge-${run.status}`}>{run.status}</span>
           <span className="run-header-meta">
@@ -508,7 +525,14 @@ export function App() {
         </div>
       ) : view === 'execution' && run ? (
         <div className="run-header">
-          <span className="run-header-name">{run.workflowName}</span>
+          <button
+            type="button"
+            className="run-header-name run-header-name-btn"
+            onClick={() => setOverviewOpen((v) => !v)}
+            title="run overview — narrator log timeline + totals"
+          >
+            {run.workflowName}
+          </button>
           <span className={`run-badge run-badge-${run.status}`}>{run.status}</span>
           <span className="run-header-meta">
             {run.agents.length} {run.agents.length === 1 ? 'agent' : 'agents'} · {run.phases.length}{' '}
@@ -552,6 +576,10 @@ export function App() {
 
       {/* I1: node detail panel (right side), filled instantly from the clicked node's data. */}
       <DetailPanel node={selectedNode} onClose={() => setSelectedNodeId(null)} />
+      {/* I3: run overview (logs timeline) — only when no node is selected (node wins). */}
+      {!selectedNode && overviewOpen ? (
+        <RunOverviewPanel run={run ?? null} onClose={() => setOverviewOpen(false)} />
+      ) : null}
     </div>
   );
 }

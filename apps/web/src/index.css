@@ -91,6 +91,21 @@ body {
   font-weight: 600;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
+/* I3: the run name doubles as the run-overview trigger (pointer-events restored). */
+.run-header-name-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--argus-fg);
+  font-size: inherit;
+  padding: 0;
+  cursor: pointer;
+  pointer-events: auto;
+  border-bottom: 1px dotted transparent;
+}
+.run-header-name-btn:hover {
+  border-bottom-color: var(--argus-dim);
+}
 /* Plan-view workflow picker (pointer-events restored; run-header is otherwise inert). */
 .wf-picker {
   pointer-events: auto;
@@ -1030,6 +1045,32 @@ body {
   border: 1px solid currentColor;
   border-radius: 999px;
   padding: 0 6px;
+}
+/* I3: run-overview narrator log timeline — a numbered list of log() lines, failures red. */
+.detail-log-list {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.detail-log {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--argus-fg);
+  word-break: break-word;
+}
+.detail-log-fail {
+  color: #f85149;
+}
+div.detail-log-fail {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.45;
+  background: rgba(248, 81, 73, 0.08);
+  border: 1px solid rgba(248, 81, 73, 0.3);
+  border-radius: 6px;
+  padding: 6px 8px;
 }
 .detail-pre {
   margin: 0;
