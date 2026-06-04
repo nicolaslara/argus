@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ReactFlow,
   Background,
@@ -9,22 +9,45 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { useQuery } from '@tanstack/react-query';
-import type { ProjectRef, RunSummary, WorkflowMeta } from '@argus/contract';
+import type { PlanModel, ProjectRef, RunSummary, WorkflowMeta } from '@argus/contract';
 import {
   fetchProjects,
   fetchProjectRuns,
   fetchProjectWorkflows,
+  fetchProjectPlan,
   fetchRunModel,
 } from './api.ts';
-import { runModelToGraph } from './mapping.ts';
+import { runModelToGraph, type GraphResult } from './mapping.ts';
 import { planMetaToGraph } from './plan-mapping.ts';
+import { planModelToGraph } from './plan-model-mapping.ts';
+import { loadElkLayout } from './layout/index.ts';
 import { AgentCardNode } from './nodes/AgentCard.tsx';
 import { PhaseLaneNode } from './nodes/PhaseLane.tsx';
+import {
+  PlanAgentNode,
+  PlanProcessNode,
+  DecisionDiamond,
+  LoopContainer,
+  OutputTerminal,
+  UnparsedPlaceholder,
+} from './nodes/PlanNodes.tsx';
 
 // Stable identity (a fresh object each render would make React Flow warn + re-mount).
-const nodeTypes: NodeTypes = { phaseLane: PhaseLaneNode, agentCard: AgentCardNode };
+// Execution-view types (M3, unchanged) + the P1b Plan-AST types — one shared registry.
+const nodeTypes: NodeTypes = {
+  phaseLane: PhaseLaneNode,
+  agentCard: AgentCardNode,
+  planAgent: PlanAgentNode,
+  planProcess: PlanProcessNode,
+  planDecision: DecisionDiamond,
+  planLoop: LoopContainer,
+  planOutput: OutputTerminal,
+  planUnparsed: UnparsedPlaceholder,
+};
 
 type ViewMode = 'execution' | 'plan';
+
+const EMPTY_GRAPH: GraphResult = { nodes: [], edges: [] };
 
 /** Dogfood: prefer the modal-rust project; otherwise the first discovered project. */
 function pickProject(projects: ProjectRef[] | undefined): ProjectRef | undefined {
@@ -50,7 +73,7 @@ export function App() {
   const projectsQ = useQuery({ queryKey: ['projects'], queryFn: fetchProjects });
   const project = pickProject(projectsQ.data);
 
-  // --- Execution (M3) path — unchanged: list runs, auto-select the 14-agent run. ---
+  // --- Execution (M3) path — UNCHANGED: list runs, auto-select the 14-agent run. ---
   const runsQ = useQuery({
     queryKey: ['runs', project?.slug],
     queryFn: () => fetchProjectRuns(project!.slug),
@@ -64,7 +87,7 @@ export function App() {
     enabled: !!summary && view === 'execution',
   });
 
-  // --- Plan (P0) path — run-free: list declared workflows, auto-select plan-research. ---
+  // --- Plan path — run-free: list declared workflows, auto-select plan-research. ---
   const workflowsQ = useQuery({
     queryKey: ['workflows', project?.slug],
     queryFn: () => fetchProjectWorkflows(project!.slug),
@@ -75,16 +98,64 @@ export function App() {
   const workflow =
     workflows.find((w) => w.name === selectedWorkflow) ?? pickWorkflow(workflowsQ.data);
 
-  const run = runQ.data;
-  const graph = useMemo(() => {
-    if (view === 'plan') {
-      return workflow ? planMetaToGraph(workflow) : { nodes: [], edges: [] };
-    }
-    return run ? runModelToGraph(run) : { nodes: [], edges: [] };
-  }, [view, run, workflow]);
+  // P1b: the rich PlanModel for the selected workflow (the AST plan over /plan).
+  const planQ = useQuery({
+    queryKey: ['plan', project?.slug, workflow?.file],
+    queryFn: () => fetchProjectPlan(project!.slug, workflow!.file),
+    enabled: !!project && view === 'plan' && !!workflow,
+  });
+  const plan = planQ.data;
 
-  const error =
-    projectsQ.error ?? runsQ.error ?? runQ.error ?? workflowsQ.error;
+  // --- AST-mode layout: when the PlanModel is rich (static-source), lay it out with
+  //     elkjs (lazily loaded). The P0 meta-only planMetaToGraph is the RUN-FREE FALLBACK
+  //     used on derivedFrom==='meta-only' OR any /plan fetch error. ---
+  const useAstMode = !!plan && plan.derivedFrom === 'static-source' && plan.nodes.length > 0;
+
+  const [astGraph, setAstGraph] = useState<GraphResult>(EMPTY_GRAPH);
+  const [astError, setAstError] = useState(false);
+  useEffect(() => {
+    if (view !== 'plan' || !useAstMode || !plan) {
+      setAstGraph(EMPTY_GRAPH);
+      setAstError(false);
+      return;
+    }
+    let cancelled = false;
+    setAstError(false);
+    (async () => {
+      try {
+        const elk = await loadElkLayout();
+        const graph = await planModelToGraph(plan as PlanModel, elk);
+        if (!cancelled) setAstGraph(graph);
+      } catch {
+        // Layout/elk failure → fall back to the meta-only graph (never a blank canvas).
+        if (!cancelled) {
+          setAstGraph(EMPTY_GRAPH);
+          setAstError(true);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [view, useAstMode, plan]);
+
+  const run = runQ.data;
+  const metaGraph = useMemo(() => {
+    if (view !== 'plan') return EMPTY_GRAPH;
+    return workflow ? planMetaToGraph(workflow) : EMPTY_GRAPH;
+  }, [view, workflow]);
+
+  const execGraph = useMemo(() => {
+    if (view !== 'execution') return EMPTY_GRAPH;
+    return run ? runModelToGraph(run) : EMPTY_GRAPH;
+  }, [view, run]);
+
+  // The AST plan is used when available AND elk succeeded; else the meta-only fallback.
+  const planIsAst = view === 'plan' && useAstMode && !astError && astGraph.nodes.length > 0;
+  const graph: GraphResult =
+    view === 'execution' ? execGraph : planIsAst ? astGraph : metaGraph;
+
+  const error = projectsQ.error ?? runsQ.error ?? runQ.error ?? workflowsQ.error;
   const loading =
     projectsQ.isPending ||
     (!!project && view === 'execution' && runsQ.isPending) ||
@@ -92,6 +163,10 @@ export function App() {
     (!!project && view === 'plan' && workflowsQ.isPending);
 
   const hasContent = view === 'plan' ? !!workflow : !!run;
+
+  // Header: in AST mode show the real node/edge counts + coverage + the derivation tag.
+  const planNodeCount = plan?.nodes.length ?? 0;
+  const planDerived = planIsAst ? 'AST' : 'declared';
 
   return (
     <div className="argus-app">
@@ -153,7 +228,9 @@ export function App() {
           )}
           <span className="run-badge run-badge-plan">plan</span>
           <span className="run-header-meta">
-            {workflow.phases.length} {workflow.phases.length === 1 ? 'phase' : 'phases'} · declared
+            {planIsAst
+              ? `${planNodeCount} ${planNodeCount === 1 ? 'node' : 'nodes'} · ${planDerived}`
+              : `${workflow.phases.length} ${workflow.phases.length === 1 ? 'phase' : 'phases'} · declared`}
           </span>
         </div>
       ) : view === 'execution' && run ? (

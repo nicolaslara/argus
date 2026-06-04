@@ -161,7 +161,17 @@ hover.
   scripts:** plan-research → fan-out ×7/×2/×4 + merges (multiplicity read from the static
   `RESEARCH`/`LENSES` arrays); refine-plan → loop node + loop-back edge + decision;
   implement → linear chain + decision + optional early-exit. Parser is excellent.
-- [ ] **P1b — Plan-DAG web render.** Consume the `PlanModel` over the `/plan` endpoint
+- [x] **P1b — Plan-DAG web render** — DONE 2026-06-04. The PlanModel renders as the
+  article's vocabulary, **horizontal** (elk direction RIGHT): fan-out/merge process
+  nodes, agent cards with `${…}` template holes + `typed` chips + subtitles, `×N`
+  multiplicity chips + a stacked-card silhouette for fanned templates, **decision
+  diamonds**, dashed **loop containers** (`↻ loop · max N`), output pills. Verified on
+  real scripts (Playwright, 0 console errors): plan-research → fan-out ×7/×2/×4 + merges;
+  refine-plan → loop container + decision + fan-out ×4. Built by the workflow; the main
+  loop fixed the render (added all plan-node CSS — components shipped without it; elk
+  DOWN→RIGHT; plan handles Top/Bottom→Left/Right). Screenshots in `.argus/screenshots/`
+  (argus-p1b-plan-research-ast2.png, argus-p1b-refine-plan-loop.png).
+  Consume the `PlanModel` over the `/plan` endpoint
   and render the richer vocabulary on the canvas: node types (agent/process/decision-
   diamond/loop-container/output), edge types (flow/fanout/merge/optional-dashed/
   loop-back), **multiplicity badge** (`×N` / `1..N`), phase/loop containers, via **elkjs**
