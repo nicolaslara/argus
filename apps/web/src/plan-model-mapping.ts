@@ -3,6 +3,14 @@
 // PURE async function of (PlanModel, elkLayout); no React, no I/O of its own (elk is
 // injected). This is the FIRST time the AST-derived structure is shown to a human.
 //
+// U1 (unify Plan & Execution): the Plan-AST view now draws the SAME phase-lane
+// containers the execution view uses — top-level nodes are grouped by PlanNode.phaseRef
+// into PhaseLane group nodes (reusing PhaseLane.tsx with the PlanLane.detail subtitle +
+// hideAgentCount). So BOTH views read as 'phase lanes of agent cards'; the plan view
+// additionally draws the structural connectors (fan-out / merge / decision / loop) +
+// multiplicity INSIDE those lanes. elk still does the intra-DAG layout; we derive the
+// lane bounding boxes from elk's placements, then reparent the lane members.
+//
 // node kinds map (plan-view-design.md §3.1):
 //   agent     -> planAgent     edge kinds (§3.2) distinguished by DASH / CURVATURE,
 //   process   -> planProcess   never color (saturation is reserved for run state):
@@ -20,12 +28,14 @@ import type {
   DecisionNode,
   LoopNode,
   PlanEdge,
+  PlanLane,
   PlanModel,
   PlanNode,
 } from '@argus/contract';
 import type { GraphResult } from './mapping.ts';
 import type { ElkPlanLayout } from './layout/index.ts';
-import type { PlanLayoutInput, PlanLayoutNodeInput } from './layout/index.ts';
+import type { PlanLayoutInput, PlanLayoutNodeInput, PlanPlacement } from './layout/index.ts';
+import type { PhaseLaneData } from './nodes/PhaseLane.tsx';
 import {
   PLAN_AGENT_W,
   PLAN_AGENT_H,
@@ -45,6 +55,12 @@ import {
 } from './nodes/PlanNodes.tsx';
 
 const EDGE_COLOR = '#475160'; // ONE neutral edge color; kind is carried by dash/curve.
+
+// Phase-lane container insets (mirror the execution lane look in PhaseLane.tsx / index.css).
+const LANE_HEADER_H = 56; // phase index + title row (matches .phase-lane-header)
+const LANE_SUBTITLE_H = 44; // room for the 2-line PlanLane.detail subtitle
+const LANE_PAD_X = 22;
+const LANE_PAD_BOTTOM = 22;
 
 interface KindGeom {
   type: string;
@@ -170,10 +186,22 @@ function edgeStyle(edge: PlanEdge): Pick<Edge, 'type' | 'animated' | 'style' | '
   }
 }
 
+function laneNodeId(index: number): string {
+  return `plan-lane-${index}`;
+}
+
+interface Box {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+
 /**
- * Map a PlanModel onto xyflow nodes/edges using the elk layout. Async (elk is async).
- * The loop container is a real nested compound node: its children carry `parentId` so
- * xyflow nests them, and elk lays the body out inside the container's box.
+ * Map a PlanModel onto xyflow nodes/edges using the elk layout, then GROUP the top-level
+ * nodes into the same phase-lane containers the execution view uses (U1). Async (elk is
+ * async). The loop container remains a real nested compound node: its body children carry
+ * `parentId`; the loop container itself is parented to its phaseRef lane (if any).
  */
 export async function planModelToGraph(plan: PlanModel, elkLayout: ElkPlanLayout): Promise<GraphResult> {
   // Which node ids are loop bodies (→ parented to the loop container)?
@@ -201,56 +229,157 @@ export async function planModelToGraph(plan: PlanModel, elkLayout: ElkPlanLayout
 
   const { placements } = await elkLayout(layoutInput);
 
-  const nodes: Node[] = [];
+  const nodeById = new Map<string, PlanNode>();
+  for (const n of plan.nodes) nodeById.set(n.id, n);
+
+  // ---- Phase-lane grouping (U1) --------------------------------------------------
+  // A node is a LANE MEMBER iff it is TOP-LEVEL (not a loop body) AND has a phaseRef
+  // that resolves to a declared lane. Loop bodies stay parented to their loop; the loop
+  // container itself can be a lane member. Nodes without a phaseRef stay top-level
+  // (defensive — we never invent a lane the model doesn't support).
+  const laneByIndex = new Map<number, PlanLane>();
+  for (const l of plan.lanes) laneByIndex.set(l.index, l);
+
+  const laneMembers = new Map<number, string[]>(); // laneIndex -> top-level member ids
   for (const n of plan.nodes) {
+    if (loopOf.has(n.id)) continue; // a loop body — laid out inside its loop, not a lane
+    if (n.phaseRef == null || !laneByIndex.has(n.phaseRef)) continue;
+    if (!placements.has(n.id)) continue;
+    if (!laneMembers.has(n.phaseRef)) laneMembers.set(n.phaseRef, []);
+    laneMembers.get(n.phaseRef)!.push(n.id);
+  }
+
+  // Compute each populated lane's bounding box (over its members' absolute rects), then
+  // pad: header + subtitle on top, symmetric x-pad, bottom pad.
+  const laneBox = new Map<number, Box & { x: number; y: number; w: number; h: number }>();
+  for (const [idx, ids] of laneMembers) {
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const id of ids) {
+      const p = placements.get(id)!;
+      minX = Math.min(minX, p.x);
+      minY = Math.min(minY, p.y);
+      maxX = Math.max(maxX, p.x + p.width);
+      maxY = Math.max(maxY, p.y + p.height);
+    }
+    const x = minX - LANE_PAD_X;
+    const headerTotal = LANE_HEADER_H + LANE_SUBTITLE_H;
+    const y = minY - headerTotal;
+    const w = maxX - minX + LANE_PAD_X * 2;
+    const h = maxY - minY + headerTotal + LANE_PAD_BOTTOM;
+    laneBox.set(idx, { minX, minY, maxX, maxY, x, y, w, h });
+  }
+
+  const nodes: Node[] = [];
+
+  // 1) Phase-lane group nodes FIRST (xyflow requires parents before children).
+  for (const l of plan.lanes) {
+    const box = laneBox.get(l.index);
+    if (!box) continue; // no members → no lane drawn (never an empty phantom lane)
+    const data: PhaseLaneData = {
+      index: l.index,
+      title: l.title,
+      agentCount: 0,
+      hideAgentCount: true, // plan template: ×N multiplicity lives on the cards, not a count
+      subtitle: l.detail,
+    };
+    nodes.push({
+      id: laneNodeId(l.index),
+      type: 'phaseLane',
+      position: { x: box.x, y: box.y },
+      data,
+      draggable: false,
+      selectable: false,
+      style: { width: box.w, height: box.h },
+    });
+  }
+
+  // 2) Loop containers (group nodes) — parented to their lane when they have one, so the
+  //    nesting is lane > loop > bodies. Absolute or lane-relative depending on parenting.
+  const laneOfTop = new Map<string, number>(); // top-level nodeId -> laneIndex (if a member)
+  for (const [idx, ids] of laneMembers) for (const id of ids) laneOfTop.set(id, idx);
+
+  for (const n of plan.nodes) {
+    if (n.kind !== 'loop') continue;
     const p = placements.get(n.id);
     if (!p) continue;
-    const geom = n.kind === 'loop' ? { type: 'planLoop' } : geomFor(n);
-    const parentId = loopOf.get(n.id);
-    if (parentId) {
-      // Child of a loop container: position is RELATIVE to the container (xyflow parent).
-      const parent = placements.get(parentId);
+    const laneIdx = laneOfTop.get(n.id);
+    const parentId = laneIdx != null ? laneNodeId(laneIdx) : undefined;
+    const rel = parentId ? relTo(p, laneBox.get(laneIdx!)!) : { x: p.x, y: p.y };
+    nodes.push({
+      id: n.id,
+      type: 'planLoop',
+      ...(parentId ? { parentId, extent: 'parent' as const } : {}),
+      position: rel,
+      data: dataFor(n),
+      draggable: false,
+      selectable: false,
+      style: { width: p.width, height: p.height },
+    });
+  }
+
+  // 3) Every non-loop node: a loop body (parented to its loop), a lane member (parented
+  //    to its lane, lane-relative), or an unparented top-level node (absolute).
+  for (const n of plan.nodes) {
+    if (n.kind === 'loop') continue;
+    const p = placements.get(n.id);
+    if (!p) continue;
+    const geom = geomFor(n);
+
+    const loopParent = loopOf.get(n.id);
+    if (loopParent) {
+      // Child of a loop container: position RELATIVE to the loop (xyflow parent).
+      const parent = placements.get(loopParent);
       const rx = parent ? p.x - parent.x : p.x;
       const ry = parent ? p.y - parent.y : p.y;
       nodes.push({
         id: n.id,
         type: geom.type,
-        parentId,
+        parentId: loopParent,
         extent: 'parent',
         position: { x: rx, y: ry },
         data: dataFor(n),
         draggable: false,
         selectable: false,
       });
-    } else if (n.kind === 'loop') {
-      // The loop container group node: absolute, sized by elk.
-      nodes.push({
-        id: n.id,
-        type: 'planLoop',
-        position: { x: p.x, y: p.y },
-        data: dataFor(n),
-        draggable: false,
-        selectable: false,
-        style: { width: p.width, height: p.height },
-      });
-    } else {
+      continue;
+    }
+
+    const laneIdx = laneOfTop.get(n.id);
+    if (laneIdx != null) {
+      // Lane member: position RELATIVE to the lane container.
+      const box = laneBox.get(laneIdx)!;
       nodes.push({
         id: n.id,
         type: geom.type,
-        position: { x: p.x, y: p.y },
+        parentId: laneNodeId(laneIdx),
+        extent: 'parent',
+        position: relTo(p, box),
         data: dataFor(n),
         draggable: false,
         selectable: false,
       });
+      continue;
     }
+
+    // Unparented top-level node (no resolvable phaseRef): absolute placement.
+    nodes.push({
+      id: n.id,
+      type: geom.type,
+      position: { x: p.x, y: p.y },
+      data: dataFor(n),
+      draggable: false,
+      selectable: false,
+    });
   }
 
-  // xyflow requires a group/parent node to appear BEFORE its children in the array.
-  nodes.sort((a, b) => {
-    const aLoop = a.type === 'planLoop' ? 0 : 1;
-    const bLoop = b.type === 'planLoop' ? 0 : 1;
-    return aLoop - bLoop;
-  });
+  // xyflow requires a parent node to appear BEFORE its children: phase lanes, then loop
+  // containers, then leaf nodes. (Lanes are already pushed first; sort stabilizes the
+  // loop-before-its-bodies invariant for the mixed leaf/loop section.)
+  const rank = (t: string | undefined): number => (t === 'phaseLane' ? 0 : t === 'planLoop' ? 1 : 2);
+  nodes.sort((a, b) => rank(a.type) - rank(b.type));
 
   const edges: Edge[] = plan.edges.map((e) => {
     const decision = plan.nodes.find((n) => n.id === e.from && n.kind === 'decision');
@@ -266,4 +395,9 @@ export async function planModelToGraph(plan: PlanModel, elkLayout: ElkPlanLayout
   });
 
   return { nodes, edges };
+}
+
+/** Absolute placement → coordinates relative to a lane's top-left origin. */
+function relTo(p: PlanPlacement, box: { x: number; y: number }): { x: number; y: number } {
+  return { x: p.x - box.x, y: p.y - box.y };
 }

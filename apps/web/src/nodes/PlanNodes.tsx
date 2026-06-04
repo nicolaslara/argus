@@ -22,10 +22,17 @@ import { memo } from 'react';
 import { Handle, Position } from '@xyflow/react';
 import type { Confidence, Multiplicity } from '@argus/contract';
 import { MultiplicityChip, isFanned } from './MultiplicityChip.tsx';
+import {
+  AgentCardShell,
+  CARD_SHELL_WIDTH,
+  CARD_SHELL_HEIGHT_PLAN,
+} from './AgentCardShell.tsx';
 
 // --- shared node geometry (kept in sync with plan-model-mapping.ts) -----------
-export const PLAN_AGENT_W = 220;
-export const PLAN_AGENT_H = 76;
+// The plan agent IS the shared card shell (U1) — same width as the execution card,
+// a slightly shorter height (no metric-pill row).
+export const PLAN_AGENT_W = CARD_SHELL_WIDTH;
+export const PLAN_AGENT_H = CARD_SHELL_HEIGHT_PLAN;
 export const PLAN_PROCESS_W = 132;
 export const PLAN_PROCESS_H = 48;
 export const PLAN_DECISION_SIZE = 116; // the diamond's bounding box (square)
@@ -59,29 +66,44 @@ export interface PlanAgentData {
 
 export const PlanAgentNode = memo(function PlanAgentNode({ data }: { data: PlanAgentData }) {
   const fanned = isFanned(data.multiplicity);
-  return (
-    <div
-      className={`plan-node plan-agent ${confidenceClass(data.confidence)}${data.optional ? ' is-optional' : ''}${fanned ? ' is-fanned' : ''}`}
-    >
-      <Handle type="target" position={Position.Left} style={hidden} />
-      <Handle type="source" position={Position.Right} style={hidden} />
-      {fanned ? <span className="plan-stack-silhouette" aria-hidden="true" /> : null}
-      <MultiplicityChip multiplicity={data.multiplicity} />
-      <div className="plan-agent-head">
-        <span className="plan-agent-label" title={data.labelRaw ?? data.title}>
-          {data.title}
-          {data.labelRaw && data.labelRaw !== data.title ? (
-            <span className="plan-agent-hole">{data.labelRaw.slice(data.title.length)}</span>
-          ) : null}
+  // The PLAN footer: ×N multiplicity + typed / optional chips (vs execution's pills).
+  const footer = (
+    <div className="agent-shell-chips">
+      <MultiplicityChip multiplicity={data.multiplicity} variant="inline" />
+      {data.typed ? (
+        <span className="agent-chip agent-chip-typed" title="StructuredOutput schema declared">
+          typed
         </span>
-        {data.typed ? (
-          <span className="plan-chip plan-chip-typed" title="StructuredOutput schema declared">
-            typed
-          </span>
-        ) : null}
-      </div>
-      {data.subtitle ? <div className="plan-agent-sub">{data.subtitle}</div> : null}
+      ) : null}
+      {data.optional ? (
+        <span className="agent-chip agent-chip-optional" title="conditional (inside a decision branch)">
+          optional
+        </span>
+      ) : null}
     </div>
+  );
+  return (
+    <AgentCardShell
+      label={data.title}
+      labelTitle={data.labelRaw ?? data.title}
+      labelAfter={
+        data.labelRaw && data.labelRaw !== data.title ? (
+          <span className="plan-agent-hole">{data.labelRaw.slice(data.title.length)}</span>
+        ) : null
+      }
+      railColor="var(--argus-accent)"
+      height={CARD_SHELL_HEIGHT_PLAN}
+      className={`agent-shell-plan plan-node plan-agent ${confidenceClass(data.confidence)}${data.optional ? ' is-optional' : ''}${fanned ? ' is-fanned' : ''}`}
+      handles={
+        <>
+          <Handle type="target" position={Position.Left} style={hidden} />
+          <Handle type="source" position={Position.Right} style={hidden} />
+        </>
+      }
+      silhouette={<MultiplicityChip multiplicity={data.multiplicity} variant="corner" />}
+      caption={data.subtitle ? <div className="agent-caption" data-source="baseline">{data.subtitle}</div> : null}
+      footer={footer}
+    />
   );
 });
 

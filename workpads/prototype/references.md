@@ -66,3 +66,31 @@ transcripts for live/inspect. M1 (adapter) and M3 (render) build against these.
   target `.claude` tree, no secret leakage) all hold. Follow-up logged (not a PX
   regression): the horizontal Plan-AST elk layout leaves ~60% of the canvas empty —
   Plan-view layout polish, out of scope for PX.
+
+## U1 — Unify the Plan & Execution visual language (2026-06-04)
+
+- **Shared render surface verified on real modal-rust:** `apps/web/src/nodes/AgentCardShell.tsx`
+  (new shared shell) with `AgentCard.tsx` (exec wrapper) + `PlanNodes.tsx` `PlanAgentNode` (plan
+  wrapper); `plan-model-mapping.ts` groups top-level plan nodes by `PlanNode.phaseRef` into the
+  same `PhaseLane.tsx` containers the execution view uses. Confirmed live against the real
+  `~/.claude` modal-rust project (`plan-research` → 4 lanes Research/Design/Review/Synthesize;
+  `refine-plan` → lane > loop > bodies + decision diamond).
+- **UI-smoke screenshots (gitignored `.argus/screenshots/`):** `argus-u1-execution-14agent.png`
+  (M3 14-agent run unchanged: 4 lanes 7/2/4/1, green state rails, dur/tok/tools pills, `tok`
+  em-dash), `argus-u1-plan-14agent.png` (the same 4 phase lanes with `PlanLane.detail` subtitles
+  + fan-out/merge/×N connectors via the shared shell; also shows the honest residual vertical
+  empty band), and the side-by-side `argus-u1-plan-vs-execution.png`. All Playwright 1440×900,
+  0 console errors across a full Plan↔Execution cycle.
+- **Verifier independent re-run (2026-06-04):** verdict COMPLETE, capability_proven: true.
+  Re-ran tsc/lint/build green + vitest 95/95; confirmed `AgentCardShell` is a genuine single
+  shell (both views thin wrappers, one `.agent-shell` geometry + `.agent-chip` family) and the
+  plan view reuses execution's `PhaseLane` via `phaseRef` grouping (tolerates `phaseRef==null`).
+  Stance 4 + privacy hold: `git diff` shows `packages/adapter`, `packages/contract`,
+  `apps/server`, `apps/web/src/mapping.ts`, `explanations.ts`, `plan-mapping.ts`,
+  `PhaseLane.tsx` byte-unchanged (only render-layer `apps/web/src/` files changed); no
+  node:fs/child_process/writeFile/.claude in web source; screenshots (21:56:54+) post-date the
+  last source edit (`elk.ts` 21:56:36). Reads well fullscreen at the 14-agent and 1-agent
+  (Synthesize) scales; the residual wide/short-DAG empty band is deferred to M5 polish.
+  Two low-severity follow-ups logged in `knowledge.md` (U1 verifier block): a doc overstatement
+  (STATE_COLOR only consumed by `AgentCard.tsx` today; the plan rail uses `--argus-accent`) and
+  the still-unresolved pre-existing `verify-p0-plan.png` repo-root leak (recommend `git rm`).

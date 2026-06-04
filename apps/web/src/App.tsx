@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ReactFlow,
   Background,
@@ -6,6 +6,7 @@ import {
   MiniMap,
   BackgroundVariant,
   type NodeTypes,
+  type ReactFlowInstance,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { useQuery } from '@tanstack/react-query';
@@ -180,6 +181,26 @@ export function App() {
     return baseGraph; // meta-only plan: lanes carry their declared subtitle already
   }, [view, planIsAst, baseGraph, runExplanations, planExplanations]);
 
+  // fitView (U1 cosmetic fix): the `fitView` PROP only fits on mount, so the async
+  // Plan-AST graph (which replaces the meta-only graph after elk resolves) was never
+  // refit — leaving it off-center with the rightmost phase lane clipped. Capture the
+  // instance and refit whenever the graph's node SET changes (a topology swap), keyed by
+  // a cheap signature so caption-only (PX) overlays — which never change ids — do NOT
+  // refit and yank the viewport.
+  const rfRef = useRef<ReactFlowInstance | null>(null);
+  const fitSignature = useMemo(
+    () => `${view}:${graph.nodes.length}:${graph.nodes.map((n) => n.id).join(',')}`,
+    [view, graph.nodes],
+  );
+  useEffect(() => {
+    if (graph.nodes.length === 0) return;
+    const inst = rfRef.current;
+    if (!inst) return;
+    // Defer one frame so React Flow has measured the new nodes before fitting.
+    const raf = requestAnimationFrame(() => inst.fitView({ padding: 0.12, duration: 240 }));
+    return () => cancelAnimationFrame(raf);
+  }, [fitSignature, graph.nodes.length]);
+
   const error = projectsQ.error ?? runsQ.error ?? runQ.error ?? workflowsQ.error;
   const loading =
     projectsQ.isPending ||
@@ -196,12 +217,15 @@ export function App() {
   return (
     <div className="argus-app">
       <ReactFlow
+        onInit={(inst) => {
+          rfRef.current = inst;
+        }}
         nodes={graph.nodes}
         edges={graph.edges}
         nodeTypes={nodeTypes}
         colorMode="dark"
         fitView
-        fitViewOptions={{ padding: 0.18 }}
+        fitViewOptions={{ padding: 0.12 }}
         minZoom={0.1}
         proOptions={{ hideAttribution: true }}
         nodesDraggable={false}

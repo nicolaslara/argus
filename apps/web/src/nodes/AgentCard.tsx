@@ -1,9 +1,11 @@
-// @argus/web — the custom AgentCard node (boundaries.md §7).
+// @argus/web — the execution AgentCard node (boundaries.md §7), now a THIN WRAPPER
+// over the shared AgentCardShell (U1: one card component for Plan & Execution).
 //
-// Renders: a 3 px state-colored left rail, a state dot + mono label, a model badge,
-// and metric pills (duration / tokens / tools). tokens=0 renders as a dimmed em-dash
-// (not "0"): 0-with-tools is activity, not "nothing". On a killed/failed run a
-// `progress` agent is normalized to `interrupted` upstream → STATIC badge, no pulse.
+// The shell provides the card shape, the state-colored left rail, the mono label, and
+// the 2-line caption slot. THIS file fills the EXECUTION footer: state + dur/tok/tools
+// pills. tokens=0 renders as a dimmed em-dash (not "0"): 0-with-tools is activity, not
+// "nothing". On a killed/failed run a `progress` agent is normalized to `interrupted`
+// upstream → STATIC badge, no pulse.
 //
 // ALL text is rendered as React text nodes (never dangerouslySetInnerHTML) — the
 // previews/labels can carry secret-bearing content (boundaries.md §4).
@@ -11,6 +13,7 @@
 import { memo } from 'react';
 import { Handle, Position } from '@xyflow/react';
 import type { AgentState } from '@argus/contract';
+import { AgentCardShell, CARD_SHELL_HEIGHT_EXEC } from './AgentCardShell.tsx';
 
 export interface AgentCardData {
   label: string;
@@ -33,7 +36,8 @@ export interface AgentCardData {
   [key: string]: unknown;
 }
 
-const STATE_COLOR: Record<AgentState, string> = {
+// One shared state/kind palette (U1) — also consumed by the plan view's state hooks.
+export const STATE_COLOR: Record<AgentState, string> = {
   done: '#3fb950',
   running: '#5b9dff',
   queued: '#8b949e',
@@ -91,44 +95,53 @@ export const AgentCardNode = memo(function AgentCardNode({ data }: { data: Agent
   const toolsText = formatTools(data.toolCalls);
   const durationText = formatDuration(data.durationMs);
 
-  return (
-    <div className="agent-card" style={{ borderLeftColor: color }}>
-      {/* Handles are visually hidden — no agent edges are drawn (boundaries.md §6),
-          but xyflow wants targets for the synthesized phase spine to dock cleanly. */}
-      <Handle type="target" position={Position.Top} className="agent-handle" />
-      <Handle type="source" position={Position.Bottom} className="agent-handle" />
-
-      <div className="agent-card-head">
-        <span className="agent-dot" style={{ backgroundColor: color }} aria-hidden="true" />
-        <span className="agent-label" title={data.label}>
-          {data.label}
-        </span>
-      </div>
-
-      <div className="agent-card-meta">
+  // The EXECUTION footer: a state label + model/cached/failed flags + metric pills.
+  const footer = (
+    <>
+      <div className="agent-shell-meta">
         <span className="agent-state" style={{ color }}>
           {STATE_LABEL[data.state] ?? 'unknown'}
         </span>
         {data.model ? <span className="agent-model">{data.model}</span> : null}
-        {data.cached ? <span className="agent-flag agent-flag-cached">cached</span> : null}
-        {data.failedInLogs ? <span className="agent-flag agent-flag-failed">failed</span> : null}
+        {data.cached ? <span className="agent-chip agent-chip-cached">cached</span> : null}
+        {data.failedInLogs ? <span className="agent-chip agent-chip-failed">failed</span> : null}
       </div>
-
-      {data.caption ? (
-        <div
-          className="agent-caption"
-          data-source={data.captionSource ?? 'llm'}
-          title={data.caption}
-        >
-          {data.caption}
-        </div>
-      ) : null}
-
-      <div className="agent-card-pills">
+      <div className="agent-shell-pills">
         <Pill label="dur" value={durationText} dim={durationText === EM_DASH} />
         <Pill label="tok" value={tokensText} dim={tokensText === EM_DASH} />
         <Pill label="tools" value={toolsText} dim={toolsText === EM_DASH} />
       </div>
-    </div>
+    </>
+  );
+
+  return (
+    <AgentCardShell
+      label={data.label}
+      labelTitle={data.label}
+      railColor={color}
+      height={CARD_SHELL_HEIGHT_EXEC}
+      className="agent-shell-exec"
+      dot={<span className="agent-dot" style={{ backgroundColor: color }} aria-hidden="true" />}
+      handles={
+        <>
+          {/* Handles are visually hidden — no agent edges are drawn (boundaries.md §6),
+              but xyflow wants targets for the synthesized phase spine to dock cleanly. */}
+          <Handle type="target" position={Position.Top} className="agent-handle" />
+          <Handle type="source" position={Position.Bottom} className="agent-handle" />
+        </>
+      }
+      caption={
+        data.caption ? (
+          <div
+            className="agent-caption"
+            data-source={data.captionSource ?? 'llm'}
+            title={data.caption}
+          >
+            {data.caption}
+          </div>
+        ) : null
+      }
+      footer={footer}
+    />
   );
 });

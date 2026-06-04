@@ -32,13 +32,30 @@ export function multiplicityTitle(m: Multiplicity): string | undefined {
 }
 
 /**
- * The single corner count chip. Rendered absolutely in the node's top-right corner by
- * the host node's own positioned container (`.plan-node` is `position:relative`).
+ * The single multiplicity glyph (`×N` / `1..N`). Two render variants (U1):
+ *   - 'corner' (default): the absolute top-right corner glyph rendered by the card
+ *     shell's positioned container (`.agent-shell` is `position:relative`).
+ *   - 'inline': a footer chip in the plan card's chip row, matching the typed/optional
+ *     chip family — so the plan footer reads as one chip strip.
+ * A non-fanned (one) node renders nothing in either variant.
  */
-export function MultiplicityChip({ multiplicity }: { multiplicity: Multiplicity }) {
+export function MultiplicityChip({
+  multiplicity,
+  variant = 'corner',
+}: {
+  multiplicity: Multiplicity;
+  variant?: 'corner' | 'inline';
+}) {
   if (!isFanned(multiplicity)) return null;
   const label = multiplicityLabel(multiplicity);
   if (!label) return null;
+  if (variant === 'inline') {
+    return (
+      <span className="agent-chip agent-chip-mult" title={multiplicityTitle(multiplicity)}>
+        {label}
+      </span>
+    );
+  }
   return (
     <span className="plan-mult-chip" title={multiplicityTitle(multiplicity)}>
       {label}

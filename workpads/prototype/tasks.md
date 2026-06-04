@@ -243,7 +243,36 @@ hover.
 
 ## Design / polish (added 2026-06-04, user-requested)
 
-- [ ] **U1 — Unify the Plan & Execution visual language.** User: the two views "don't
+- [x] **U1 — Unify the Plan & Execution visual language.** **DONE 2026-06-04.** Built one
+  shared `AgentCardShell.tsx` (both `AgentCard` + `PlanAgentNode` are now thin wrappers);
+  gave the Plan-AST view the SAME `PhaseLane` containers as execution (group top-level plan
+  nodes by `PlanNode.phaseRef`, elk still lays out the intra-lane DAG); converged the
+  palette/chips/edges into one family; folded the cosmetic nits (fitView refit on async
+  graph swap + tighter elk spacing). Evidence + the unified visual-language spec in
+  `knowledge.md` (U1 section); screenshots `.argus/screenshots/argus-u1-{plan,execution}-14agent.png`
+  + `argus-u1-plan-vs-execution.png`. tsc/lint/vitest(95)/build green; 0 console errors;
+  M3 topology + PX annotation-only guarantee byte-unchanged (only `apps/web/src/` touched).
+  **Verifier (2026-06-04): verdict COMPLETE, capability_proven: true** — independently
+  re-ran the gate green (tsc clean, eslint clean, vitest 95/95, vite build ok); confirmed on
+  REAL modal-rust that `AgentCardShell.tsx` is a genuine single shell with `AgentCard` (exec)
+  + `PlanAgentNode` (plan) as thin view-specific-footer wrappers sharing one `.agent-shell`
+  geometry (248px / radius 10 / 3px rail / mono-ellipsis label / 2-line caption) and one
+  `.agent-chip` family, and that `plan-model-mapping.ts` groups top-level plan nodes by
+  `phaseRef` into the SAME `PhaseLane.tsx` execution uses (plan-research → 4 lanes with
+  fan-out/merge/×N inside; refine-plan → lane>loop>bodies + decision diamond). Stance 4 +
+  privacy hold: `git diff` shows `packages/adapter`, `packages/contract`, `apps/server`,
+  `apps/web/src/mapping.ts`, `explanations.ts`, `plan-mapping.ts`, `PhaseLane.tsx`
+  BYTE-UNCHANGED (only render-layer `apps/web/src/` files changed); no node:fs/child_process/
+  writeFile/.claude usage in web source; `plan-model-mapping` tolerates `phaseRef==null` (never
+  invents a lane). Screenshots (21:56:54+) post-date the last source edit (elk.ts 21:56:36) so
+  the captured evidence reflects current code. Reads well fullscreen at BOTH the 14-agent
+  (4 lanes 7/2/4/1, green state rails, dur/tok/tools pills, tok em-dash) and 1-agent
+  (Synthesize lane) scales; the wide/short plan DAG's residual vertical empty band is real
+  (visible in `argus-u1-plan-14agent.png`) but does not impair legibility — correctly deferred
+  as M5 polish, not a U1 blocker. Two low-severity follow-ups captured in `knowledge.md` (U1
+  verifier block): a doc overstatement (STATE_COLOR is only consumed by `AgentCard.tsx` today,
+  not yet by the plan rail) and the still-unresolved pre-existing `verify-p0-plan.png` root-leak.
+  User: the two views "don't
   look the same" but **should look quite similar** (one is the template, the other an
   instance of the same graph). **Analyze** the current divergence and converge it:
   - *Today:* Execution = phase-lane container boxes + `AgentCard` (260×132: state dot,

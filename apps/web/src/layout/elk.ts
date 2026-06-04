@@ -94,12 +94,19 @@ export async function planLayout(input: PlanLayoutInput): Promise<PlanLayoutResu
     layoutOptions: {
       'elk.algorithm': 'layered',
       'elk.direction': 'RIGHT',
-      'elk.layered.spacing.nodeNodeBetweenLayers': '64',
-      'elk.spacing.nodeNode': '40',
-      'elk.layered.spacing.edgeNodeBetweenLayers': '32',
+      // U1: tighter inter-LAYER spacing keeps each phase lane narrow (fan-out → agent →
+      // merge no longer stretches a lane to ~680px); generous intra-layer (nodeNode)
+      // spacing spreads parallel fan-out arms VERTICALLY so the lanes gain height. Both
+      // together pull the wide/flat DAG toward the canvas aspect ratio, so all phase lanes
+      // fit fullscreen side-by-side and the canvas no longer reads as a mostly-empty band.
+      'elk.layered.spacing.nodeNodeBetweenLayers': '44',
+      'elk.spacing.nodeNode': '52',
+      'elk.layered.spacing.edgeNodeBetweenLayers': '24',
       'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
       'elk.layered.mergeEdges': 'true',
       'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
+      // Pack node layers compactly toward the top so lanes share a common baseline.
+      'elk.layered.nodePlacement.strategy': 'NETWORK_SIMPLEX',
     },
     children: topLevel,
     edges,

@@ -427,4 +427,153 @@ prototype phase. Blocked until the architecture gate passes.
   empty — the graph is wide-but-short and `fitView` centers it vertically. PX only adds
   caption text and does not change layout. Worth a follow-up for **Plan-view polish**, but
   out of scope for this capability. (Lives alongside the P0 agent-free-lane-height visual
-  note as Plan-view layout debt.)
+  note as Plan-view layout debt.) **→ Largely resolved in U1** (below): the root cause
+  was a *missing fitView refit* (the prop fits only on mount; the async AST graph never
+  refit), plus over-wide elk inter-layer spacing; both fixed. The plan DAG is still
+  intrinsically wide/short so some vertical band remains, but lanes no longer clip and the
+  content is centered + readable.
+
+### U1 (2026-06-04) — Unify the Plan & Execution visual language
+
+**Capability:** a Plan agent (template) and an Execution agent (instance) are recognizably
+the SAME component — one shared card shell + phase-lane grouping in BOTH views + a
+consistent state/kind palette, chip family, and edge language.
+
+#### The divergence we removed (baseline 5d7fa51)
+
+| axis | Execution `AgentCard` (before) | Plan `PlanAgentNode` (before) |
+|---|---|---|
+| size | 260×132 | 220×76 |
+| shape source | `.agent-card` (own CSS) | `.plan-agent` (own CSS, different border `#3a4250`) |
+| left rail | state color (`STATE_COLOR`) | always `--argus-accent` |
+| label | `.agent-label` mono ellipsis | `.plan-agent-label` mono ellipsis (dup) |
+| caption | `.agent-caption` 2-line + green tick | `.plan-agent-sub` 2-line (dup, no tick) |
+| footer | state + model + cached/failed flags + dur/tok/tools pills | `typed` chip (`.plan-chip`) + corner `×N` glyph |
+| chips | `.agent-flag` family | `.plan-chip` family + `.plan-mult-chip` (separate) |
+| layout | hand-rolled `horizontal-lanes` (lanes + parented cards) | `elk` (NO lane containers — flat DAG) |
+
+Two cards, two CSS class families, two chip systems, and — the big one — the plan view
+had **no phase-lane containers** at all (just a flat elk DAG), so the two views did not
+read as the same graph.
+
+#### The unified visual-language spec (recorded; what U1 standardizes)
+
+1. **One shell component** — `apps/web/src/nodes/AgentCardShell.tsx`. Presentational only;
+   takes already-structured props (no raw content, all text = React text nodes). Provides:
+   shared **width `CARD_SHELL_WIDTH=248`**, radius 10, dark bg `#11161c`, border `#232a31`,
+   a **kind-or-state-colored left rail** (3px), a **mono label with ellipsis**, a **2-line
+   caption slot**, and a **view-specific FOOTER slot**. Height differs only by the footer
+   row: **exec `124`**, **plan `92`** (`CARD_SHELL_HEIGHT_EXEC`/`_PLAN`). `AgentCard` and
+   `PlanAgentNode` are now **thin wrappers** over the shell.
+   - **Execution footer** = `state` label (state-colored) + model + cached/failed chips +
+     `dur/tok/tools` metric pills. (tokens=0 → dimmed em-dash, unchanged.)
+   - **Plan footer** = `×N` multiplicity chip + `typed` + `optional` chips — rendered in the
+     SAME `.agent-chip` family as execution's cached/failed, so the footers share
+     typography & color even though their slots differ by view.
+2. **Phase lanes in BOTH views** — the Plan-AST view now reuses the **same `PhaseLane.tsx`
+   container** the execution view uses. `plan-model-mapping.ts` groups **top-level** plan
+   nodes by `PlanNode.phaseRef` into `phaseLane` group nodes (subtitle = `PlanLane.detail`,
+   `hideAgentCount=true`), derives each lane's bounding box from elk's placements, and
+   reparents the lane members (`parentId`/`extent:'parent'`, lane-relative coords). elk
+   still does the intra-DAG layout of the structural connectors; we only wrap the result in
+   lanes. **Loop bodies stay parented to their loop container**; a loop container is itself
+   parented to its `phaseRef` lane when it has one (nesting: lane > loop > bodies). Nodes
+   with `phaseRef==null` stay top-level/absolute (defensive — we never invent a lane the
+   model doesn't carry). So both views now read as **"phase lanes of agent cards"**; the
+   plan ALSO draws fan-out / merge / decision / loop connectors + multiplicity inside them.
+3. **One palette / chip / edge language:**
+   - **State/kind palette** is the single `STATE_COLOR` map (exported from `AgentCard.tsx`).
+   - **One chip family** `.agent-chip` with color-by-`currentColor` variants:
+     `-cached #8b949e`, `-failed #f85149`, `-typed #a371f7`, `-optional #d29922`,
+     `-mult` (mono, accent). Saturation is **not** used to distinguish chips.
+   - **One neutral edge color** `#475160`; **kind is carried by DASH + CURVATURE only**
+     (fanout/merge solid straight, optional dashed off a decision, loop-back dashed+curved).
+     **Saturation is reserved for run state.** **Confidence is the single border-STYLE axis**
+     (`.plan-conf-heuristic` / `.is-optional` → dashed) — never color/opacity.
+
+#### Cosmetic nits folded
+
+- **fitView never refit the async Plan-AST graph** (the root of the "~60% empty + clipped
+  lanes" issue). The `fitView` PROP fits on mount only; the AST graph replaces the meta
+  graph after elk resolves, so it kept the meta-graph fit (off-center, rightmost lane
+  clipped past x=1729 on a 1440 canvas). **Fix:** capture the React Flow instance via
+  `onInit` and `inst.fitView({padding:0.12, duration:240})` in an effect keyed on a cheap
+  node-id **signature** (so PX caption overlays — which never change ids — do NOT yank the
+  viewport). After the fix all 4 lanes fit (x≈77→1363) and center.
+- **Over-wide elk spacing.** `nodeNodeBetweenLayers 64→44` (narrower lanes) and
+  `spacing.nodeNode 40→52` (spread parallel fan-out arms vertically → taller lanes), plus
+  `nodePlacement.strategy NETWORK_SIMPLEX`. Pulls the wide/flat DAG toward the canvas aspect.
+- **Card density.** Shared width 248 (was 260 exec / 220 plan); both views fill better.
+
+#### Evidence
+
+- **Toolchain (all green):** `npm run typecheck` clean; `npm run lint` clean; `vitest run`
+  **95 passed** (unchanged count — no test touched a changed surface); `vite build` ok.
+- **Scope / regression guard (git diff):** ONLY `apps/web/src/` changed
+  (`AgentCardShell.tsx` new; `AgentCard.tsx`, `PlanNodes.tsx`, `MultiplicityChip.tsx`,
+  `plan-model-mapping.ts`, `layout/elk.ts`, `index.css`, `App.tsx`). **`packages/adapter`,
+  `packages/contract`, `apps/server`, and `apps/web/src/mapping.ts` are BYTE-UNCHANGED** →
+  RunModel/PlanModel/WorkflowMeta contracts intact, the M3 execution **topology** (lanes +
+  the synthesized `phase_i→phase_i+1` spine, produced by the untouched `mapping.ts`) is
+  byte-unchanged, and the **PX annotation-only** guarantee holds (`explanations.ts` /
+  `explain.ts` untouched; overlay still patches only caption/subtitle text).
+- **UI smoke (Playwright, 1440×900, real modal-rust, server :4399 token-gated, 0 console
+  errors across a full Plan↔Execution cycle):**
+  - **Execution** = the M3 14-agent run unchanged: 4 lanes 7/2/4/1, `completed` +
+    `partial failure`, green state rails, `review:red-team tok —` (em-dash), PX captions
+    2-line clamped. **1-agent case:** the `synthesize` lane reads cleanly.
+  - **Plan** = the SAME 4 phase lanes (Research/Design/Review/Synthesize) with
+    `PlanLane.detail` subtitles, each containing `fan-out (×N) → research:${r.key} (×N,
+    typed) → merge` and the `return` output terminal; the agent cards use the SAME shell.
+  - Screenshots under `.argus/screenshots/`: `argus-u1-plan-14agent.png`,
+    `argus-u1-execution-14agent.png`, and the side-by-side `argus-u1-plan-vs-execution.png`.
+- **Residual (honest):** the plan DAG is intrinsically wide/short (4 sequential phases, ≤2
+  stacked items per lane), so a vertical band of empty canvas remains above/below the
+  centered lanes — much improved (no clipping, centered, readable) but not eliminated. A
+  taller-lane / vertical-phase plan layout could fill more; tracked as Plan-view polish
+  (M5), not a U1 blocker. Confidence: **medium-high** — capability proven on the 14-agent
+  and 1-agent cases on real data; the residual band is the only soft spot.
+
+#### Verifier (2026-06-04) — verdict COMPLETE, capability_proven: true (independent)
+
+- **Capability proven on REAL modal-rust data.** `AgentCardShell.tsx` is a genuine single
+  shell; `AgentCard` (exec) + `PlanAgentNode` (plan) are thin wrappers with view-specific
+  footers (exec = state + dur/tok/tools pills; plan = `×N` + `typed`/`optional` chips)
+  sharing one `.agent-shell` geometry (248px, radius 10, 3px left rail, mono ellipsis label,
+  2-line caption) and one `.agent-chip` family. `plan-model-mapping.ts` groups top-level plan
+  nodes by `phaseRef` into the SAME `PhaseLane.tsx` containers execution uses. Verified in
+  screenshots: plan-research draws 4 lanes (Research/Design/Review/Synthesize) with
+  fan-out/merge/multiplicity inside; refine-plan nests lane > loop > bodies + a decision
+  diamond. A plan agent and an execution agent read as the same component.
+- **Stance 4 + privacy hold.** `git diff` confirms `packages/adapter`, `packages/contract`,
+  `apps/server`, `apps/web/src/mapping.ts`, `explanations.ts`, `plan-mapping.ts`, and
+  `PhaseLane.tsx` are BYTE-UNCHANGED; only `apps/web/src/` render-layer files changed
+  (`AgentCardShell.tsx` new). No `node:fs`/`child_process`/`writeFile`/`.claude` usage in web
+  source (all grep hits are comments); all text rendered as React text nodes;
+  `plan-model-mapping` tolerates `phaseRef==null`/missing placements (never invents lanes).
+  Nothing writes into another `.claude` tree; screenshots gitignored under `.argus/`.
+- **Toolchain gate independently re-run green:** tsc clean, eslint clean, vitest **95/95**,
+  vite build ok. Screenshots (21:56:54+) post-date the last source edit (`elk.ts` 21:56:36),
+  so the captured evidence reflects current code; working tree unchanged since.
+- **Visual milestone reads well fullscreen at BOTH scales.** Execution: 4 crisp lanes
+  (7/2/4/1), green state rails, PX captions, dur/tok/tools pills, `tok` em-dash; the
+  Synthesize 1-agent lane reads cleanly. Plan: same 4 lanes + connectors + multiplicity,
+  shared shell. The honest residual (wide/short plan DAG leaves a vertical empty band
+  above/below the centered lanes) is real and visible in `argus-u1-plan-14agent.png` but does
+  not impair legibility; correctly deferred as M5 polish, not a U1 blocker. The fitView refit
+  bug is genuinely fixed (no clipping, content centered).
+
+- **CORRECTION (low) — minor doc overstatement, not a defect.** The U1 spec above claims
+  `STATE_COLOR` is "the single `STATE_COLOR` map (exported from `AgentCard.tsx`)" as a shared
+  palette; the verifier notes the **plan rail uses `var(--argus-accent)`**, and `STATE_COLOR`
+  is only consumed by `AgentCard.tsx` today (the plan view has no run state to paint until the
+  P2 overlay). The palette IS a single source of truth, but the *shared consumption* by the
+  plan view is **aspirational** (lands with P2's status-painted shared layout), not current.
+
+- **OPEN QUESTION / artifact-hygiene (low, pre-existing, NOT introduced by U1).** The P0
+  leak is **still unresolved**: `verify-p0-plan.png` remains tracked at the **REPO ROOT**
+  instead of the gitignored `.argus/screenshots/`. It was committed in `eb11e07` (P0) and the
+  P0 verifier explicitly flagged a `git rm` action that was never performed. Content is benign
+  Plan-view meta (no run/transcript/secret per the P0 assessment), so privacy severity is low,
+  but the tracked-artifact policy is violated. **Recommend `git rm verify-p0-plan.png` before
+  any U1 commit.** (Out of U1 scope — does not block the U1 verdict.)
