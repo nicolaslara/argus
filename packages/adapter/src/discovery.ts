@@ -13,12 +13,19 @@
 
 import type { ProjectRef, RunSummary, RunRef, RunStatus, WorkflowMeta } from '@argus/contract';
 import { deriveRunStatus, findFailureLogLines } from './raw.ts';
+import { classifyRunLiveness } from './live.ts';
 
 /** Minimal port surface used by discovery (a subset of FileSystemPort). */
 interface DiscoveryPort {
   readJson(path: string): Promise<unknown>;
   readFile(path: string): Promise<string>;
   listDir(path: string): Promise<Array<{ name: string; isDir: boolean }>>;
+}
+
+/** Detection also needs cheap existence + mtime (a superset of {@link DiscoveryPort}). */
+interface RunningDetectPort extends DiscoveryPort {
+  stat(path: string): Promise<{ size: number; mtimeMs: number } | null>;
+  exists(path: string): Promise<boolean>;
 }
 
 /**
@@ -328,6 +335,88 @@ export async function discoverRunsReport(
   // Stable order: newest first (startTime desc), nulls last.
   items.sort((a, b) => (b.startTime ?? -Infinity) - (a.startTime ?? -Infinity));
 
+  return { items, reasons };
+}
+
+// --- running-run detection (L1) ---------------------------------------------
+
+/**
+ * Detect IN-PROGRESS runs for a project by scanning, in each session, the live journal
+ * tree `subagents/workflows/<runId>/journal.jsonl` for runs that have NO finalized
+ * `workflows/<runId>.json` yet (F1: the finalized json is written once, at finalize, so
+ * its absence + a fresh journal ⇒ the run is still going). Liveness is classified by
+ * {@link classifyRunLiveness}; only `running` runs are emitted (a `stale` journal that
+ * never finalized — a likely crash — is omitted). HEADER-cheap: per run it does one
+ * `exists` (finalized json) + one `stat` (journal mtime); it does NOT read the journal
+ * body (agent counts come later, when the client loads the live model). NEVER throws.
+ *
+ * `nowMs` is injected (the adapter reads no clock). Runs are scoped to `project.slug`
+ * and emitted with `ref.projectPath = project.projectPath` (grouped with the project's
+ * finalized runs); `startTime` carries the journal mtime as a best-effort "last active".
+ */
+export async function discoverRunningRunsReport(
+  port: RunningDetectPort,
+  claudeHome: string,
+  project: ProjectRef,
+  nowMs: number,
+): Promise<DiscoveryReport<RunSummary>> {
+  const reasons: DiscoveryReport<unknown>['reasons'] = [];
+  const items: RunSummary[] = [];
+  const slugPath = join(claudeHome, 'projects', project.slug);
+
+  let sessionDirs: Array<{ name: string; isDir: boolean }>;
+  try {
+    sessionDirs = await port.listDir(slugPath);
+  } catch {
+    reasons.push({ code: 'slug-dir-unreadable', detail: project.slug });
+    return { items, reasons };
+  }
+
+  for (const sessionEntry of sessionDirs) {
+    if (!sessionEntry.isDir) continue;
+    const sessionId = sessionEntry.name;
+    const liveWfDir = join(slugPath, sessionId, 'subagents', 'workflows');
+
+    let runDirs: Array<{ name: string; isDir: boolean }>;
+    try {
+      runDirs = await port.listDir(liveWfDir);
+    } catch {
+      continue; // no live journals for this session is normal.
+    }
+
+    for (const rd of runDirs) {
+      if (!rd.isDir || !/^wf_.+/.test(rd.name)) continue;
+      const runId = rd.name;
+      const journalPath = join(liveWfDir, runId, 'journal.jsonl');
+      const finalizedPath = join(slugPath, sessionId, 'workflows', `${runId}.json`);
+
+      const st = await port.stat(journalPath);
+      if (st === null) continue; // no journal file in this run dir.
+      const finalizedExists = await port.exists(finalizedPath);
+
+      const liveness = classifyRunLiveness({
+        journalExists: true,
+        finalizedExists,
+        journalMtimeMs: st.mtimeMs,
+        nowMs,
+      });
+      if (liveness !== 'running') continue;
+
+      const ref: RunRef = { projectPath: project.projectPath, slug: project.slug, sessionId, runId };
+      items.push({
+        ref,
+        workflowName: '',
+        status: 'running',
+        agentCount: 0,
+        durationMs: null,
+        startTime: st.mtimeMs, // best-effort "last active"; true startTime lands at finalize.
+        summary: 'running…',
+        partialFailure: false,
+      });
+    }
+  }
+
+  items.sort((a, b) => (b.startTime ?? -Infinity) - (a.startTime ?? -Infinity));
   return { items, reasons };
 }
 

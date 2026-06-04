@@ -17,6 +17,7 @@ import type {
 } from '@argus/contract';
 import { parsePlan } from './plan.ts';
 export { parsePlan };
+import { buildLiveModel } from './live.ts';
 import {
   discoverProjectsReport,
   discoverRunsReport,
@@ -39,6 +40,17 @@ import {
 
 /** Re-export the observed preview-cap constants for callers/tests. */
 export { PREVIEW_TRUNCATED_RAW_LEN, PREVIEW_EMIT_CAP } from './raw.ts';
+
+/** Live path (L1/L2): journal parsing, running-run detection, partial live RunModel. */
+export {
+  parseJournal,
+  reduceJournal,
+  classifyRunLiveness,
+  planExpectedSlots,
+  buildLiveModel,
+} from './live.ts';
+export type { JournalEvent, ParsedJournal, RunLiveness, LivenessInput, LiveModelOptions } from './live.ts';
+export { discoverRunningRunsReport } from './discovery.ts';
 
 /** Observed-format pin. The "tested on" client version (best-effort) is resolved lazily. */
 export const ADAPTER_FORMAT = 'cc-workflow/observed-2026-06-04' as const;
@@ -263,6 +275,24 @@ export async function loadRun(
 ): Promise<RunModel> {
   const raw = await port.readJson(wfJsonPath);
   return parseFinalizedRun(raw, ctx);
+}
+
+/**
+ * Read a run's LIVE `journal.jsonl` THROUGH the injected FileSystemPort and build a
+ * partial live {@link RunModel} (L2). `journalPath` is the absolute path to
+ * `<session>/subagents/workflows/<runId>/journal.jsonl`; the caller (server) builds it
+ * from a RunRef and path-escape-guards it. `opts.plan` (parsed from the persisted script
+ * via {@link loadRunPlan}) recovers labels/phases by start-order binding (F4). A read
+ * failure propagates (the route maps it to 404). Disk-only via the port (no node:fs).
+ */
+export async function loadLiveModel(
+  port: FileSystemPort,
+  journalPath: string,
+  ref: RunRef,
+  opts: import('./live.ts').LiveModelOptions = {},
+): Promise<RunModel> {
+  const text = await port.readFile(journalPath);
+  return buildLiveModel(text, ref, opts);
 }
 
 /**
