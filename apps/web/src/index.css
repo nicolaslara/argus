@@ -142,6 +142,78 @@ body {
 .wf-picker:hover {
   border-color: var(--argus-accent);
 }
+/* run-detail-plan §1.1: the Run-view run SELECTOR — a compact chip + a dropdown drawer holding
+   <RunHistory> of this workflow's runs. The run-header is inert (pointer-events:none), so both
+   the chip and the drawer restore pointer-events. The drawer is absolutely positioned under the
+   chip; the chip's wrapper is the positioning context. */
+.run-selector {
+  position: relative;
+  pointer-events: auto;
+}
+.run-selector-chip {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #161b22;
+  color: var(--argus-fg);
+  border: 1px solid #2d333b;
+  border-radius: 6px;
+  padding: 3px 8px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 150ms ease;
+}
+.run-selector-chip:hover,
+.run-selector-chip.is-open {
+  border-color: var(--argus-accent);
+}
+.run-selector-time {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.run-selector-caret {
+  color: var(--argus-dim);
+  font-size: 10px;
+  line-height: 1;
+}
+.run-selector-drawer {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 240px;
+  max-width: 320px;
+  max-height: 50vh;
+  overflow-y: auto;
+  padding: 6px;
+  background: rgba(13, 17, 23, 0.97);
+  border: 1px solid #2d333b;
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(8px);
+  z-index: 6; /* above the run-header (4), below the rail (10) */
+}
+/* Plan-view run-history band — the workflow OVERVIEW (design + its runs), below the plan
+   run-header. A scannable, scrollable list; click a run → its Run view. */
+.plan-run-history {
+  position: absolute;
+  top: 56px;
+  left: 68px;
+  width: 284px;
+  max-height: 52vh;
+  overflow: auto;
+  z-index: 4;
+  padding: 6px;
+  background: rgba(13, 17, 23, 0.82);
+  border: 1px solid #232a31;
+  border-radius: 8px;
+  backdrop-filter: blur(6px);
+}
+.plan-run-history-empty {
+  color: #6e7681;
+  font-size: 12px;
+  padding: 8px 10px;
+}
 .run-header-meta {
   color: var(--argus-dim);
   font-size: 12px;
@@ -1320,6 +1392,101 @@ body {
 .rail-wf-block {
   border-top: 1px solid #1c2128;
   margin-top: 8px;
+}
+
+/* ===== RunHistory — shared run list (run SELECTOR drawer + Plan run overview) ===== */
+/* Compact, scannable rows that mirror the rail's finished run-row look: a status glyph
+   (running reuses argus-pulse), a relative time, and `{agentCount}ag · {dur}`. Reuses the
+   status-<status> color classes so the glyph reads identically to the sidebar tree. */
+.run-history {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.run-history-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 0 6px;
+}
+.run-history-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--argus-dim);
+}
+.run-history-count {
+  font-size: 10px;
+  color: var(--argus-dim);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.run-history-empty {
+  color: var(--argus-dim);
+  font-size: 12px;
+  padding: 6px;
+}
+.run-history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.run-history-row {
+  appearance: none;
+  width: 100%;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--argus-fg);
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease;
+}
+.run-history-row:hover {
+  background: #161b22;
+}
+.run-history-row.is-active {
+  background: #161b22;
+  border-color: #2d333b;
+}
+.run-history-status {
+  flex: none;
+  font-size: 11px;
+  line-height: 1;
+}
+.run-history-status-running {
+  animation: argus-pulse 1.4s ease-in-out infinite; /* the running glyph pulses, like the rail */
+}
+.run-history-time {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--argus-fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.run-history-meta {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--argus-dim);
+}
+.run-history-agents,
+.run-history-dur {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.run-history-dot {
+  opacity: 0.5;
 }
 
 /* ===== P2 — Plan⟷Execution MORPH overlay ================================== */

@@ -50,8 +50,10 @@ import {
 } from './nodes/PlanNodes.tsx';
 import { InstanceGroup } from './nodes/InstanceGroup.tsx';
 import { Rail, type RailSection } from './shell/Rail.tsx';
+import { formatRelativeTime } from './shell/format.ts';
 import { DetailPanel } from './nodes/DetailPanel.tsx';
 import { RunOverviewPanel } from './nodes/RunOverviewPanel.tsx';
+import { RunHistory } from './nodes/RunHistory.tsx';
 
 // Stable identity (a fresh object each render would make React Flow warn + re-mount).
 // Execution-view types (M3, unchanged) + the P1b Plan-AST types — one shared registry.
@@ -293,6 +295,11 @@ export function App() {
   // I3: the run-overview panel (logs timeline + run totals), opened from the run-header
   // name. A node selection takes precedence over it (node detail wins).
   const [overviewOpen, setOverviewOpen] = useState(false);
+  // run-detail-plan §1.1: the run SELECTOR drawer in the Run-view header. The current run is a
+  // compact chip with a caret; clicking it opens a small dropdown holding <RunHistory> of THIS
+  // workflow's runs so the user can switch. Closes on pick / outside click.
+  const [runSelectorOpen, setRunSelectorOpen] = useState(false);
+  const runSelectorRef = useRef<HTMLDivElement | null>(null);
   // Merged Run view (run-view-merge-plan.md §2): the host template node ids whose instance
   // drawer is open. RESET on run/workflow change and SEEDED ONCE from the live flag on
   // run-change (running → active fans auto-expanded; finished → empty); user-owned
@@ -712,6 +719,33 @@ export function App() {
     [run, workflows],
   );
 
+  // The runs that belong to the CURRENT workflow — newest-first. SAME data + rows feed BOTH
+  // placements of <RunHistory>: the Run-view selector drawer AND the Plan-view run-history band
+  // (run-view-merge-plan §7b: a plan has many runs, so the Plan view is the workflow overview).
+  // The "current workflow" is the selected run's workflow in the Run view, else the selected
+  // workflow's name in the Plan view. RunHistory re-sorts newest-first internally, but we sort
+  // here too so the surrounding component always sees a stable, newest-first list.
+  const currentWorkflowName = view === 'run' ? run?.workflowName ?? null : workflow?.name ?? null;
+  const workflowRuns = useMemo(() => {
+    if (!currentWorkflowName) return [];
+    return runs
+      .filter((r) => r.workflowName === currentWorkflowName)
+      .sort((a, b) => (b.startTime ?? -Infinity) - (a.startTime ?? -Infinity));
+  }, [runs, currentWorkflowName]);
+
+  // run-detail-plan §1.1: close the run SELECTOR drawer on an outside click (a pick already
+  // closes it via the handler). Bound only while open so the listener is cheap.
+  useEffect(() => {
+    if (!runSelectorOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (runSelectorRef.current && !runSelectorRef.current.contains(e.target as Node)) {
+        setRunSelectorOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [runSelectorOpen]);
+
   return (
     <div className="argus-app">
       {/* M4: collapsible left rail — in-flow so it PUSHES the canvas aside (not an overlay). */}
@@ -824,6 +858,7 @@ export function App() {
       ) : null}
 
       {view === 'plan' && workflow ? (
+        <>
         <div className="run-header">
           {workflows.length > 1 ? (
             <select
@@ -854,6 +889,21 @@ export function App() {
               : `${workflow.phases.length} ${workflow.phases.length === 1 ? 'phase' : 'phases'} · declared`}
           </span>
         </div>
+        {/* Plan = the workflow OVERVIEW (run-view-merge-plan §7b): the design + its run
+            history. Clicking a run selects it (handleSelectRun also switches to the Run view). */}
+        <div className="plan-run-history">
+          {workflowRuns.length > 0 ? (
+            <RunHistory
+              runs={workflowRuns}
+              selectedRunId={summary?.ref.runId}
+              onSelectRun={handleSelectRun}
+              title={`${workflowRuns.length} ${workflowRuns.length === 1 ? 'run' : 'runs'}`}
+            />
+          ) : (
+            <div className="plan-run-history-empty">no runs yet for this workflow</div>
+          )}
+        </div>
+        </>
       ) : view === 'run' && run ? (
         <div className="run-header">
           <button
@@ -865,6 +915,38 @@ export function App() {
             {run.workflowName}
           </button>
           <span className={`run-badge run-badge-${run.status}`}>{run.status}</span>
+          {/* run-detail-plan §1.1: the run SELECTOR — a compact chip (this run's relative time
+              + a caret) that opens a dropdown of THIS workflow's runs (<RunHistory>) so the user
+              can switch between runs of the same plan without leaving the Run view. Only shown
+              when this workflow has more than one run (otherwise there's nothing to pick). */}
+          {workflowRuns.length > 1 ? (
+            <div className="run-selector" ref={runSelectorRef}>
+              <button
+                type="button"
+                className={`run-selector-chip${runSelectorOpen ? ' is-open' : ''}`}
+                aria-haspopup="listbox"
+                aria-expanded={runSelectorOpen}
+                onClick={() => setRunSelectorOpen((v) => !v)}
+                title="switch to another run of this workflow"
+              >
+                <span className="run-selector-time">{formatRelativeTime(run.startTime) || 'this run'}</span>
+                <span className="run-selector-caret" aria-hidden="true">{runSelectorOpen ? '▴' : '▾'}</span>
+              </button>
+              {runSelectorOpen ? (
+                <div className="run-selector-drawer" role="listbox">
+                  <RunHistory
+                    runs={workflowRuns}
+                    selectedRunId={summary?.ref.runId}
+                    onSelectRun={(r) => {
+                      handleSelectRun(r);
+                      setRunSelectorOpen(false);
+                    }}
+                    title={currentWorkflowName ?? 'runs'}
+                  />
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           <span className="run-header-meta">
             {overlayBound} bound
             {overlayPartial > 0 ? ` · ${overlayPartial} partial` : ''}
