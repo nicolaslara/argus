@@ -297,6 +297,29 @@ round-axis drill and that the back-edge stays docked across expand/collapse. Scr
 
 ---
 
+## 7b. Plan = blueprint + run history (the distinct PURPOSE for keeping Plan)
+
+The blueprint render (Option A, shipped) makes Plan *look* different from a painted Run;
+this gives it a different *job*, resolving "they're almost the same" properly.
+
+A plan has a **1:N** relationship to runs (`run-view-merge-plan.md §1` cardinality). So the
+Plan view should be the **workflow overview**: the dashed blueprint **+ a run-history strip**
+of *this workflow's* runs — each as a status glyph + when + agents·duration, newest-first
+(the data is already in hand: `runsQ` filtered to the workflow). Then:
+
+- **Plan** answers *"what is this workflow, and how has it gone over time?"* — the design plus
+  every run at a glance (when · status · failures). It's where the TIME/STATUS lens lives at
+  the workflow scope (ties back to the sidebar-gallery finding).
+- **Run** answers *"what did this one execution do?"* — the merged, expandable painted run.
+- **Switching now MEANS something**: Plan = all-runs overview; clicking a run in the strip →
+  Run view of it. Plan is no longer a faded Run; it's the run-free design + its history.
+
+This also gives a natural home for the failure signal across runs (e.g. "5 of 13 failed")
+and recency/staleness (§2d of the sidebar plan). Proposed next build (after the current
+merge + inspector): a compact **run-history strip** in the Plan-view chrome (or a band under
+the blueprint), reusing the run-summary rows + `statusGlyph` / `formatRelativeTime`, with
+click→select-run→Run. Small, additive, no layout-engine work.
+
 ## 8. Open questions
 
 1. **Loop-body fan containment (the gate on Phase 2).** Confirm the round-axis →
