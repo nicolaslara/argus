@@ -141,10 +141,13 @@ export const PlanAgentNode = memo(function PlanAgentNode({
       {isExpanded ? '▴' : '▾'}
     </button>
   ) : null;
-  // P2: when a run is painted, the rail color carries run STATUS (saturation reserved for
-  // state); the un-painted plan template keeps the neutral accent rail.
+  // Plan view (un-painted) renders as a BLUEPRINT: a neutral rail + a uniformly dashed box
+  // (is-blueprint), so the run-free template reads unmistakably as "the design — nothing has
+  // run yet" (the harness grammar: dashed = pending), distinct from a painted Run. When a run
+  // IS painted the rail carries STATUS (saturation reserved for state).
+  const blueprint = !data.painted;
   const railColor =
-    data.painted && data.bindStatus ? BIND_STATUS_COLOR[data.bindStatus] : 'var(--argus-accent)';
+    data.painted && data.bindStatus ? BIND_STATUS_COLOR[data.bindStatus] : BIND_STATUS_COLOR['not-run'];
   // The PLAN footer: ×N multiplicity + typed / optional chips. When painted, the aggregate
   // status chip leads (one chip, never a per-member explosion — folded mode).
   const footer = (
@@ -188,7 +191,7 @@ export const PlanAgentNode = memo(function PlanAgentNode({
       }
       railColor={railColor}
       height={CARD_SHELL_HEIGHT_PLAN}
-      className={`agent-shell-plan plan-node plan-agent ${confidenceClass(data.confidence)}${data.optional ? ' is-optional' : ''}${fanned ? ' is-fanned' : ''}${ghost}${isExpanded ? ' is-expanded' : ''}`}
+      className={`agent-shell-plan plan-node plan-agent ${confidenceClass(data.confidence)}${data.optional ? ' is-optional' : ''}${fanned ? ' is-fanned' : ''}${ghost}${blueprint ? ' is-blueprint' : ''}${isExpanded ? ' is-expanded' : ''}`}
       headEnd={caret}
       handles={
         <>

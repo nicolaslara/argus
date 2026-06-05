@@ -1169,6 +1169,17 @@ body {
   filter: saturate(0.4);
 }
 
+/* Plan view = the BLUEPRINT (Option A): a run-free template node renders as a uniformly
+   dashed neutral box at FULL opacity (the harness grammar's "pending/not-yet-run" form),
+   so Plan reads as the design and never as a faintly-painted Run. The decision diamond
+   keeps its accent (the gate). Painted Run nodes are unaffected. */
+.agent-shell.is-blueprint {
+  border-color: #3a4250;
+  border-style: dashed;
+  border-left-width: 1px; /* drop the 3px solid rail → one uniform dashed outline */
+  background: rgba(255, 255, 255, 0.012);
+}
+
 /* The expand [▾]/[▴] caret on a fanned PlanAgentNode head (merged Run view). A quiet
    neutral affordance pinned to the right of the label row — it grows / collapses the
    in-lane instance drawer. Saturated accent stays reserved for status. */
