@@ -8,6 +8,7 @@ import {
   classifyRunLiveness,
   planExpectedSlots,
   buildLiveModel,
+  agentResultFromJournal,
   parsePlan,
   discoverRunningRunsReport,
   ADAPTER_FORMAT,
@@ -68,6 +69,22 @@ describe('reduceJournal', () => {
     expect(live).toHaveLength(3);
     expect(live.map((a) => a.order)).toEqual([0, 1, 2]);
     expect(live.every((a) => a.started && a.result !== undefined)).toBe(true);
+  });
+});
+
+describe('agentResultFromJournal (R1 full result)', () => {
+  it('returns a STRING result for a text agent', () => {
+    const v = agentResultFromJournal(journalText, 'a20a3ff609362a4db');
+    expect(typeof v).toBe('string');
+    expect(v as string).toContain('directed acyclic graph');
+  });
+  it('returns an OBJECT result for a schema agent', () => {
+    const j = '{"type":"result","key":"k","agentId":"ag1","result":{"verdict":"sound","issues":[1,2]}}\n';
+    expect(agentResultFromJournal(j, 'ag1')).toEqual({ verdict: 'sound', issues: [1, 2] });
+  });
+  it('returns null for an unknown agent or a torn line', () => {
+    expect(agentResultFromJournal(journalText, 'nope')).toBeNull();
+    expect(agentResultFromJournal('{bad json\n{"type":"result","agentId":"x"}', 'x')).toBeNull();
   });
 });
 

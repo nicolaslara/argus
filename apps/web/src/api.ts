@@ -82,6 +82,22 @@ export function fetchRunLive(ref: Pick<RunRef, 'slug' | 'sessionId' | 'runId'>):
   );
 }
 
+/** R1: the lazy FULL result of one agent (string for a text agent, object for a schema agent). */
+export interface AgentResult {
+  agentId: string;
+  value: unknown;
+  truncated: boolean;
+}
+export function fetchAgentResult(
+  ref: Pick<RunRef, 'slug' | 'sessionId' | 'runId'>,
+  agentId: string,
+): Promise<AgentResult> {
+  const { slug, sessionId, runId } = ref;
+  return getJson<AgentResult>(
+    `/api/runs/${encodeURIComponent(slug)}/${encodeURIComponent(sessionId)}/${encodeURIComponent(runId)}/result?agentId=${encodeURIComponent(agentId)}`,
+  );
+}
+
 /**
  * P2: the PER-RUN plan DAG — parsed from the EXACT script a run executed (its persisted
  * `<session>/workflows/scripts/<name>-wf_<id>.js`), NOT the project `.claude/workflows/*.js`

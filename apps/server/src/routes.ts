@@ -16,6 +16,7 @@
 
 import { resolve, sep } from 'node:path';
 import {
+  agentResultFromJournal,
   discoverProjects,
   discoverRuns,
   discoverRunningRunsReport,
@@ -532,6 +533,50 @@ async function findLiveScriptBasename(
   const suffix = `-${runId}.js`;
   const hit = entries.find((e) => !e.isDir && e.name.endsWith(suffix) && isValidWorkflowFile(e.name));
   return hit ? hit.name : null;
+}
+
+/** An agentId is a hex-ish token (e.g. `a403d457ffb0b3e01`). Validate BEFORE any FS use. */
+const AGENT_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
+export function isValidAgentId(id: string): boolean {
+  return AGENT_ID_RE.test(id);
+}
+
+/** Cap the lazy full-result payload (a localhost dashboard, but never unbounded). */
+const RESULT_EMIT_CAP = 512 * 1024;
+
+/**
+ * GET /api/runs/:slug/:session/:runId/result?agentId=<id> -> { agentId, value, truncated }.
+ * The FULL (uncapped) result of one agent, read from the journal `result` event (R1 — the
+ * inspect panel's "full result" lazy fetch; the finalized snapshot only keeps a ~401-char
+ * preview). `value` is the agent's raw return — a STRING (text agent) or OBJECT (schema
+ * agent) — so the dashboard renders it readably. Same M3 posture: charset-validate
+ * slug/session/runId + agentId (400) and the resolve()-inside-home journal guard. A missing
+ * journal is 404; an agent with no result is `{ value: null }`. A value over the cap is
+ * stringified + truncated with `truncated:true`. NEVER 500s / leaks.
+ */
+export async function handleAgentResult(
+  deps: RouteDeps,
+  slug: string,
+  session: string,
+  runId: string,
+  agentId: string,
+): Promise<RouteResult> {
+  const journalPath = safeRunJournalPath(deps.claudeHome, slug, session, runId);
+  if (journalPath === null || !isValidAgentId(agentId)) return err(400, 'bad_request');
+
+  let text: string;
+  try {
+    text = await deps.port.readFile(journalPath);
+  } catch {
+    return err(404, 'not_found');
+  }
+  const value = agentResultFromJournal(text, agentId);
+  // Cap: measure the serialized size; over the cap → a truncated string form.
+  const serialized = typeof value === 'string' ? value : JSON.stringify(value);
+  if (typeof serialized === 'string' && serialized.length > RESULT_EMIT_CAP) {
+    return { status: 200, body: { agentId, value: serialized.slice(0, RESULT_EMIT_CAP), truncated: true } };
+  }
+  return { status: 200, body: { agentId, value, truncated: false } };
 }
 
 /**

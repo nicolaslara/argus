@@ -27,6 +27,7 @@ import {
   handleRunExplanations,
   handleRunPlan,
   handleRunLive,
+  handleAgentResult,
   type RouteDeps,
   type RouteResult,
 } from './routes.ts';
@@ -99,7 +100,8 @@ function decodeSegment(seg: string): string | null {
  * (so the caller can 404). All FS access here is already token-gated by the caller;
  * the route layer additionally validates path segments + resolve()-guards the path.
  */
-async function dispatchApi(pathname: string): Promise<RouteResult | null> {
+async function dispatchApi(url: URL): Promise<RouteResult | null> {
+  const pathname = url.pathname;
   // GET /api/projects
   if (pathname === '/api/projects') {
     return handleProjects(deps);
@@ -152,6 +154,20 @@ async function dispatchApi(pathname: string): Promise<RouteResult | null> {
       return { status: 400, body: { error: 'bad_request' } };
     }
     return handleRunExplanations(deps, slug, session, runId);
+  }
+
+  // GET /api/runs/:slug/:session/:runId/result?agentId=<id> (R1: the lazy FULL result).
+  // More specific than the snapshot route → matched first.
+  const runResultMatch = /^\/api\/runs\/([^/]+)\/([^/]+)\/([^/]+)\/result$/.exec(pathname);
+  if (runResultMatch) {
+    const slug = decodeSegment(runResultMatch[1]!);
+    const session = decodeSegment(runResultMatch[2]!);
+    const runId = decodeSegment(runResultMatch[3]!);
+    const agentId = url.searchParams.get('agentId') ?? '';
+    if (slug === null || session === null || runId === null) {
+      return { status: 400, body: { error: 'bad_request' } };
+    }
+    return handleAgentResult(deps, slug, session, runId, agentId);
   }
 
   // GET /api/runs/:slug/:session/:runId/live (L2: the partial live journal snapshot).
@@ -225,7 +241,7 @@ const server = createServer((req, res) => {
       send(res, 405, { error: 'method_not_allowed' });
       return;
     }
-    dispatchApi(url.pathname)
+    dispatchApi(url)
       .then((result) => {
         if (result === null) {
           send(res, 404, { error: 'not_found' });

@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { handleRunLive, handleProjectRuns, safeRunJournalPath, type RouteDeps } from './routes.ts';
+import {
+  handleRunLive,
+  handleProjectRuns,
+  handleAgentResult,
+  safeRunJournalPath,
+  type RouteDeps,
+} from './routes.ts';
 import type { FileSystemPort } from '@argus/adapter';
 import type { RunModel, RunSummary } from '@argus/contract';
 
@@ -122,6 +128,20 @@ describe('handleRunLive (L2 live snapshot)', () => {
   it('bad segment → 400; missing journal → 404', async () => {
     expect((await handleRunLive(deps(), SLUG, SESS_LIVE, 'bad id')).status).toBe(400);
     expect((await handleRunLive(deps(), SLUG, SESS_LIVE, 'wf_absent')).status).toBe(404);
+  });
+});
+
+describe('handleAgentResult (R1 lazy full result)', () => {
+  it('returns the full result value for an agent; 400 bad agentId; 404 missing journal', async () => {
+    const ok = await handleAgentResult(deps(), SLUG, SESS_LIVE, RUN_LIVE, 'aid1');
+    expect(ok.status).toBe(200);
+    expect((ok.body as { value: unknown }).value).toBe('alpha is done');
+    expect((await handleAgentResult(deps(), SLUG, SESS_LIVE, RUN_LIVE, 'bad id')).status).toBe(400);
+    expect((await handleAgentResult(deps(), SLUG, SESS_LIVE, 'wf_absent', 'aid1')).status).toBe(404);
+    // an agent with no result event → 200 with value null.
+    const none = await handleAgentResult(deps(), SLUG, SESS_LIVE, RUN_LIVE, 'aid2');
+    expect(none.status).toBe(200);
+    expect((none.body as { value: unknown }).value).toBeNull();
   });
 });
 

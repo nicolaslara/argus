@@ -1072,6 +1072,66 @@ div.detail-log-fail {
   border-radius: 6px;
   padding: 6px 8px;
 }
+/* R1: human-readable prompt/result — a readable summary by default, raw JSON behind a toggle. */
+.detail-toggle {
+  margin-left: auto;
+  appearance: none;
+  background: transparent;
+  border: 1px solid #30363d;
+  color: var(--argus-dim);
+  font-size: 10px;
+  text-transform: none;
+  letter-spacing: 0;
+  border-radius: 6px;
+  padding: 1px 7px;
+  cursor: pointer;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.detail-toggle:hover {
+  color: var(--argus-fg);
+  border-color: #484f58;
+}
+.detail-loading {
+  color: var(--argus-dim);
+  border-color: currentColor;
+}
+.detail-summary {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--argus-fg);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 300px;
+  overflow: auto;
+}
+.detail-kv {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 320px;
+  overflow: auto;
+  background: #0b0d10;
+  border: 1px solid #21262d;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.detail-kv-row {
+  display: grid;
+  grid-template-columns: minmax(80px, 34%) 1fr;
+  gap: 10px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.detail-kv-key {
+  color: #79c0ff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  word-break: break-word;
+}
+.detail-kv-val {
+  color: var(--argus-fg);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 .detail-pre {
   margin: 0;
   max-height: 280px;

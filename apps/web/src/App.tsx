@@ -121,8 +121,12 @@ export function App() {
     refetchInterval: (q) => (q.state.data?.some((r) => r.status === 'running') ? 2500 : false),
   });
   const runs = useMemo(() => runsQ.data ?? [], [runsQ.data]);
+  // R2: prefer the explicitly-selected run; else a run of the SELECTED WORKFLOW (so
+  // Morph/Execution stay coherent with the Plan workflow); else the richest default.
   const summary =
-    runs.find((r) => r.ref.runId === selectedRunId) ?? defaultRun(runs);
+    runs.find((r) => r.ref.runId === selectedRunId) ??
+    (selectedWorkflowName ? runs.find((r) => r.workflowName === selectedWorkflowName) : undefined) ??
+    defaultRun(runs);
 
   // L2: a `running` run has no finalized wf_*.json yet — fetch its PARTIAL live snapshot
   // (built from the journal) and POLL it; once it finalizes (summary.status flips via the
@@ -334,15 +338,20 @@ export function App() {
     setSelectedRunId(null);
     setSelectedWorkflowName(null);
   }
-  // Picking a run lands it in the Execution view (today's view auto-picks the richest
-  // run; M4 lets you choose ANY of them).
+  // R2: selection is UNIFIED across the three views. Picking a run drives Execution AND
+  // syncs the Plan workflow to the run's workflow, so Plan/Morph/Execution all describe the
+  // SAME workflow (no more "Plan shows X while Execution shows Y").
   function handleSelectRun(r: RunSummary) {
     setSelectedRunId(r.ref.runId);
+    setSelectedWorkflowName(r.workflowName);
     setView('execution');
   }
-  // Picking a workflow lands it in the Plan view.
+  // Picking a workflow drives the Plan view AND selects that workflow's most-recent run (if
+  // any) so Morph/Execution follow it too — and so a live run is one click from validation.
   function handleSelectWorkflow(w: WorkflowMeta) {
     setSelectedWorkflowName(w.name);
+    const match = runs.find((r) => r.workflowName === w.name);
+    setSelectedRunId(match ? match.ref.runId : null);
     setView('plan');
   }
 
@@ -479,7 +488,13 @@ export function App() {
             <select
               className="wf-picker"
               value={workflow.name}
-              onChange={(e) => setSelectedWorkflowName(e.target.value)}
+              onChange={(e) => {
+                // R2: keep Morph/Execution coherent — switch to a run of the chosen workflow.
+                const name = e.target.value;
+                setSelectedWorkflowName(name);
+                const match = runs.find((r) => r.workflowName === name);
+                setSelectedRunId(match ? match.ref.runId : null);
+              }}
               aria-label="workflow"
             >
               {workflows.map((w) => (
@@ -575,7 +590,11 @@ export function App() {
       ) : null}
 
       {/* I1: node detail panel (right side), filled instantly from the clicked node's data. */}
-      <DetailPanel node={selectedNode} onClose={() => setSelectedNodeId(null)} />
+      <DetailPanel
+        node={selectedNode}
+        runRef={summary ? { slug: summary.ref.slug, sessionId: summary.ref.sessionId, runId: summary.ref.runId } : null}
+        onClose={() => setSelectedNodeId(null)}
+      />
       {/* I3: run overview (logs timeline) — only when no node is selected (node wins). */}
       {!selectedNode && overviewOpen ? (
         <RunOverviewPanel run={run ?? null} onClose={() => setOverviewOpen(false)} />

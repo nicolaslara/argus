@@ -119,6 +119,35 @@ export function reduceJournal(events: JournalEvent[]): LiveAgent[] {
   return [...byId.values()];
 }
 
+/**
+ * The FULL (uncapped) result value for one agent, read from the journal `result` event
+ * (the journal is the only place the complete result lives — the finalized wf_<id>.json
+ * only keeps a ~401-char `resultPreview`). The value is whatever the agent returned: a
+ * STRING for a text agent, or a structured OBJECT for a schema (StructuredOutput) agent.
+ * Returns null if the agent has no result event. Line-independent; NEVER throws.
+ *
+ * Used by the inspect detail panel's lazy "full result" fetch (R1): the dashboard renders
+ * this readably (and offers raw JSON), instead of the truncated preview.
+ */
+export function agentResultFromJournal(journalText: string, agentId: string): unknown {
+  for (const rawLine of journalText.split('\n')) {
+    const line = rawLine.trim();
+    if (line.length === 0) continue;
+    let o: unknown;
+    try {
+      o = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (!o || typeof o !== 'object') continue;
+    const rec = o as Record<string, unknown>;
+    if (rec.type === 'result' && rec.agentId === agentId) {
+      return 'result' in rec ? (rec.result ?? null) : null;
+    }
+  }
+  return null;
+}
+
 // --- running-run detection (L1) ---------------------------------------------
 
 export type RunLiveness = 'running' | 'stale' | 'finalized';

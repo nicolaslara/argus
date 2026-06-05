@@ -6,8 +6,10 @@
 // ALL text is rendered as React text nodes (never dangerouslySetInnerHTML): previews /
 // results / labels can echo the user's own run content (boundaries §4).
 
-import { memo } from 'react';
+import { memo, useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import type { Node } from '@xyflow/react';
+import { fetchAgentResult } from '../api.ts';
 
 interface Preview {
   text: string;
@@ -16,6 +18,53 @@ interface Preview {
 
 function isPreview(v: unknown): v is Preview {
   return !!v && typeof v === 'object' && typeof (v as Preview).text === 'string';
+}
+
+// R1: render an agent's prompt/result HUMAN-READABLY by default; raw JSON behind a toggle.
+// A result is a string (text agent) or an object (schema agent). We show a readable view
+// (prose, or a key→value table for an object) and let advanced users flip to raw JSON.
+type Readable = { kind: 'json'; value: unknown } | { kind: 'prose'; text: string };
+function tryReadable(v: unknown): Readable {
+  if (v !== null && typeof v === 'object') return { kind: 'json', value: v };
+  const text = typeof v === 'string' ? v : v == null ? '' : String(v);
+  const t = text.trim();
+  if (t.startsWith('{') || t.startsWith('[')) {
+    try {
+      return { kind: 'json', value: JSON.parse(t) };
+    } catch {
+      // a TRUNCATED/invalid JSON string → fall back to prose (still readable as text).
+      return { kind: 'prose', text };
+    }
+  }
+  return { kind: 'prose', text };
+}
+/** One-line readable form of a value for a key→value row (nested data summarized). */
+function scalar(v: unknown): string {
+  if (v === null) return 'null';
+  if (v === undefined) return '—';
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+  if (Array.isArray(v)) return `[${v.length} ${v.length === 1 ? 'item' : 'items'}]`;
+  if (typeof v === 'object') return `{${Object.keys(v as object).length} fields}`;
+  return String(v);
+}
+function JsonReadable({ value }: { value: unknown }) {
+  const entries: Array<[string, unknown]> = Array.isArray(value)
+    ? value.slice(0, 40).map((v, i) => [String(i), v] as [string, unknown])
+    : value && typeof value === 'object'
+      ? Object.entries(value as Record<string, unknown>)
+      : [];
+  if (entries.length === 0) return <div className="detail-summary">{scalar(value)}</div>;
+  return (
+    <div className="detail-kv">
+      {entries.map(([k, v]) => (
+        <div key={k} className="detail-kv-row">
+          <span className="detail-kv-key">{k}</span>
+          <span className="detail-kv-val">{scalar(v)}</span>
+        </div>
+      ))}
+    </div>
+  );
 }
 function str(v: unknown): string | null {
   return typeof v === 'string' && v.length > 0 ? v : null;
@@ -50,26 +99,69 @@ function Row({ label, value }: { label: string; value: string | number | null | 
   );
 }
 
-function PreviewBlock({ label, preview }: { label: string; preview: unknown }) {
-  if (!isPreview(preview)) return null;
+function PreviewBlock({
+  label,
+  preview,
+  full,
+  loading,
+}: {
+  label: string;
+  preview: unknown;
+  /** The lazily-fetched FULL value (string or object); undefined = not fetched. */
+  full?: unknown;
+  loading?: boolean;
+}) {
+  const [raw, setRaw] = useState(false);
+  const pv = isPreview(preview) ? preview : null;
+  const hasFull = full !== undefined && full !== null;
+  const source: unknown = hasFull ? full : (pv?.text ?? '');
+  const readable = useMemo(() => tryReadable(source), [source]);
+  if (!pv && !hasFull) return null;
+
+  const truncated = !hasFull && !!pv?.truncated; // a capped preview; the full value isn't truncated
+  const rawText = readable.kind === 'json' ? JSON.stringify(readable.value, null, 2) : readable.text;
   return (
     <div className="detail-block">
       <div className="detail-block-label">
         {label}
-        {preview.truncated ? <span className="detail-trunc">truncated</span> : null}
+        {loading ? <span className="detail-trunc detail-loading">loading…</span> : null}
+        {truncated ? <span className="detail-trunc">preview</span> : null}
+        {readable.kind === 'json' ? (
+          <button type="button" className="detail-toggle" onClick={() => setRaw((v) => !v)}>
+            {raw ? '◧ readable' : '{ } json'}
+          </button>
+        ) : null}
       </div>
-      <pre className="detail-pre">{preview.text || '—'}</pre>
+      {readable.kind === 'json' && !raw ? (
+        <JsonReadable value={readable.value} />
+      ) : (
+        <pre className="detail-pre">{rawText || '—'}</pre>
+      )}
     </div>
   );
 }
 
 export const DetailPanel = memo(function DetailPanel({
   node,
+  runRef,
   onClose,
 }: {
   node: Node | null;
+  /** The current run's ref — lets an execution agent lazily fetch its FULL result (R1). */
+  runRef?: { slug: string; sessionId: string; runId: string } | null;
   onClose: () => void;
 }) {
+  // Hooks must run unconditionally (before the early return). Derive from a possibly-null node.
+  const dMaybe = (node?.data ?? {}) as Record<string, unknown>;
+  const isAgent = (node?.type ?? '') === 'agentCard';
+  const agentId = isAgent ? str(dMaybe.agentId) : null;
+  const resultQ = useQuery({
+    queryKey: ['agent-result', runRef?.slug, runRef?.sessionId, runRef?.runId, agentId],
+    queryFn: () => fetchAgentResult(runRef!, agentId!),
+    enabled: !!node && !!runRef && !!agentId,
+    staleTime: Infinity,
+  });
+
   if (!node) return null;
   const d = node.data as Record<string, unknown>;
   const type = node.type ?? 'node';
@@ -152,7 +244,12 @@ export const DetailPanel = memo(function DetailPanel({
       </div>
 
       <PreviewBlock label="prompt" preview={d.promptPreview} />
-      <PreviewBlock label="result" preview={d.resultPreview} />
+      <PreviewBlock
+        label="result"
+        preview={d.resultPreview}
+        full={resultQ.data?.value}
+        loading={!!agentId && resultQ.isFetching && resultQ.data === undefined}
+      />
     </aside>
   );
 });

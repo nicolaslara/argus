@@ -48,6 +48,7 @@ export {
   classifyRunLiveness,
   planExpectedSlots,
   buildLiveModel,
+  agentResultFromJournal,
 } from './live.ts';
 export type { JournalEvent, ParsedJournal, RunLiveness, LivenessInput, LiveModelOptions } from './live.ts';
 export { discoverRunningRunsReport } from './discovery.ts';
