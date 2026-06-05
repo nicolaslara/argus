@@ -408,6 +408,26 @@ export function App() {
 
   return (
     <div className="argus-app">
+      {/* M4: collapsible left rail — in-flow so it PUSHES the canvas aside (not an overlay). */}
+      <Rail
+        collapsed={railCollapsed}
+        onToggleCollapsed={() => setRailCollapsed((c) => !c)}
+        section={railSection}
+        onSelectSection={setRailSection}
+        projects={projects ?? []}
+        selectedProjectPath={project?.projectPath}
+        onSelectProject={handleSelectProject}
+        projectsLoading={projectsQ.isPending}
+        runs={runs}
+        selectedRunId={summary?.ref.runId}
+        onSelectRun={handleSelectRun}
+        runsLoading={!!project && runsQ.isPending}
+        workflows={workflows}
+        selectedWorkflowName={workflow?.name}
+        onSelectWorkflow={handleSelectWorkflow}
+      />
+      {/* everything right of the rail lives here so overlays center on the CANVAS, not the viewport */}
+      <div className="argus-main">
       <ReactFlow
         onInit={(inst) => {
           rfRef.current = inst;
@@ -437,25 +457,6 @@ export function App() {
         <MiniMap pannable zoomable />
         <Controls showInteractive={false} />
       </ReactFlow>
-
-      {/* M4: the collapsible left icon-rail (project switcher + run picker + settings). */}
-      <Rail
-        collapsed={railCollapsed}
-        onToggleCollapsed={() => setRailCollapsed((c) => !c)}
-        section={railSection}
-        onSelectSection={setRailSection}
-        projects={projects ?? []}
-        selectedProjectPath={project?.projectPath}
-        onSelectProject={handleSelectProject}
-        projectsLoading={projectsQ.isPending}
-        runs={runs}
-        selectedRunId={summary?.ref.runId}
-        onSelectRun={handleSelectRun}
-        runsLoading={!!project && runsQ.isPending}
-        workflows={workflows}
-        selectedWorkflowName={workflow?.name}
-        onSelectWorkflow={handleSelectWorkflow}
-      />
 
       {/* Plan ⟷ Progress ⟷ Execution. The three are one graph at different resolutions:
           Plan = the design; Progress (P2 overlay) = the plan painted per STEP with run
@@ -644,6 +645,7 @@ export function App() {
           onClose={() => setOverviewOpen(false)}
         />
       ) : null}
+      </div>
     </div>
   );
 }

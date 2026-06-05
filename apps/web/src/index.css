@@ -30,6 +30,19 @@ body {
   position: relative;
   height: 100%;
   width: 100%;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+}
+
+/* the canvas region right of the rail — its own positioning context so the rail PUSHES
+   it aside (in-flow flex sibling) and all the absolute overlays center on the canvas. */
+.argus-main {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
 }
 
 .argus-app .react-flow {
@@ -665,21 +678,18 @@ body {
 }
 
 /* ===== M4 shell — collapsible left icon-rail =============================
-   Absolutely positioned OVER the fullscreen canvas. Collapsed by default → a thin
-   52px icon strip (≈3.6% of a 1440 viewport, so the canvas keeps >90%). The rail
-   container itself is pointer-events:none so it never steals pans from the canvas;
-   only its interactive children (the strip + the expanded panel) re-enable pointer
-   events. Expanding adds a 264px panel beside the strip (still an overlay — the
-   canvas does not reflow). 150–200ms ease; saturation reserved for state. */
+   In-flow flex sibling of .argus-main, so it PUSHES the canvas aside rather than
+   overlaying it. Collapsed → a thin 52px icon strip; expanding adds a 264px panel
+   beside the strip and the canvas reflows to the remaining width.
+   150–200ms ease; saturation reserved for state. */
 .rail {
-  position: absolute;
-  top: 0;
-  left: 0;
-  bottom: 0;
+  position: relative;
+  flex: none;
+  align-self: stretch;
   display: flex;
   align-items: stretch;
   z-index: 10;
-  pointer-events: none; /* container is inert; children opt back in */
+  pointer-events: auto;
 }
 
 /* the always-visible icon strip */

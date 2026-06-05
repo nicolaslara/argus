@@ -1,0 +1,240 @@
+<section class="card" data-view="lane-expand">
+  <h3>Lane-expand</h3>
+  <p class="cap">
+    <em>best for: one run, two zooms — the painted plan DAG that drills into real instances without leaving the view.</em>
+    Stance: <strong>ONE run view</strong> (Plan stays a separate template view; Progress + Execution collapse into this). Default is the collapsed plan shape — pending steps are dashed ghosts, done/running steps are solid cards. A fanned step shows a <code>▾</code> caret + <code>×N</code> chip and <strong>expands inline</strong> into its instance cards (failed = red, upcoming = dashed) — "click to expand, not a separate tab." Handles <strong>adversarial-verification</strong> as an accent VERIFY diamond gate that the fan-in passes through; renders <strong>loop-until-done</strong> as a dashed accent back-edge off the gate, and <strong>tournament</strong> by letting each bracket round be its own expandable fan-out lane (the eliminated branch's instances stay red/dimmed in the drawer).
+  </p>
+
+  <style>
+    [data-view="lane-expand"]{
+      --bg:#0d1117;--panel:#11161c;--panel-2:#0b0f14;--fg:#e6edf3;--dim:#8b949e;--faint:#6e7681;
+      --line:#21262d;--line-2:#30363d;--accent:#5b9dff;--green:#3fb950;--amber:#d29922;--red:#f85149;--purple:#a371f7;
+      --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+      --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,system-ui,sans-serif;
+    }
+    [data-view="lane-expand"] .canvas{ background:var(--bg); position:relative; }
+    /* run header */
+    [data-view="lane-expand"] .lx-runbar{
+      display:flex; align-items:center; gap:10px; margin-bottom:18px;
+      font-family:var(--mono); font-size:11.5px; color:var(--dim);
+    }
+    [data-view="lane-expand"] .lx-runbar .lx-name{ color:var(--fg); font-weight:600; }
+    [data-view="lane-expand"] .lx-runbar .lx-sep{ color:var(--faint); }
+    [data-view="lane-expand"] .lx-runbar .lx-expandall{
+      margin-left:auto; font-size:10.5px; color:var(--accent);
+      border:1px solid color-mix(in srgb, var(--accent) 32%, var(--line));
+      border-radius:5px; padding:3px 9px; cursor:pointer; background:color-mix(in srgb, var(--accent) 7%, transparent);
+    }
+
+    /* the single left -> right run lane */
+    [data-view="lane-expand"] .lx-lane{
+      display:flex; align-items:flex-start; gap:0; min-width:1040px;
+    }
+    [data-view="lane-expand"] .lx-phase{ position:relative; }
+    /* phase band label (dimension-bracket-ish) */
+    [data-view="lane-expand"] .lx-band{
+      font-family:var(--mono); font-size:9.5px; letter-spacing:.13em; text-transform:uppercase;
+      color:var(--faint); margin:0 0 8px 2px; display:flex; align-items:center; gap:7px;
+    }
+    [data-view="lane-expand"] .lx-band .lx-idx{
+      display:inline-flex; align-items:center; justify-content:center; width:15px; height:15px;
+      border-radius:50%; border:1px solid var(--line-2); color:var(--dim); font-size:9px;
+    }
+
+    /* connector spine between phases */
+    [data-view="lane-expand"] .lx-conn{
+      align-self:flex-start; margin-top:46px; display:flex; flex-direction:column; align-items:center; gap:2px;
+      width:38px; flex:none;
+    }
+    [data-view="lane-expand"] .lx-conn .lx-wire{ width:100%; height:1px; background:var(--line-2); }
+    [data-view="lane-expand"] .lx-conn.dashed .lx-wire{
+      height:0; border-top:1px dashed var(--line-2);
+    }
+    [data-view="lane-expand"] .lx-conn .lx-marker{
+      font-family:var(--mono); font-size:11px; line-height:1; color:var(--dim);
+    }
+    [data-view="lane-expand"] .lx-conn .lx-marker.fan{ color:var(--accent); }
+
+    /* a realized step = solid card */
+    [data-view="lane-expand"] .lx-step{
+      position:relative; width:210px;
+      background:var(--panel); border:1px solid var(--line-2); border-radius:9px;
+      padding:11px 12px 12px; box-shadow:0 1px 0 rgba(0,0,0,.35), 0 6px 16px -10px rgba(0,0,0,.6);
+      font-family:var(--mono);
+    }
+    [data-view="lane-expand"] .lx-step .lx-dot{
+      position:absolute; top:10px; right:11px; font-size:11px; line-height:1;
+    }
+    [data-view="lane-expand"] .lx-step .lx-title{ font-size:12px; color:var(--fg); padding-right:16px; }
+    [data-view="lane-expand"] .lx-step .lx-meta{ font-size:10.5px; color:var(--dim); margin-top:5px; }
+    [data-view="lane-expand"] .lx-step .lx-chip{
+      display:inline-flex; align-items:center; gap:5px; margin-top:9px;
+      font-size:10px; color:var(--dim);
+      border:1px solid var(--line-2); border-radius:5px; padding:2px 7px; cursor:pointer;
+      user-select:none;
+    }
+    [data-view="lane-expand"] .lx-step .lx-chip .lx-caret{ color:var(--accent); font-size:9px; }
+    [data-view="lane-expand"] .lx-step .lx-chip .lx-n{ color:var(--fg); }
+    [data-view="lane-expand"] .lx-step .lx-chip:hover{ border-color:var(--line); }
+
+    /* a pending step = dashed ghost */
+    [data-view="lane-expand"] .lx-ghost{
+      width:210px; border:1px dashed var(--line-2); border-radius:9px; background:transparent;
+      padding:11px 12px 12px; font-family:var(--mono); box-shadow:none;
+    }
+    [data-view="lane-expand"] .lx-ghost .lx-dot{ position:absolute; }
+    [data-view="lane-expand"] .lx-ghost .lx-title{ font-size:12px; color:var(--faint); }
+    [data-view="lane-expand"] .lx-ghost .lx-meta{ font-size:10.5px; color:var(--faint); margin-top:5px; }
+    [data-view="lane-expand"] .lx-ghost.glabel{
+      font-size:9.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--faint);
+    }
+
+    /* accent verify gate: diamond outline + label, wrapping the REVIEW fan */
+    [data-view="lane-expand"] .lx-verifywrap{ position:relative; }
+    [data-view="lane-expand"] .lx-verifyhdr{
+      display:flex; align-items:center; gap:7px; margin:0 0 7px 1px;
+      font-family:var(--mono); font-size:9.5px; letter-spacing:.06em; color:var(--accent);
+    }
+    [data-view="lane-expand"] .lx-diamond{
+      width:11px; height:11px; border:1.5px solid var(--accent); transform:rotate(45deg);
+      border-radius:2px; flex:none; background:color-mix(in srgb, var(--accent) 8%, transparent);
+    }
+    [data-view="lane-expand"] .lx-step.verify{
+      border-color:color-mix(in srgb, var(--accent) 38%, var(--line-2));
+      background:linear-gradient(180deg, color-mix(in srgb, var(--accent) 6%, transparent), transparent 60%), var(--panel);
+    }
+    /* loop-until-done back-edge annotation off the gate */
+    [data-view="lane-expand"] .lx-loop{
+      margin-top:9px; font-size:9.5px; color:var(--accent); font-family:var(--mono);
+      border-top:1px dashed color-mix(in srgb, var(--accent) 35%, transparent); padding-top:7px;
+      display:flex; align-items:center; gap:6px;
+    }
+    [data-view="lane-expand"] .lx-loop .lx-arc{ font-size:12px; }
+
+    /* the inline drawer: instance cards revealed under an expanded step */
+    [data-view="lane-expand"] .lx-drawer{
+      margin-top:11px; border:1px dashed var(--line-2); border-radius:9px;
+      padding:9px 9px 10px; background:color-mix(in srgb, var(--panel-2) 70%, transparent);
+    }
+    [data-view="lane-expand"] .lx-drawer .lx-dhdr{
+      font-family:var(--mono); font-size:9.5px; color:var(--faint); letter-spacing:.06em;
+      margin:0 0 8px 1px;
+    }
+    [data-view="lane-expand"] .lx-grid{ display:grid; grid-template-columns:repeat(2, 1fr); gap:7px; }
+    [data-view="lane-expand"] .lx-grid.cols3{ grid-template-columns:repeat(3, 1fr); }
+    [data-view="lane-expand"] .lx-inst{
+      background:var(--panel); border:1px solid var(--line); border-radius:7px;
+      padding:8px 9px; position:relative; font-family:var(--mono); min-height:48px; cursor:pointer;
+    }
+    [data-view="lane-expand"] .lx-inst:hover{ border-color:var(--line-2); }
+    [data-view="lane-expand"] .lx-inst.fail{ border-color:color-mix(in srgb, var(--red) 55%, var(--line)); }
+    [data-view="lane-expand"] .lx-inst .lx-idot{ position:absolute; top:7px; right:8px; font-size:10px; line-height:1; }
+    [data-view="lane-expand"] .lx-inst .lx-iname{ font-size:11px; color:var(--fg); padding-right:14px; }
+    [data-view="lane-expand"] .lx-inst .lx-imeta{ font-size:9.5px; color:var(--dim); margin-top:6px; }
+    [data-view="lane-expand"] .lx-inst .lx-imeta.err{ color:var(--red); }
+    /* upcoming instance = dashed ghost tile inside the drawer */
+    [data-view="lane-expand"] .lx-inst.ghost{
+      border:1px dashed var(--line-2); background:transparent; cursor:default;
+      display:flex; align-items:center; justify-content:center; color:var(--faint); font-size:10px;
+    }
+
+    [data-view="lane-expand"] .g-done{color:var(--green);}
+    [data-view="lane-expand"] .g-fail{color:var(--red);}
+    [data-view="lane-expand"] .g-run{color:var(--accent);}
+    [data-view="lane-expand"] .pulse{ animation:lx-pulse 1.7s ease-in-out infinite; }
+    @keyframes lx-pulse{ 0%,100%{opacity:1} 50%{opacity:.35} }
+  </style>
+
+  <div class="canvas">
+    <div class="lx-runbar">
+      <span class="lx-name">modal-rust-plan-research</span>
+      <span class="lx-sep">·</span><span>10 agents</span>
+      <span class="lx-sep">·</span><span>6m02s</span>
+      <span class="lx-sep">·</span><span>4 phases</span>
+      <span class="lx-sep">·</span><span class="g-run pulse">◌ review in progress</span>
+      <span class="lx-expandall">⊞ Expand all</span>
+    </div>
+
+    <div class="lx-lane">
+
+      <!-- PHASE 1: RESEARCH — fan-out, EXPANDED inline into its 5 instances (realized fan-out) -->
+      <div class="lx-phase" style="width:400px;">
+        <div class="lx-band"><span class="lx-idx">1</span> Research</div>
+        <div class="lx-step" style="width:400px;">
+          <span class="lx-dot g-done">●</span>
+          <div class="lx-title">research</div>
+          <div class="lx-meta">parallel research · client-availability, connection, data-contract, graph-viz, ts-stack</div>
+          <span class="lx-chip"><span class="lx-caret">▴</span> <span class="lx-n">×5</span> · 5/5 done</span>
+
+          <!-- inline drawer: the real agent instances (the demoted Execution view, anchored to the plan step) -->
+          <div class="lx-drawer">
+            <div class="lx-dhdr">┄ instances · ×5 · 5/5 done ┄ click a card → detail panel</div>
+            <div class="lx-grid cols3">
+              <div class="lx-inst"><span class="lx-idot g-done">●</span><div class="lx-iname">client-availability</div><div class="lx-imeta">done · 8.3k · 12 tools</div></div>
+              <div class="lx-inst"><span class="lx-idot g-done">●</span><div class="lx-iname">connection-strategy</div><div class="lx-imeta">done · 9.1k · 14 tools</div></div>
+              <div class="lx-inst"><span class="lx-idot g-done">●</span><div class="lx-iname">data-contract</div><div class="lx-imeta">done · 6.0k · 9 tools</div></div>
+              <div class="lx-inst"><span class="lx-idot g-done">●</span><div class="lx-iname">graph-viz</div><div class="lx-imeta">done · 6.8k · 10 tools</div></div>
+              <div class="lx-inst"><span class="lx-idot g-done">●</span><div class="lx-iname">ts-stack</div><div class="lx-imeta">done · 5.5k · 8 tools</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- spine: fan-in to DESIGN -->
+      <div class="lx-conn"><div class="lx-wire"></div><span class="lx-marker fan">◆</span><div class="lx-wire"></div></div>
+
+      <!-- PHASE 2: DESIGN — single, collapsed solid card -->
+      <div class="lx-phase" style="width:210px;">
+        <div class="lx-band"><span class="lx-idx">2</span> Design</div>
+        <div class="lx-step">
+          <span class="lx-dot g-done">●</span>
+          <div class="lx-title">synthesize-approach</div>
+          <div class="lx-meta">done · 11.2k · 6 tools</div>
+        </div>
+      </div>
+
+      <!-- spine: fan-out to REVIEW -->
+      <div class="lx-conn"><div class="lx-wire"></div><span class="lx-marker fan">●</span><div class="lx-wire"></div></div>
+
+      <!-- PHASE 3: REVIEW — adversarial verify gate, fan-out of 3, RUNNING variant -->
+      <div class="lx-phase" style="width:248px;">
+        <div class="lx-band"><span class="lx-idx">3</span> Review</div>
+        <div class="lx-verifywrap">
+          <div class="lx-verifyhdr"><span class="lx-diamond"></span> ADVERSARIAL VERIFY · ×3</div>
+          <div class="lx-step verify" style="width:248px;">
+            <span class="lx-dot g-run pulse">◌</span>
+            <div class="lx-title">review</div>
+            <div class="lx-meta">2 running · 1 failed — gate is OPEN (blocks fan-in)</div>
+            <span class="lx-chip"><span class="lx-caret">▴</span> <span class="lx-n">×3</span> · <span class="g-fail">1 failed</span></span>
+
+            <div class="lx-drawer">
+              <div class="lx-dhdr">┄ instances · ×3 · 0/3 settled ┄ failed branch stays red</div>
+              <div class="lx-grid">
+                <div class="lx-inst"><span class="lx-idot g-run pulse">◌</span><div class="lx-iname">review:correctness</div><div class="lx-imeta g-run">running… · 4.1k</div></div>
+                <div class="lx-inst"><span class="lx-idot g-run pulse">◌</span><div class="lx-iname">review:security</div><div class="lx-imeta g-run">running… · 3.7k</div></div>
+                <div class="lx-inst fail"><span class="lx-idot g-fail">✕</span><div class="lx-iname">review:feasibility</div><div class="lx-imeta err">error · — · 2 tools</div></div>
+              </div>
+            </div>
+
+            <!-- loop-until-done back-edge annotation off the gate -->
+            <div class="lx-loop"><span class="lx-arc">↺</span> on fail → loop back to design (max 2 retries)</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- spine: fan-in to SYNTHESIZE — DASHED because the gate hasn't passed yet -->
+      <div class="lx-conn dashed"><div class="lx-wire"></div><span class="lx-marker">◇</span><div class="lx-wire"></div></div>
+
+      <!-- PHASE 4: SYNTHESIZE — PENDING, rendered as a DASHED GHOST (not yet run) -->
+      <div class="lx-phase" style="width:210px;">
+        <div class="lx-band"><span class="lx-idx">4</span> Synthesize</div>
+        <div class="lx-ghost">
+          <span class="lx-dot" style="position:absolute;top:10px;right:11px;color:var(--faint);">◌</span>
+          <div class="lx-title">lock-decisions</div>
+          <div class="lx-meta">upcoming · waits on verify gate</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
