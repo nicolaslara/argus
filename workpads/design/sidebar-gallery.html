@@ -1,0 +1,404 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>argus · sidebar design gallery</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #11161c; --panel-2: #0b0f14; --fg: #e6edf3;
+    --dim: #8b949e; --faint: #6e7681; --line: #21262d; --line-2: #30363d;
+    --accent: #5b9dff; --green: #3fb950; --amber: #d29922; --red: #f85149;
+    --purple: #a371f7;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--sans); }
+  body { padding: 40px 40px 80px; line-height: 1.5; }
+  a { color: var(--accent); }
+  .page-head { max-width: 1080px; margin: 0 auto 36px; }
+  .page-head h1 { font-size: 26px; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .page-head .sub { color: var(--dim); font-size: 15px; margin: 0 0 20px; }
+  .lenses { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin: 0 0 8px; }
+  .lens { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+  .lens b { display: block; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 4px; }
+  .lens.h b { color: var(--accent); } .lens.t b { color: var(--green); } .lens.a b { color: var(--purple); }
+  .lens p { margin: 0; font-size: 13px; color: var(--dim); }
+
+  .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 22px; max-width: 1320px; margin: 0 auto; }
+  .card { background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; padding: 18px 18px 20px; display: flex; flex-direction: column; }
+  .card h3 { margin: 0 0 2px; font-size: 15px; }
+  .card .lens-tag { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; padding: 2px 7px; border-radius: 999px; margin-left: 8px; vertical-align: middle; }
+  .lt-h { background: rgba(91,157,255,0.14); color: var(--accent); }
+  .lt-t { background: rgba(63,185,80,0.14); color: var(--green); }
+  .lt-a { background: rgba(163,113,247,0.16); color: var(--purple); }
+  .card .cap { margin: 4px 0 14px; font-size: 12.5px; color: var(--dim); min-height: 34px; }
+  .card .cap em { color: var(--fg); font-style: normal; font-weight: 600; }
+
+  /* ---- shared rail atoms ---- */
+  .rail { width: 264px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+          font-family: var(--mono); font-size: 12px; color: var(--fg); overflow: hidden; align-self: center; }
+  .rail .proj { display: flex; align-items: center; gap: 6px; padding: 9px 11px; border-bottom: 1px solid var(--line);
+                font-weight: 600; color: var(--fg); }
+  .rail .proj .car { color: var(--faint); margin-left: auto; }
+  .rail .scn { padding: 6px 0; }
+  .sep { height: 1px; background: var(--line); margin: 6px 11px; }
+  .lbl { padding: 6px 12px 4px; color: var(--faint); font-size: 10px; letter-spacing: 0.09em; text-transform: uppercase; }
+  .row { display: flex; align-items: center; gap: 7px; padding: 4px 12px; white-space: nowrap; }
+  .row:hover { background: rgba(255,255,255,0.025); }
+  .row.sel { background: rgba(91,157,255,0.10); box-shadow: inset 2px 0 0 var(--accent); }
+  .g { width: 11px; text-align: center; flex: none; }
+  .name { color: var(--fg); overflow: hidden; text-overflow: ellipsis; }
+  .meta { color: var(--faint); margin-left: auto; font-size: 11px; }
+  .meta .dot { color: var(--line-2); margin: 0 3px; }
+  .cnt { color: var(--faint); margin-left: auto; font-size: 11px; }
+  .tw { color: var(--faint); width: 9px; flex: none; }
+  .kind { color: var(--purple); }
+  .indent { padding-left: 26px; }
+  .indent2 { padding-left: 40px; }
+  .guide { box-shadow: inset 16px 0 0 -15px var(--line-2); }
+  .g-done { color: var(--green); } .g-part { color: var(--amber); } .g-fail { color: var(--red); }
+  .g-kill { color: var(--amber); } .g-run { color: var(--accent); }
+  .pulse { animation: pulse 1.8s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+  /* live region */
+  .live-head { display: flex; align-items: center; gap: 7px; padding: 7px 12px 5px; color: var(--accent); font-size: 10px; letter-spacing: 0.09em; text-transform: uppercase; }
+  .live-head .cnt { color: var(--accent); opacity: 0.8; }
+
+  /* segmented toggle */
+  .seg { display: flex; margin: 8px 11px 4px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 7px; padding: 2px; }
+  .seg span { flex: 1; text-align: center; padding: 4px 0; font-size: 11px; color: var(--dim); border-radius: 5px; }
+  .seg span.on { background: var(--line); color: var(--fg); }
+
+  /* activity NOW cards */
+  .now-wrap { margin: 7px 11px; border: 1px solid rgba(91,157,255,0.35); border-radius: 9px; background: rgba(91,157,255,0.05); overflow: hidden; }
+  .now-bar { display: flex; align-items: center; gap: 7px; padding: 6px 10px; color: var(--accent); font-size: 10px; letter-spacing: 0.09em; text-transform: uppercase; border-bottom: 1px solid rgba(91,157,255,0.18); }
+  .now-card { padding: 8px 11px; }
+  .now-card + .now-card { border-top: 1px solid rgba(91,157,255,0.12); }
+  .now-card .t { display: flex; align-items: center; gap: 7px; }
+  .now-card .s { color: var(--faint); font-size: 11px; padding: 3px 0 4px 18px; }
+  .prog { height: 4px; border-radius: 3px; background: var(--line); margin: 3px 0 0 18px; overflow: hidden; }
+  .prog i { display: block; height: 100%; background: var(--accent); }
+
+  /* two-column */
+  .twocol { display: flex; }
+  .twocol .colA { width: 116px; border-right: 1px solid var(--line); padding: 6px 0; }
+  .twocol .colB { flex: 1; padding: 6px 0; min-width: 0; }
+  .twocol .ch { padding: 6px 10px 4px; color: var(--faint); font-size: 10px; letter-spacing: 0.07em; text-transform: uppercase; }
+  .twocol .rowA { display: flex; align-items: center; gap: 5px; padding: 4px 9px; }
+  .twocol .rowA.sel { background: rgba(91,157,255,0.10); box-shadow: inset 2px 0 0 var(--accent); }
+  .twocol .bkt { display: flex; align-items: center; gap: 6px; padding: 4px 10px; color: var(--dim); }
+  .twocol .rowB { display: flex; align-items: center; gap: 6px; padding: 3px 10px 3px 22px; }
+
+  /* timeline feed */
+  .tl { position: relative; padding: 6px 0 6px 0; }
+  .tl .day { padding: 8px 12px 3px 12px; color: var(--faint); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; }
+  .tl .ev { display: grid; grid-template-columns: 34px 14px 1fr; align-items: center; gap: 6px; padding: 3px 12px 3px 4px; }
+  .tl .when { color: var(--faint); font-size: 11px; text-align: right; }
+  .tl .track { position: relative; height: 100%; }
+  .tl .track:before { content: ""; position: absolute; left: 50%; top: -8px; bottom: -8px; width: 1px; background: var(--line-2); transform: translateX(-50%); }
+  .tl .track b { position: relative; display: block; width: 7px; height: 7px; border-radius: 50%; margin: 0 auto; background: var(--faint); z-index: 1; }
+  .tl .ev .body { display: flex; align-items: center; gap: 7px; min-width: 0; }
+
+  /* matrix */
+  .matrix-wrap { max-width: 1080px; margin: 48px auto 0; }
+  .matrix-wrap h2 { font-size: 19px; margin: 0 0 14px; }
+  table.matrix { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.matrix th, table.matrix td { padding: 9px 10px; border-bottom: 1px solid var(--line); text-align: center; }
+  table.matrix th { color: var(--dim); font-weight: 600; font-size: 11px; letter-spacing: 0.03em; text-transform: uppercase; }
+  table.matrix td.name, table.matrix th.name { text-align: left; white-space: nowrap; }
+  table.matrix td.verdict { text-align: left; color: var(--dim); font-size: 12px; }
+  .sc { display: inline-block; width: 22px; height: 22px; line-height: 22px; border-radius: 6px; font-weight: 700; font-size: 12px; }
+  .s5 { background: rgba(63,185,80,0.20); color: #6ee787; }
+  .s4 { background: rgba(63,185,80,0.12); color: #56d364; }
+  .s3 { background: rgba(210,153,34,0.16); color: #e3b341; }
+  .s2 { background: rgba(248,81,73,0.14); color: #ff7b72; }
+  .s1 { background: rgba(248,81,73,0.22); color: #ffa198; }
+  .reco { max-width: 1080px; margin: 40px auto 0; background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 10px; padding: 20px 24px; }
+  .reco h2 { margin: 0 0 10px; font-size: 18px; }
+  .reco p { margin: 0 0 12px; color: var(--fg); font-size: 14px; }
+  .reco p:last-child { margin-bottom: 0; }
+  .reco .win { color: var(--accent); font-weight: 600; }
+  .legend { max-width: 1320px; margin: 24px auto 30px; color: var(--faint); font-family: var(--mono); font-size: 11.5px; display: flex; flex-wrap: wrap; gap: 16px; }
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <h1>argus · sidebar design gallery</h1>
+  <p class="sub">Eight ways to navigate <b>projects → workflows → runs</b>. The shipped tree wins on <i>hierarchy</i>, but argus exists to show <i>what your agents are doing</i> — so we weigh two more lenses.</p>
+  <div class="lenses">
+    <div class="lens h"><b>Hierarchy</b><p>Which workflow does this run belong to? Containment must be obvious, not re-joined by a repeated name.</p></div>
+    <div class="lens t"><b>Time</b><p>What ran when? Running → recent → older. The "what happened" story across all workflows.</p></div>
+    <div class="lens a"><b>Activity</b><p>What are my agents doing <i>right now</i>? Running runs should be loud, not buried in a collapsed folder.</p></div>
+  </div>
+</div>
+
+<div class="legend">
+  <span><b style="color:var(--green)">●</b> completed</span>
+  <span><b style="color:var(--amber)">◐</b> partial</span>
+  <span><b style="color:var(--red)">✕</b> failed</span>
+  <span><b style="color:var(--amber)">◼</b> killed</span>
+  <span><b style="color:var(--accent)">◌</b> running</span>
+  <span>◇ workflow&nbsp;&nbsp;◷ orphan bucket</span>
+  <span>shared sample: project <b style="color:var(--fg)">modal-rust</b> · 2 running · 1 failed · 1 killed · runs spanning now→6d</span>
+</div>
+
+<div class="gallery">
+
+  <!-- 1. TREE -->
+  <div class="card">
+    <h3>1 · Tree <span class="lens-tag lt-h">hierarchy</span></h3>
+    <p class="cap"><em>Best for: structure.</em> VS Code Explorer — each workflow a folder, runs nested inside. The shipped design. Weakest on the time/activity story.</p>
+    <div class="rail">
+      <div class="proj">▾ modal-rust <span class="car">⌄</span></div>
+      <div class="scn">
+        <div class="live-head"><span class="g g-run pulse">●</span> Now · running <span class="cnt">2</span></div>
+        <div class="row indent"><span class="g g-run">◌</span><span class="name">refine-plan</span><span class="meta">≈2m14s</span></div>
+        <div class="row indent"><span class="g g-run">◌</span><span class="name">implement</span><span class="meta">≈0m48s</span></div>
+        <div class="sep"></div>
+        <div class="row"><span class="tw">▾</span><span class="kind">◇</span><span class="name">plan-research</span><span class="cnt">4</span></div>
+        <div class="row indent guide"><span class="g g-done">●</span><span class="name">14ag · 6m02s</span><span class="meta">5m</span></div>
+        <div class="row indent guide"><span class="g g-part">◐</span><span class="name">14ag · 5m48s</span><span class="meta">1h</span></div>
+        <div class="row indent guide"><span class="g g-fail">✕</span><span class="name">4ag · 22s</span><span class="meta">3h</span></div>
+        <div class="row indent guide"><span class="g g-done">●</span><span class="name">11ag · 4m11s</span><span class="meta">1d</span></div>
+        <div class="row"><span class="tw">▸</span><span class="kind">◇</span><span class="name">refine-plan</span><span class="g g-run" style="margin-left:auto">●</span><span class="cnt" style="margin-left:6px">4</span></div>
+        <div class="row"><span class="tw">▸</span><span class="kind">◇</span><span class="name">implement</span><span class="g g-run" style="margin-left:auto">●</span><span class="cnt" style="margin-left:6px">5</span></div>
+        <div class="row"><span class="tw">▸</span><span class="kind">◇</span><span class="name">p4-dynamic-config-gpu</span><span class="cnt">1</span></div>
+        <div class="row"><span class="tw">▸</span><span class="kind">◇</span><span class="name">build-modal-rust-sdk</span><span class="cnt">1</span></div>
+        <div class="row"><span class="tw">▾</span><span class="kind" style="color:var(--faint)">◷</span><span class="name" style="color:var(--dim)">(other runs)</span><span class="cnt">1</span></div>
+        <div class="row indent guide"><span class="g g-done">●</span><span class="name">fix-flaky · 14s</span><span class="meta">6d</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. CHRONOLOGICAL -->
+  <div class="card">
+    <h3>2 · Chronological <span class="lens-tag lt-t">time</span></h3>
+    <p class="cap"><em>Best for: "what happened".</em> One newest-first stream across all workflows, day separators, live pinned on top. Flattens the hierarchy to a per-row label.</p>
+    <div class="rail">
+      <div class="proj">▾ modal-rust <span class="car">⌄</span></div>
+      <div class="scn">
+        <div class="live-head"><span class="g g-run pulse">●</span> Running</div>
+        <div class="row"><span class="g g-run">◌</span><span class="name">refine-plan</span><span class="meta">3ag<span class="dot">·</span>≈2m14s</span></div>
+        <div class="row"><span class="g g-run">◌</span><span class="name">implement</span><span class="meta">5ag<span class="dot">·</span>≈0m48s</span></div>
+        <div class="sep"></div>
+        <div class="lbl">Today</div>
+        <div class="row"><span class="g g-done">●</span><span class="name">plan-research</span><span class="meta">6m02s<span class="dot">·</span>5m</span></div>
+        <div class="row"><span class="g g-part">◐</span><span class="name">plan-research</span><span class="meta">5m48s<span class="dot">·</span>1h</span></div>
+        <div class="row"><span class="g g-fail">✕</span><span class="name">plan-research</span><span class="meta">22s<span class="dot">·</span>3h</span></div>
+        <div class="row"><span class="g g-done">●</span><span class="name">p4-dynamic-config</span><span class="meta">42s<span class="dot">·</span>6h</span></div>
+        <div class="row"><span class="g g-done">●</span><span class="name">build-modal-sdk</span><span class="meta">13m<span class="dot">·</span>7h</span></div>
+        <div class="lbl">Yesterday</div>
+        <div class="row"><span class="g g-done">●</span><span class="name">plan-research</span><span class="meta">4m11s<span class="dot">·</span>1d</span></div>
+        <div class="row"><span class="g g-done">●</span><span class="name">implement</span><span class="meta">1m12s<span class="dot">·</span>1d</span></div>
+        <div class="lbl">Earlier</div>
+        <div class="row"><span class="g g-fail">✕</span><span class="name">refine-plan</span><span class="meta">22s<span class="dot">·</span>2d</span></div>
+        <div class="row"><span class="g g-kill">◼</span><span class="name">refine-plan</span><span class="meta">40s<span class="dot">·</span>5d</span></div>
+        <div class="row"><span class="g g-done">●</span><span class="name">fix-flaky-test</span><span class="meta">14s<span class="dot">·</span>6d</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. GROUPED STICKY -->
+  <div class="card">
+    <h3>3 · Grouped headers <span class="lens-tag lt-h">hierarchy</span></h3>
+    <p class="cap"><em>Best for: calm hierarchy.</em> Sections per workflow with a status rollup, no twisties. Linear-style. The sticky/opaque-header CSS is the fragile bit.</p>
+    <div class="rail">
+      <div class="proj">▾ modal-rust <span class="car">⌄</span></div>
+      <div class="scn">
+        <div class="row" style="border-top:1px solid var(--line);background:var(--panel-2)"><span class="kind">◇</span><span class="name" style="font-weight:600">plan-research</span><span class="meta"><span class="g g-done">●</span><span class="g g-part">◐</span><span class="g g-fail">✕</span> · 4</span></div>
+        <div class="row indent"><span class="g g-done">●</span><span class="name">14ag · 6m02s</span><span class="meta">5m</span></div>
+        <div class="row indent"><span class="g g-part">◐</span><span class="name">14ag · 5m48s</span><span class="meta">1h</span></div>
+        <div class="row indent"><span class="g g-fail">✕</span><span class="name">4ag · 22s</span><span class="meta">3h</span></div>
+        <div class="row indent"><span class="g g-done">●</span><span class="name">11ag · 4m11s</span><span class="meta">1d</span></div>
+        <div class="row" style="border-top:1px solid var(--line);background:var(--panel-2)"><span class="kind">◇</span><span class="name" style="font-weight:600">refine-plan</span><span class="meta"><span class="g g-run pulse">◌</span> · 4</span></div>
+        <div class="row indent"><span class="g g-run">◌</span><span class="name">3ag · ≈2m14s</span><span class="meta">now</span></div>
+        <div class="row indent"><span class="g g-done">●</span><span class="name">5ag · 58s</span><span class="meta">4h</span></div>
+        <div class="row indent"><span class="g g-fail">✕</span><span class="name">2ag · 22s</span><span class="meta">2d</span></div>
+        <div class="row indent"><span class="g g-kill">◼</span><span class="name">3ag · 40s</span><span class="meta">5d</span></div>
+        <div class="row" style="border-top:1px solid var(--line);background:var(--panel-2)"><span class="kind">◇</span><span class="name" style="font-weight:600">implement</span><span class="meta"><span class="g g-run pulse">◌</span> · 5</span></div>
+        <div class="row indent"><span class="g g-run">◌</span><span class="name">5ag · ≈0m48s</span><span class="meta">now</span></div>
+        <div class="row indent"><span class="g g-done">●</span><span class="name">5ag · 1m12s</span><span class="meta">1d</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. MILLER TWO-PANE -->
+  <div class="card">
+    <h3>4 · Two-pane (Miller) <span class="lens-tag lt-h">hierarchy</span></h3>
+    <p class="cap"><em>Best for: focus.</em> Workflows left, the selected one's runs right. Clean, but defers the runs behind a click and eats horizontal width.</p>
+    <div class="rail twocol">
+      <div class="colA">
+        <div class="ch">Workflows</div>
+        <div class="rowA sel"><span class="kind">◇</span><span class="name">plan-research</span></div>
+        <div class="rowA"><span class="kind">◇</span><span class="name">refine</span><span class="g g-run pulse" style="margin-left:auto">●</span></div>
+        <div class="rowA"><span class="kind">◇</span><span class="name">implmnt</span><span class="g g-run pulse" style="margin-left:auto">●</span></div>
+        <div class="rowA"><span class="kind">◇</span><span class="name">p4-dyn</span></div>
+        <div class="rowA"><span class="kind">◇</span><span class="name">build</span></div>
+        <div class="rowA"><span class="kind" style="color:var(--faint)">◷</span><span class="name" style="color:var(--dim)">other</span></div>
+      </div>
+      <div class="colB">
+        <div class="ch">plan-research · 4 runs</div>
+        <div class="row"><span class="g g-done">●</span><span class="name">14ag·6m02s</span><span class="meta">5m</span></div>
+        <div class="row"><span class="g g-part">◐</span><span class="name">14ag·5m48s</span><span class="meta">1h</span></div>
+        <div class="row"><span class="g g-fail">✕</span><span class="name">4ag·22s</span><span class="meta">3h</span></div>
+        <div class="row"><span class="g g-done">●</span><span class="name">11ag·4m11s</span><span class="meta">1d</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5. GROUP-BY TOGGLE -->
+  <div class="card">
+    <h3>5 · Group-by toggle <span class="lens-tag lt-t">all lenses</span></h3>
+    <p class="cap"><em>Best for: flexibility.</em> One sidebar, three regroupings — Workflow / Time / Status. The same runs, re-bucketed by the lens you need. (Time shown.)</p>
+    <div class="rail">
+      <div class="proj">▾ modal-rust <span class="car">⌄</span></div>
+      <div class="seg"><span>Workflow</span><span class="on">Time</span><span>Status</span></div>
+      <div class="scn">
+        <div class="row"><span class="tw">▾</span><span class="g g-run pulse">◌</span><span class="name">Running</span><span class="cnt">2</span></div>
+        <div class="row indent guide"><span class="g g-run">◌</span><span class="name">refine-plan</span><span class="meta">≈2m14s</span></div>
+        <div class="row indent guide"><span class="g g-run">◌</span><span class="name">implement</span><span class="meta">≈0m48s</span></div>
+        <div class="row"><span class="tw">▾</span><span class="name">Today</span><span class="cnt">5</span></div>
+        <div class="row indent guide"><span class="g g-done">●</span><span class="name">plan-research</span><span class="meta">5m</span></div>
+        <div class="row indent guide"><span class="g g-part">◐</span><span class="name">plan-research</span><span class="meta">1h</span></div>
+        <div class="row indent guide"><span class="g g-fail">✕</span><span class="name">plan-research</span><span class="meta">3h</span></div>
+        <div class="row indent guide"><span class="g g-done">●</span><span class="name">p4-dynamic</span><span class="meta">6h</span></div>
+        <div class="row indent guide"><span class="g g-done">●</span><span class="name">build-sdk</span><span class="meta">7h</span></div>
+        <div class="row"><span class="tw">▸</span><span class="name">This week</span><span class="cnt">4</span></div>
+        <div class="row"><span class="tw">▸</span><span class="name">Older</span><span class="cnt">1</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 6. ACTIVITY-FIRST -->
+  <div class="card">
+    <h3>6 · Activity-first <span class="lens-tag lt-a">activity</span></h3>
+    <p class="cap"><em>Best for: the core job.</em> A loud "NOW" region with live cards + progress, then Recent, then a collapsed tree. Answers "what are my agents doing" instantly.</p>
+    <div class="rail">
+      <div class="proj">▾ modal-rust <span class="meta" style="margin-left:auto;color:var(--accent)">2 working</span></div>
+      <div class="now-wrap">
+        <div class="now-bar"><span class="g g-run pulse">●</span> Now</div>
+        <div class="now-card">
+          <div class="t"><span class="g g-run">◌</span><span class="name" style="font-weight:600">refine-plan</span><span class="meta">≈2m14s</span></div>
+          <div class="prog"><i style="width:62%"></i></div>
+          <div class="s">3 agents · phase Verify</div>
+        </div>
+        <div class="now-card">
+          <div class="t"><span class="g g-run">◌</span><span class="name" style="font-weight:600">implement</span><span class="meta">≈0m48s</span></div>
+          <div class="prog"><i style="width:24%"></i></div>
+          <div class="s">5 agents · phase Mockups</div>
+        </div>
+      </div>
+      <div class="lbl">Recent</div>
+      <div class="row"><span class="g g-done">●</span><span class="name">plan-research</span><span class="meta">6m02s<span class="dot">·</span>5m</span></div>
+      <div class="row"><span class="g g-part">◐</span><span class="name">plan-research</span><span class="meta">5m48s<span class="dot">·</span>1h</span></div>
+      <div class="row"><span class="g g-fail">✕</span><span class="name">plan-research</span><span class="meta">22s<span class="dot">·</span>3h</span></div>
+      <div class="sep"></div>
+      <div class="row"><span class="tw">▸</span><span class="name" style="color:var(--dim)">All workflows</span><span class="cnt">6</span></div>
+    </div>
+  </div>
+
+  <!-- 7. TWO-COLUMN DOUBLE-COLLAPSE -->
+  <div class="card">
+    <h3>7 · Two-col double-collapse <span class="lens-tag lt-h">hier + time</span></h3>
+    <p class="cap"><em>Best for: dense power use.</em> Workflows collapse (col A); runs collapse by time bucket (col B). Two collapse levels at once — powerful, but novel and width-hungry.</p>
+    <div class="rail twocol">
+      <div class="colA">
+        <div class="ch">Workflows</div>
+        <div class="rowA sel"><span class="tw">▾</span><span class="kind">◇</span><span class="name">plan-res</span></div>
+        <div class="rowA"><span class="tw">▸</span><span class="kind">◇</span><span class="name">refine</span><span class="g g-run pulse" style="margin-left:auto">●</span></div>
+        <div class="rowA"><span class="tw">▸</span><span class="kind">◇</span><span class="name">implmnt</span><span class="g g-run pulse" style="margin-left:auto">●</span></div>
+        <div class="rowA"><span class="tw">▸</span><span class="kind">◇</span><span class="name">p4-dyn</span></div>
+        <div class="rowA"><span class="tw">▸</span><span class="kind">◇</span><span class="name">build</span></div>
+        <div class="rowA"><span class="tw">▸</span><span class="kind" style="color:var(--faint)">◷</span><span class="name" style="color:var(--dim)">other</span></div>
+      </div>
+      <div class="colB">
+        <div class="ch">plan-research</div>
+        <div class="bkt"><span class="tw">▾</span><span class="name">Today</span><span class="cnt">3</span></div>
+        <div class="rowB"><span class="g g-done">●</span><span class="name">6m02s</span><span class="meta">5m</span></div>
+        <div class="rowB"><span class="g g-part">◐</span><span class="name">5m48s</span><span class="meta">1h</span></div>
+        <div class="rowB"><span class="g g-fail">✕</span><span class="name">22s</span><span class="meta">3h</span></div>
+        <div class="bkt"><span class="tw">▾</span><span class="name">This week</span><span class="cnt">1</span></div>
+        <div class="rowB"><span class="g g-done">●</span><span class="name">4m11s</span><span class="meta">1d</span></div>
+        <div class="bkt"><span class="tw">▸</span><span class="name">Older</span><span class="cnt">0</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 8. TIMELINE FEED -->
+  <div class="card">
+    <h3>8 · Timeline feed <span class="lens-tag lt-t">time</span></h3>
+    <p class="cap"><em>Best for: the run history.</em> A vertical time-rail, running pinned at the top, events grouped by day — like a git log of your agent runs. Hierarchy is just a label.</p>
+    <div class="rail">
+      <div class="proj">▾ modal-rust <span class="car">⌄</span></div>
+      <div class="tl">
+        <div class="day" style="color:var(--accent)">● Now</div>
+        <div class="ev"><span class="when">now</span><span class="track"><b style="background:var(--accent)" class="pulse"></b></span><span class="body"><span class="g g-run">◌</span><span class="name">refine-plan</span><span class="meta">3ag</span></span></div>
+        <div class="ev"><span class="when">now</span><span class="track"><b style="background:var(--accent)" class="pulse"></b></span><span class="body"><span class="g g-run">◌</span><span class="name">implement</span><span class="meta">5ag</span></span></div>
+        <div class="day">Today</div>
+        <div class="ev"><span class="when">5m</span><span class="track"><b style="background:var(--green)"></b></span><span class="body"><span class="g g-done">●</span><span class="name">plan-research</span><span class="meta">6m02s</span></span></div>
+        <div class="ev"><span class="when">1h</span><span class="track"><b style="background:var(--amber)"></b></span><span class="body"><span class="g g-part">◐</span><span class="name">plan-research</span><span class="meta">5m48s</span></span></div>
+        <div class="ev"><span class="when">3h</span><span class="track"><b style="background:var(--red)"></b></span><span class="body"><span class="g g-fail">✕</span><span class="name">plan-research</span><span class="meta">22s</span></span></div>
+        <div class="ev"><span class="when">6h</span><span class="track"><b style="background:var(--green)"></b></span><span class="body"><span class="g g-done">●</span><span class="name">p4-dynamic</span><span class="meta">42s</span></span></div>
+        <div class="ev"><span class="when">7h</span><span class="track"><b style="background:var(--green)"></b></span><span class="body"><span class="g g-done">●</span><span class="name">build-sdk</span><span class="meta">13m</span></span></div>
+        <div class="day">Earlier</div>
+        <div class="ev"><span class="when">1d</span><span class="track"><b style="background:var(--green)"></b></span><span class="body"><span class="g g-done">●</span><span class="name">implement</span><span class="meta">1m12s</span></span></div>
+        <div class="ev"><span class="when">2d</span><span class="track"><b style="background:var(--red)"></b></span><span class="body"><span class="g g-fail">✕</span><span class="name">refine-plan</span><span class="meta">22s</span></span></div>
+        <div class="ev"><span class="when">5d</span><span class="track"><b style="background:var(--amber)"></b></span><span class="body"><span class="g g-kill">◼</span><span class="name">refine-plan</span><span class="meta">40s</span></span></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="matrix-wrap">
+  <h2>Comparison matrix</h2>
+  <table class="matrix">
+    <thead>
+      <tr>
+        <th class="name">Design</th>
+        <th>Hierarchy</th><th>Time</th><th>Activity</th><th>Scan</th><th>Familiar</th><th>Impl</th>
+        <th class="name">Verdict / best for</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td class="name">1 · Tree (shipped)</td>
+        <td><span class="sc s5">5</span></td><td><span class="sc s2">2</span></td><td><span class="sc s3">3</span></td><td><span class="sc s4">4</span></td><td><span class="sc s5">5</span></td><td><span class="sc s5">5</span></td>
+        <td class="verdict">Best structure & most familiar; the time/activity story is weak.</td></tr>
+      <tr><td class="name">2 · Chronological</td>
+        <td><span class="sc s2">2</span></td><td><span class="sc s5">5</span></td><td><span class="sc s4">4</span></td><td><span class="sc s5">5</span></td><td><span class="sc s4">4</span></td><td><span class="sc s4">4</span></td>
+        <td class="verdict">Best "what happened" scan; loses the hierarchy you asked to make obvious.</td></tr>
+      <tr><td class="name">3 · Grouped headers</td>
+        <td><span class="sc s5">5</span></td><td><span class="sc s3">3</span></td><td><span class="sc s3">3</span></td><td><span class="sc s4">4</span></td><td><span class="sc s4">4</span></td><td><span class="sc s3">3</span></td>
+        <td class="verdict">Hierarchy without twisties; sticky opaque headers are CSS-fragile.</td></tr>
+      <tr><td class="name">4 · Two-pane (Miller)</td>
+        <td><span class="sc s4">4</span></td><td><span class="sc s3">3</span></td><td><span class="sc s3">3</span></td><td><span class="sc s4">4</span></td><td><span class="sc s3">3</span></td><td><span class="sc s2">2</span></td>
+        <td class="verdict">Focused, but defers runs behind a click & costs width in a 264px rail.</td></tr>
+      <tr><td class="name">5 · Group-by toggle</td>
+        <td><span class="sc s5">5</span></td><td><span class="sc s5">5</span></td><td><span class="sc s4">4</span></td><td><span class="sc s4">4</span></td><td><span class="sc s4">4</span></td><td><span class="sc s3">3</span></td>
+        <td class="verdict">One sidebar, every lens on demand. Most flexible; adds a little state.</td></tr>
+      <tr><td class="name">6 · Activity-first</td>
+        <td><span class="sc s3">3</span></td><td><span class="sc s4">4</span></td><td><span class="sc s5">5</span></td><td><span class="sc s4">4</span></td><td><span class="sc s4">4</span></td><td><span class="sc s3">3</span></td>
+        <td class="verdict">Nails the core objective (live monitoring); hierarchy demoted to the bottom.</td></tr>
+      <tr><td class="name">7 · Two-col double-collapse</td>
+        <td><span class="sc s5">5</span></td><td><span class="sc s4">4</span></td><td><span class="sc s3">3</span></td><td><span class="sc s3">3</span></td><td><span class="sc s2">2</span></td><td><span class="sc s2">2</span></td>
+        <td class="verdict">Hierarchy + time together & dense; novel and width-hungry.</td></tr>
+      <tr><td class="name">8 · Timeline feed</td>
+        <td><span class="sc s2">2</span></td><td><span class="sc s5">5</span></td><td><span class="sc s4">4</span></td><td><span class="sc s4">4</span></td><td><span class="sc s3">3</span></td><td><span class="sc s3">3</span></td>
+        <td class="verdict">Best chronological narrative; weak hierarchy, heavier to lay out.</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="reco">
+  <h2>Recommendation</h2>
+  <p>No single fixed list wins all three lenses — and that's the real finding. Hierarchy and time are genuinely <i>orthogonal questions</i> ("which workflow?" vs "what happened when?"), so forcing one layout to answer both is why every single-shape design scores a 2 somewhere.</p>
+  <p>Ship <span class="win">#5 Group-by toggle</span> as the frame, keeping the shipped <b>Tree</b> as its default "Workflow" grouping (zero regression), and adding <b>Time</b> and <b>Status</b> groupings that re-bucket the exact same run rows. Fold in <span class="win">#6 Activity-first</span>'s loud <b>NOW</b> region as a constant pinned-top band across all three groupings — that's the one element the core objective ("what are my agents doing") demands regardless of lens, and it generalizes the LIVE region the tree already has.</p>
+  <p>Keep <b>#7 two-column double-collapse</b> in reserve: its time-bucket idea (Today / This week / Older, collapsible) is exactly what the "Time" grouping needs — we get its best idea inside one column without paying its width or novelty cost. <b>#2 / #8</b> are strong but redundant once "Time" grouping exists; <b>#3 / #4</b> are dominated by the tree.</p>
+</div>
+
+</body>
+</html>
