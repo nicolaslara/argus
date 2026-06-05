@@ -127,13 +127,24 @@ export const AgentCardNode = memo(function AgentCardNode({ data }: { data: Agent
     </>
   );
 
+  // R8: state legibility — a FAILED step must POP (red border + glow), an interrupted one
+  // amber, and a RUNNING one pulse (motion reserved for running, per the viz research).
+  const stateClass =
+    data.state === 'error' || data.failedInLogs
+      ? ' is-failed'
+      : data.state === 'interrupted'
+        ? ' is-interrupted'
+        : data.state === 'running'
+          ? ' is-running'
+          : '';
+
   return (
     <AgentCardShell
       label={data.label}
       labelTitle={data.label}
       railColor={color}
       height={CARD_SHELL_HEIGHT_EXEC}
-      className="agent-shell-exec"
+      className={`agent-shell-exec${stateClass}`}
       dot={<span className="agent-dot" style={{ backgroundColor: color }} aria-hidden="true" />}
       handles={
         <>
