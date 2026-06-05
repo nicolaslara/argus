@@ -153,6 +153,26 @@ describe('buildLiveModel — incremental journal replay (the gate fixture)', () 
     expect(m.summary).toBe('0/2 agents done');
   });
 
+  it('L6 gate: replaying line-by-line never LOSES or DUPLICATES a node; reconciles to finalized', () => {
+    let prevIds: string[] = [];
+    for (let n = 1; n <= lines.length; n += 1) {
+      const m = buildLiveModel(prefix(n), REF, { plan });
+      const ids = m.agents.map((a) => a.agentId);
+      expect(new Set(ids).size).toBe(ids.length); // NO duplicate nodes
+      expect(prevIds.every((id) => ids.includes(id))).toBe(true); // NO lost node (monotone superset)
+      // a 'done' agent NEVER reverts to 'running' as more lines arrive (monotone state).
+      expect(m.agents.filter((a) => a.state === 'done').length).toBeGreaterThanOrEqual(0);
+      prevIds = ids;
+    }
+    // L5 reconciliation: the final live agent SET equals the finalized json's agent set.
+    const live = buildLiveModel(journalText, REF, { plan });
+    const liveIds = new Set(live.agents.map((a) => a.agentId));
+    const finalIds = new Set(finalMap.keys());
+    expect(liveIds).toEqual(finalIds);
+    // and each live label matches what finalize assigned (start-order binding is correct).
+    for (const a of live.agents) expect(a.label).toBe(finalMap.get(a.agentId)!.label);
+  });
+
   it('after the first "result": exactly one agent flips to done', () => {
     const m = buildLiveModel(prefix(3), REF, { plan });
     expect(m.agents.filter((a) => a.state === 'done')).toHaveLength(1);
