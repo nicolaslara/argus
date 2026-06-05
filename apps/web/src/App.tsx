@@ -93,7 +93,7 @@ export function App() {
   //     app opens on the same modal-rust / richest-run / plan-research picks as before
   //     but ANY discovered project / run / workflow can override them, and the choice
   //     survives the Plan⟷Execution toggle (state lives here, above the view). ---
-  const [railCollapsed, setRailCollapsed] = useState(true); // collapsed-by-default
+  const [railCollapsed, setRailCollapsed] = useState(false); // open-by-default (per UX: sidebar starts expanded)
   const [railSection, setRailSection] = useState<RailSection>('explorer');
   const [selectedProjectPath, setSelectedProjectPath] = useState<string | null>(null);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);

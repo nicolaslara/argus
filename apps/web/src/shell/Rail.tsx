@@ -15,7 +15,7 @@
 // Selection is LIFTED into App (controlled); the rail only reports the choice. All labels
 // are React text nodes; consumes ONLY @argus/contract types (no node:* / adapter import).
 
-import { memo, useEffect, useMemo, useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import type { ProjectRef, RunSummary, WorkflowMeta } from '@argus/contract';
 import { formatDuration, formatRelativeTime, statusGlyph } from './format.ts';
 
@@ -110,24 +110,10 @@ export const Rail = memo(function Rail(props: RailProps) {
     return nodes;
   }, [runs, workflows]);
 
-  // per-node open state: default-open the node holding the selected run / selected workflow.
+  // Per-node open state. Folders start COLLAPSED by default — the selected workflow's folder is
+  // still highlighted (isSelectedWorkflow) without auto-expanding, and running runs stay visible in
+  // the pinned LiveGroup, so liveness never depends on a folder being open.
   const [openKeys, setOpenKeys] = useState<Set<string>>(new Set());
-  const autoOpenKey = useMemo(() => {
-    if (selectedRunId) {
-      const n = tree.find((t) => t.runs.some((r) => r.ref.runId === selectedRunId));
-      if (n) return n.key;
-    }
-    if (selectedWorkflowName) {
-      const n = tree.find((t) => t.workflow?.name === selectedWorkflowName);
-      if (n) return n.key;
-    }
-    return null;
-  }, [tree, selectedRunId, selectedWorkflowName]);
-  // Seed the open set with the auto-open node once (when selection changes), then toggling
-  // is plain add/delete — so the auto-opened node can also be collapsed by a click.
-  useEffect(() => {
-    if (autoOpenKey) setOpenKeys((prev) => (prev.has(autoOpenKey) ? prev : new Set(prev).add(autoOpenKey)));
-  }, [autoOpenKey]);
   const isOpen = (key: string) => openKeys.has(key);
   const toggle = (key: string) =>
     setOpenKeys((prev) => {
