@@ -6,7 +6,7 @@
 //   - ONLY the synthesized phase_i→phase_i+1 spine edges (no agent edges)
 
 import type { Edge, Node } from '@xyflow/react';
-import type { RunModel } from '@argus/contract';
+import type { AgentNode, RunModel } from '@argus/contract';
 import type { AgentCardData } from './nodes/AgentCard.tsx';
 import type { PhaseLaneData } from './nodes/PhaseLane.tsx';
 import { defaultLayout, type LayoutEngine, type LayoutInput } from './layout/index.ts';
@@ -14,6 +14,40 @@ import { defaultLayout, type LayoutEngine, type LayoutInput } from './layout/ind
 export interface GraphResult {
   nodes: Node[];
   edges: Edge[];
+}
+
+/**
+ * The per-agent → AgentCardData shape, shared by the plan-less fallback engine
+ * (`runModelToGraph`) and the Run-view drawer expand (`overlay-expand.ts`). Pure; carries
+ * every AgentNode scalar through so the DetailPanel reads them with no extra fetch (the
+ * card render ignores the I1 trailing fields). Extracted verbatim from the inline build —
+ * no behavior change.
+ */
+export function agentToCardData(agent: AgentNode): AgentCardData {
+  return {
+    label: agent.label || agent.agentId || 'agent',
+    state: agent.state,
+    model: agent.model,
+    cached: agent.cached,
+    failedInLogs: agent.failedInLogs,
+    tokens: agent.tokens,
+    toolCalls: agent.toolCalls,
+    durationMs: agent.durationMs,
+    // I1: the remaining AgentNode scalars ride along on node.data so the detail panel
+    // reads them with no extra fetch (the card render ignores them). Already-capped
+    // previews come straight from the adapter; nothing new is computed here.
+    agentType: agent.agentType,
+    attempt: agent.attempt,
+    queuedAt: agent.queuedAt,
+    startedAt: agent.startedAt,
+    lastProgressAt: agent.lastProgressAt,
+    lastToolName: agent.lastToolName,
+    lastToolSummary: agent.lastToolSummary,
+    promptPreview: agent.promptPreview,
+    resultPreview: agent.resultPreview,
+    // PX: the explanation-overlay join key (the AgentNode.agentId == the engine's id).
+    agentId: agent.agentId,
+  };
 }
 
 export function runModelToGraph(model: RunModel, engine: LayoutEngine = defaultLayout): GraphResult {
@@ -65,30 +99,7 @@ export function runModelToGraph(model: RunModel, engine: LayoutEngine = defaultL
     if (!phaseSet.has(agent.phaseIndex)) continue;
     const pos = placed.agents.get(agent.agentId);
     if (!pos) continue;
-    const data: AgentCardData = {
-      label: agent.label || agent.agentId || 'agent',
-      state: agent.state,
-      model: agent.model,
-      cached: agent.cached,
-      failedInLogs: agent.failedInLogs,
-      tokens: agent.tokens,
-      toolCalls: agent.toolCalls,
-      durationMs: agent.durationMs,
-      // I1: the remaining AgentNode scalars ride along on node.data so the detail panel
-      // reads them with no extra fetch (the card render ignores them). Already-capped
-      // previews come straight from the adapter; nothing new is computed here.
-      agentType: agent.agentType,
-      attempt: agent.attempt,
-      queuedAt: agent.queuedAt,
-      startedAt: agent.startedAt,
-      lastProgressAt: agent.lastProgressAt,
-      lastToolName: agent.lastToolName,
-      lastToolSummary: agent.lastToolSummary,
-      promptPreview: agent.promptPreview,
-      resultPreview: agent.resultPreview,
-      // PX: the explanation-overlay join key (the AgentNode.agentId == the engine's id).
-      agentId: agent.agentId,
-    };
+    const data: AgentCardData = agentToCardData(agent);
     nodes.push({
       id: agentNodeId(agent.agentId, agent.index),
       type: 'agentCard',

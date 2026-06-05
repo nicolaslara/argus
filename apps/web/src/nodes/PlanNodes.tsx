@@ -27,6 +27,7 @@ import {
   CARD_SHELL_WIDTH,
   CARD_SHELL_HEIGHT_PLAN,
 } from './AgentCardShell.tsx';
+import { useExpand } from '../expand-context.ts';
 
 // P2 overlay: the run-status palette painted onto the plan template. Reuses the shared
 // state hues (saturation reserved for run state) — complete=green, partial=amber,
@@ -104,9 +105,42 @@ export interface PlanAgentData extends PaintedBindingFields {
   [key: string]: unknown;
 }
 
-export const PlanAgentNode = memo(function PlanAgentNode({ data }: { data: PlanAgentData }) {
+export const PlanAgentNode = memo(function PlanAgentNode({
+  id,
+  data,
+}: {
+  id: string;
+  data: PlanAgentData;
+}) {
   const fanned = isFanned(data.multiplicity);
   const chip = aggregateChipText(data);
+  // Merged Run view: the expand caret. GATE — show when this template bound MORE THAN ONE
+  // instance (bindAgentIds.length > 1), OR when the run is painted (status ≠ not-run) AND the
+  // multiplicity is fanned (a ×N step that bound only 1 SURVIVING instance stays expandable —
+  // its single instance must not hide behind a step reading as a shortfall). A genuine ×1
+  // step, and an un-painted plan-only template, get no caret. The toggle reaches the Run
+  // view via ExpandContext (NOT a fn on node.data); the caret stops propagation so the global
+  // body→DetailPanel onNodeClick never fires for it.
+  const { expanded, toggle } = useExpand();
+  const bindCount = data.bindAgentIds?.length ?? 0;
+  const canExpand =
+    bindCount > 1 || (data.painted === true && data.bindStatus !== 'not-run' && fanned && bindCount > 0);
+  const isExpanded = canExpand && expanded.has(id);
+  const caret = canExpand ? (
+    <button
+      type="button"
+      className="plan-agent-caret"
+      aria-label={isExpanded ? 'collapse instances' : 'expand instances'}
+      aria-expanded={isExpanded}
+      title={isExpanded ? 'collapse instances' : 'expand instances'}
+      onClick={(e) => {
+        e.stopPropagation();
+        toggle(id);
+      }}
+    >
+      {isExpanded ? '▴' : '▾'}
+    </button>
+  ) : null;
   // P2: when a run is painted, the rail color carries run STATUS (saturation reserved for
   // state); the un-painted plan template keeps the neutral accent rail.
   const railColor =
@@ -154,7 +188,8 @@ export const PlanAgentNode = memo(function PlanAgentNode({ data }: { data: PlanA
       }
       railColor={railColor}
       height={CARD_SHELL_HEIGHT_PLAN}
-      className={`agent-shell-plan plan-node plan-agent ${confidenceClass(data.confidence)}${data.optional ? ' is-optional' : ''}${fanned ? ' is-fanned' : ''}${ghost}`}
+      className={`agent-shell-plan plan-node plan-agent ${confidenceClass(data.confidence)}${data.optional ? ' is-optional' : ''}${fanned ? ' is-fanned' : ''}${ghost}${isExpanded ? ' is-expanded' : ''}`}
+      headEnd={caret}
       handles={
         <>
           <Handle type="target" position={Position.Left} style={hidden} />

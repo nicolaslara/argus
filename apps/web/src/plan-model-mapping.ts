@@ -417,7 +417,10 @@ export async function planModelToGraph(plan: PlanModel, elkLayout: ElkPlanLayout
   // xyflow requires a parent node to appear BEFORE its children: phase lanes, then loop
   // containers, then leaf nodes. (Lanes are already pushed first; sort stabilizes the
   // loop-before-its-bodies invariant for the mixed leaf/loop section.)
-  const rank = (t: string | undefined): number => (t === 'phaseLane' ? 0 : t === 'planLoop' ? 1 : 2);
+  // Parent-before-child rank for xyflow: a drawer (instanceGroup) outranks its agent cards
+  // and is outranked by the lane / loop it lives in (run-view-merge-plan.md §2).
+  const rank = (t: string | undefined): number =>
+    t === 'phaseLane' ? 0 : t === 'planLoop' ? 1 : t === 'instanceGroup' ? 2 : t === 'agentCard' ? 3 : 2;
   nodes.sort((a, b) => rank(a.type) - rank(b.type));
 
   const edges: Edge[] = plan.edges.map((e) => {

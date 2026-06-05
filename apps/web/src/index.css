@@ -629,6 +629,64 @@ body {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
+/* instance-group — the dashed "instances (N)" drawer for the merged Run view.
+   Mirrors .plan-loop (a dashed compound container + header band) but stays NEUTRAL: a
+   --line-2-equivalent dashed border (#3a4250) over a subtle bg. Saturated accent is
+   reserved for run STATUS (the status dots / aggregate chip), never the drawer chrome.
+   The body is empty — React Flow renders the child agent cards positioned over it; size is
+   read from node.style (set by expandInstances). */
+.instance-group {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  border: 1.5px dashed #3a4250;
+  border-radius: 12px;
+  background: rgba(58, 65, 76, 0.06);
+}
+.instance-group-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+}
+.instance-group-title {
+  font-weight: 600;
+  font-size: 13px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.instance-group-count {
+  color: var(--argus-dim);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+/* the [▴] collapse caret — a quiet neutral affordance (not an accent control). */
+.instance-group-caret {
+  margin-left: auto;
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid #2d333b;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--argus-dim);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease, border-color 160ms ease;
+}
+.instance-group-caret:hover {
+  color: var(--argus-fg);
+  background: #161b22;
+  border-color: #3a4250;
+}
+
 /* output — terminal pill (the return sink) */
 .plan-output {
   width: 120px;
@@ -1109,6 +1167,39 @@ body {
 .plan-bind-ghost {
   opacity: 0.42;
   filter: saturate(0.4);
+}
+
+/* The expand [▾]/[▴] caret on a fanned PlanAgentNode head (merged Run view). A quiet
+   neutral affordance pinned to the right of the label row — it grows / collapses the
+   in-lane instance drawer. Saturated accent stays reserved for status. */
+.plan-agent-caret {
+  margin-left: auto;
+  flex: none;
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid #2d333b;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--argus-dim);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease, border-color 160ms ease;
+}
+.plan-agent-caret:hover {
+  color: var(--argus-fg);
+  background: #161b22;
+  border-color: #3a4250;
+}
+/* an expanded template reads as "open" — a faint accent-neutral seam toward its drawer. */
+.plan-agent.is-expanded .plan-agent-caret {
+  color: var(--argus-fg);
+  border-color: #3a4250;
 }
 
 /* gate-skipped phase lane → ghosted + a 'not run' tag. */

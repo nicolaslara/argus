@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ReactFlow,
   Background,
@@ -20,11 +20,17 @@ import {
   fetchRunLive,
   fetchRunPlan,
 } from './api.ts';
-import { runModelToGraph, type GraphResult } from './mapping.ts';
+// runModelToGraph/mapping.ts are DEMOTED (not deleted, per run-view-merge-plan.md §4): the
+// merged Run view paints the plan template + expands instances, so App no longer renders the
+// standalone execution graph. mapping.ts survives as the instance-card builder (agentToCardData,
+// used by overlay-expand.ts) + the plan-less fallback engine; only its type is imported here.
+import type { GraphResult } from './mapping.ts';
 import { planMetaToGraph } from './plan-mapping.ts';
 import { planModelToGraph } from './plan-model-mapping.ts';
 import { buildOverlay } from './overlay.ts';
 import { paintOverlay } from './overlay-paint.ts';
+import { expandInstances } from './overlay-expand.ts';
+import { ExpandContext } from './expand-context.ts';
 import {
   overlayExplanations,
   usePlanExplanations,
@@ -42,6 +48,7 @@ import {
   OutputTerminal,
   UnparsedPlaceholder,
 } from './nodes/PlanNodes.tsx';
+import { InstanceGroup } from './nodes/InstanceGroup.tsx';
 import { Rail, type RailSection } from './shell/Rail.tsx';
 import { DetailPanel } from './nodes/DetailPanel.tsx';
 import { RunOverviewPanel } from './nodes/RunOverviewPanel.tsx';
@@ -58,12 +65,17 @@ const nodeTypes: NodeTypes = {
   planLoop: LoopContainer,
   planOutput: OutputTerminal,
   planUnparsed: UnparsedPlaceholder,
+  // The merged Run view's expand drawer (run-view-merge-plan.md §2). expandInstances emits
+  // these as `type:'instanceGroup'` parented to the host phase lane.
+  instanceGroup: InstanceGroup,
 };
 
-// P2: a third mode — the Plan⟷Execution MORPH. `overlay` paints a selected run's STATUS
-// onto its plan template (the canonical shared layout). `plan` = run-free template;
-// `execution` = the M3 phase-lane run view (byte-unchanged).
-type ViewMode = 'execution' | 'plan' | 'overlay';
+// The merged Run view (run-view-merge-plan.md §1): TWO top-level views. `plan` is the
+// run-free template (the design); `run` paints a selected run's STATUS onto that plan
+// template (the canonical shared layout) AND expands a clicked fan-out into its instance
+// cards in-place (expandInstances). The old `overlay`/`execution` split is gone — Progress
+// and Execution were the same run at two zoom levels, joined now by a click, not a tab.
+type ViewMode = 'plan' | 'run';
 
 const EMPTY_GRAPH: GraphResult = { nodes: [], edges: [] };
 
@@ -86,7 +98,7 @@ function defaultWorkflow(workflows: WorkflowMeta[] | undefined): WorkflowMeta | 
 }
 
 export function App() {
-  const [view, setView] = useState<ViewMode>('execution');
+  const [view, setView] = useState<ViewMode>('run');
 
   // --- M4: selection lifted into shared app state. Each is null until the user
   //     picks; while null we fall back to the dogfood default for that scope. So the
@@ -106,6 +118,25 @@ export function App() {
   // I3: the run-overview panel (logs timeline + run totals), opened from the run-header
   // name. A node selection takes precedence over it (node detail wins).
   const [overviewOpen, setOverviewOpen] = useState(false);
+  // Merged Run view (run-view-merge-plan.md §2): the host template node ids whose instance
+  // drawer is open. RESET on run/workflow change and SEEDED ONCE from the live flag on
+  // run-change (running → active fans auto-expanded; finished → empty); user-owned
+  // thereafter via `toggleExpanded` (add/delete). Drives expandInstances.
+  const [expandedNodeIds, setExpandedNodeIds] = useState<Set<string>>(() => new Set());
+  const toggleExpanded = useCallback((nodeId: string) => {
+    setExpandedNodeIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(nodeId)) next.delete(nodeId);
+      else next.add(nodeId);
+      return next;
+    });
+  }, []);
+  // Stable provider value (new only when the expanded set changes) so PlanAgentNode carets
+  // read a fresh `expanded` but a stable `toggle`.
+  const expandContextValue = useMemo(
+    () => ({ expanded: expandedNodeIds, toggle: toggleExpanded }),
+    [expandedNodeIds, toggleExpanded],
+  );
 
   const projectsQ = useQuery({ queryKey: ['projects'], queryFn: fetchProjects });
   const projects = projectsQ.data;
@@ -140,7 +171,7 @@ export function App() {
   const runQ = useQuery({
     queryKey: ['run', summary?.ref.slug, summary?.ref.sessionId, summary?.ref.runId, isLiveRun ? 'live' : 'final'],
     queryFn: () => (isLiveRun ? fetchRunLive(summary!.ref) : fetchRunModel(summary!.ref)),
-    enabled: !!summary && (view === 'execution' || view === 'overlay'),
+    enabled: !!summary && view === 'run',
     // L3: SSE pushes a refetch on every journal append; this slow poll is a safety net for
     // a dropped stream (and a hard backstop on macOS fs.watch, which can miss appends).
     refetchInterval: isLiveRun ? 4000 : false,
@@ -194,7 +225,7 @@ export function App() {
   //     run) — so the web makes ONE clean request (no client-side 404 probe). ---
   const runPlanQ = useQuery({
     queryKey: ['run-plan', summary?.ref.slug, summary?.ref.sessionId, summary?.ref.runId],
-    enabled: !!summary && view === 'overlay',
+    enabled: !!summary && view === 'run',
     queryFn: () => fetchRunPlan(summary!.ref),
   });
   const runPlan = runPlanQ.data;
@@ -243,11 +274,43 @@ export function App() {
     () => (runPlan && run ? buildOverlay(runPlan, run) : null),
     [runPlan, run],
   );
+
+  // --- Merged Run view: RESET + SEED expandedNodeIds on run change (run-view-merge-plan.md
+  //     §2 "Default behavior"). The expand set is reset whenever the selected run identity
+  //     changes, then seeded ONCE off the live flag: a RUNNING run auto-expands its active
+  //     fan(s) (bindings still partial that bound >1 agent — what is executing right now);
+  //     a FINISHED run seeds empty (all fans collapsed → aggregate chips). It is seeded only
+  //     ONCE per run (keyed on a ref), so live SSE re-paints never re-derive it and fight a
+  //     user who manually collapsed a drawer (Risk 1). User-owned thereafter via toggle. ---
+  const runIdentityKey = summary
+    ? `${summary.ref.slug}/${summary.ref.sessionId}/${summary.ref.runId}`
+    : null;
+  const seededRunKey = useRef<string | null>(null);
+  useEffect(() => {
+    // A different run is now selected → drop any open drawers immediately (then re-seed once
+    // the overlay for the new run is ready, below).
+    if (seededRunKey.current !== runIdentityKey) {
+      setExpandedNodeIds(new Set());
+      seededRunKey.current = null;
+    }
+    if (runIdentityKey == null || !overlay) return; // wait until the overlay is built
+    if (seededRunKey.current === runIdentityKey) return; // already seeded for this run
+    // Seed: running → active fans auto-expanded; finished → empty.
+    const seed = new Set<string>();
+    if (isLiveRun) {
+      for (const b of overlay.bindings) {
+        if (b.status === 'partial' && b.agentIds.length > 1) seed.add(b.planNodeId);
+      }
+    }
+    setExpandedNodeIds(seed);
+    seededRunKey.current = runIdentityKey;
+  }, [runIdentityKey, overlay, isLiveRun]);
+
   const overlayLayoutReady = !!runPlan && runPlan.derivedFrom === 'static-source' && runPlan.nodes.length > 0;
   const [overlayBaseGraph, setOverlayBaseGraph] = useState<GraphResult>(EMPTY_GRAPH);
   const [overlayError, setOverlayError] = useState(false);
   useEffect(() => {
-    if (view !== 'overlay' || !overlayLayoutReady || !runPlan) {
+    if (view !== 'run' || !overlayLayoutReady || !runPlan) {
       setOverlayBaseGraph(EMPTY_GRAPH);
       setOverlayError(false);
       return;
@@ -271,56 +334,57 @@ export function App() {
     };
   }, [view, overlayLayoutReady, runPlan]);
 
-  // Paint (data-only) — separate from layout so the folded↔unrolled toggle never relayouts.
+  // Paint (data-only), THEN expand any open fan-out drawers in-place. paintOverlay stays
+  // pure (no relayout); expandInstances is the ELK-free arithmetic re-flow layered on top
+  // (run-view-merge-plan.md §2). The folded↔unrolled toggle still only re-paints; a drawer
+  // open/close re-runs expandInstances off the same `expandedNodeIds` Set.
   const overlayGraph = useMemo(() => {
-    if (view !== 'overlay' || overlayBaseGraph.nodes.length === 0 || !overlay) return EMPTY_GRAPH;
+    if (view !== 'run' || overlayBaseGraph.nodes.length === 0 || !overlay || !run) return EMPTY_GRAPH;
     // R8b: a live (incomplete) run paints "upcoming"/"running" instead of "planned·not-run".
-    return paintOverlay(overlayBaseGraph, overlay, unrolled, run?.incomplete ?? false);
-  }, [view, overlayBaseGraph, overlay, unrolled, run?.incomplete]);
+    const live = run.incomplete;
+    const painted = paintOverlay(overlayBaseGraph, overlay, unrolled, live);
+    return expandInstances(painted, overlay, run, expandedNodeIds, live);
+  }, [view, overlayBaseGraph, overlay, unrolled, run, expandedNodeIds]);
 
   const metaGraph = useMemo(() => {
     if (view !== 'plan') return EMPTY_GRAPH;
     return workflow ? planMetaToGraph(workflow) : EMPTY_GRAPH;
   }, [view, workflow]);
 
-  const execGraph = useMemo(() => {
-    if (view !== 'execution') return EMPTY_GRAPH;
-    return run ? runModelToGraph(run) : EMPTY_GRAPH;
-  }, [view, run]);
-
   // The AST plan is used when available AND elk succeeded; else the meta-only fallback.
   const planIsAst = view === 'plan' && useAstMode && !astError && astGraph.nodes.length > 0;
   const baseGraph: GraphResult =
-    view === 'execution'
-      ? execGraph
-      : view === 'overlay'
-        ? overlayGraph
-        : planIsAst
-          ? astGraph
-          : metaGraph;
+    view === 'run'
+      ? overlayGraph
+      : planIsAst
+        ? astGraph
+        : metaGraph;
 
   // --- PX: poll per-node LLM captions in the background and swap them into the existing
   //     subtitle/caption slots when ready. Annotation-only: topology is untouched. The
-  //     plan poll keys on the selected workflow file; the run poll on the run ref. The
-  //     poll only runs for the active view (execution vs plan). When `claude` is absent
-  //     the batch is engine-unavailable/all-baseline and the overlay is a no-op. ---
+  //     plan poll keys on the selected workflow file. The poll only runs in the Plan view;
+  //     the merged Run view paints onto the PLAN node ids (≠ agentIds), so run captions have
+  //     no join target there (the prior `overlay` mode never joined them either). When
+  //     `claude` is absent the batch is engine-unavailable/all-baseline and the overlay is a
+  //     no-op. ---
   const planExplanations = usePlanExplanations(
     project?.slug,
     workflow?.file,
     view === 'plan' && planIsAst,
   );
-  const runExplanations = useRunExplanations(
+  // Run-view PX captions are not joined (painted plan node ids ≠ agentIds); keep the hook
+  // call present (hooks must be unconditional) but inert.
+  useRunExplanations(
     summary ? { slug: summary.ref.slug, sessionId: summary.ref.sessionId, runId: summary.ref.runId } : undefined,
-    view === 'execution' && !!run,
+    false,
   );
   const graph: GraphResult = useMemo(() => {
-    if (view === 'execution') return overlayExplanations(baseGraph, runExplanations);
     if (planIsAst) return overlayExplanations(baseGraph, planExplanations);
-    // overlay (morph) mode: the base graph is already painted with run status; PX captions
-    // are not joined here (the painted plan node ids ≠ agentIds). meta-only plan: lanes
-    // carry their declared subtitle already.
+    // Run view: the base graph is already painted with run status + any expanded drawers;
+    // PX captions are not joined here (the painted plan node ids ≠ agentIds). meta-only
+    // plan: lanes carry their declared subtitle already.
     return baseGraph;
-  }, [view, planIsAst, baseGraph, runExplanations, planExplanations]);
+  }, [planIsAst, baseGraph, planExplanations]);
 
   // I1: resolve the open detail node against the live graph (null if it's no longer present).
   const selectedNode = useMemo(
@@ -335,26 +399,59 @@ export function App() {
   // a cheap signature so caption-only (PX) overlays — which never change ids — do NOT
   // refit and yank the viewport.
   const rfRef = useRef<ReactFlowInstance | null>(null);
+  // FREEZE the structural fit to the PLAN node set only (run-view-merge-plan.md §2 "Refit on
+  // a live tick: NEVER"): exclude the merged Run view's drawer (`instanceGroup`) + instance
+  // (`agentCard`) ids, so a live instance spawning / a ghost vanishing / a drawer
+  // opening never re-triggers the structural fit and yanks the viewport. Expand churn is
+  // handled by the SEPARATE one-shot fitBounds effect below.
   const fitSignature = useMemo(
-    () => `${view}:${graph.nodes.length}:${graph.nodes.map((n) => n.id).join(',')}`,
+    () =>
+      `${view}:` +
+      graph.nodes
+        .filter((n) => n.type !== 'instanceGroup' && n.type !== 'agentCard')
+        .map((n) => n.id)
+        .join(','),
     [view, graph.nodes],
   );
   useEffect(() => {
     if (graph.nodes.length === 0) return;
     const inst = rfRef.current;
     if (!inst) return;
-    // M5 empty-band fix: the Plan/Morph DAG is wide-but-short, so a uniform 0.12 padding +
-    // the default maxZoom=2 fit it to WIDTH and left a tall empty band. Give those two views
-    // a tighter padding AND a higher maxZoom so the graph is allowed to zoom up and FILL the
-    // canvas (paired with the taller elk lanes above). Execution keeps the comfortable 0.12.
-    const isWideShort = view === 'plan' || view === 'overlay';
+    // M5 empty-band fix: the Plan/Run DAG is wide-but-short, so a uniform 0.12 padding +
+    // the default maxZoom=2 fit it to WIDTH and left a tall empty band. Give both views a
+    // tighter padding AND a higher maxZoom so the graph is allowed to zoom up and FILL the
+    // canvas (paired with the taller elk lanes above).
+    const isWideShort = view === 'plan' || view === 'run';
     const opts = isWideShort
       ? { padding: 0.06, duration: 240, maxZoom: 2.6 }
       : { padding: 0.12, duration: 240 };
     // Defer one frame so React Flow has measured the new nodes before fitting.
     const raf = requestAnimationFrame(() => inst.fitView(opts));
     return () => cancelAnimationFrame(raf);
-  }, [fitSignature, graph.nodes.length, view]);
+    // Intentionally keyed ONLY on the frozen plan-id signature (which encodes `view`); a
+    // graph.nodes churn from instance/ghost/drawer changes must NOT re-fit (see the
+    // one-shot expand fitBounds effect below).
+  }, [fitSignature]);
+
+  // One-shot EXPAND fit: when a node id ENTERS expandedNodeIds (a membership transition, not
+  // a per-paint tick), gently fit the freshly-grown graph ONCE so the new drawer is brought
+  // into view — never on subsequent live re-paints (run-view-merge-plan.md §2). Keyed on a
+  // size-only signature of the expanded set so toggling open fires it; collapsing does not
+  // need a special fit (the structural plan-id signature is unchanged across expand/collapse).
+  const prevExpandCount = useRef(0);
+  useEffect(() => {
+    const inst = rfRef.current;
+    const count = expandedNodeIds.size;
+    const grew = count > prevExpandCount.current;
+    prevExpandCount.current = count;
+    if (!grew || !inst || graph.nodes.length === 0) return;
+    const raf = requestAnimationFrame(() =>
+      inst.fitView({ padding: 0.08, duration: 240, maxZoom: 2.6 }),
+    );
+    return () => cancelAnimationFrame(raf);
+    // Fire only on the expand-set transition (graph.nodes intentionally excluded so a live
+    // re-paint never re-fits).
+  }, [expandedNodeIds]);
 
   // --- M4 selection handlers (mutate the shared state, not the canvas). ---
   // Picking a project re-scopes everything: clear the dependent run + workflow choice
@@ -364,16 +461,17 @@ export function App() {
     setSelectedRunId(null);
     setSelectedWorkflowName(null);
   }
-  // R2: selection is UNIFIED across the three views. Picking a run drives Execution AND
-  // syncs the Plan workflow to the run's workflow, so Plan/Morph/Execution all describe the
-  // SAME workflow (no more "Plan shows X while Execution shows Y").
+  // R2: selection is UNIFIED across both views. Picking a run drives the Run view AND syncs
+  // the Plan workflow to the run's workflow, so Plan/Run both describe the SAME workflow
+  // (no more "Plan shows X while Run shows Y").
   function handleSelectRun(r: RunSummary) {
     setSelectedRunId(r.ref.runId);
     setSelectedWorkflowName(r.workflowName);
-    // R8b/R9: a RUNNING run lands in Morph — the plan painted with live state is the only
-    // view that shows what's running AND what's still upcoming (the Execution model only
-    // contains agents that already started). Finished runs land in Execution as before.
-    setView(r.status === 'running' ? 'overlay' : 'execution');
+    // run-view-merge-plan.md §1/§2: BOTH running and finished runs land on the merged `run`
+    // view. A running run auto-expands its active fan(s); a finished run rests collapsed
+    // (aggregate chips). The old running→overlay / finished→execution split WAS the bug the
+    // merge removes. The reset+seed of expandedNodeIds is handled by the run-change effect.
+    setView('run');
   }
   // Picking a workflow drives the Plan view AND selects that workflow's most-recent run (if
   // any) so Morph/Execution follow it too — and so a live run is one click from validation.
@@ -387,13 +485,12 @@ export function App() {
   const error = projectsQ.error ?? runsQ.error ?? runQ.error ?? workflowsQ.error;
   const loading =
     projectsQ.isPending ||
-    (!!project && view === 'execution' && runsQ.isPending) ||
-    (!!summary && (view === 'execution' || view === 'overlay') && runQ.isPending) ||
-    (!!summary && view === 'overlay' && runPlanQ.isPending) ||
+    (!!project && view === 'run' && runsQ.isPending) ||
+    (!!summary && view === 'run' && runQ.isPending) ||
+    (!!summary && view === 'run' && runPlanQ.isPending) ||
     (!!project && view === 'plan' && workflowsQ.isPending);
 
-  const hasContent =
-    view === 'plan' ? !!workflow : view === 'overlay' ? !!run && !!runPlan : !!run;
+  const hasContent = view === 'plan' ? !!workflow : !!run && !!runPlan;
 
   // Header: in AST mode show the real node/edge counts + coverage + the derivation tag.
   const planNodeCount = plan?.nodes.length ?? 0;
@@ -428,6 +525,9 @@ export function App() {
       />
       {/* everything right of the rail lives here so overlays center on the CANVAS, not the viewport */}
       <div className="argus-main">
+      {/* Merged Run view: the expand caret on a fanned PlanAgentNode reaches `toggle(id)`
+          through this provider (NOT a fn on node.data, which would break memo). */}
+      <ExpandContext.Provider value={expandContextValue}>
       <ReactFlow
         onInit={(inst) => {
           rfRef.current = inst;
@@ -457,11 +557,12 @@ export function App() {
         <MiniMap pannable zoomable />
         <Controls showInteractive={false} />
       </ReactFlow>
+      </ExpandContext.Provider>
 
-      {/* Plan ⟷ Progress ⟷ Execution. The three are one graph at different resolutions:
-          Plan = the design; Progress (P2 overlay) = the plan painted per STEP with run
-          status; Execution = every AGENT instance that ran. A per-view caption makes the
-          step-vs-agent distinction explicit (users kept conflating Progress & Execution). */}
+      {/* Plan ⟷ Run. TWO views, one graph (run-view-merge-plan.md §1): Plan = the design;
+          Run = the SAME plan painted with this run's status, where clicking a fanned step
+          expands it in-place into its agent instance cards. Progress + Execution merged into
+          one Run view, joining the aggregate↔instance view by a click instead of a tab. */}
       <div className="view-toggle" role="group" aria-label="view mode">
         <button
           type="button"
@@ -474,34 +575,23 @@ export function App() {
         </button>
         <button
           type="button"
-          className={`view-toggle-btn${view === 'overlay' ? ' is-active' : ''}`}
-          aria-pressed={view === 'overlay'}
-          onClick={() => setView('overlay')}
-          title="The plan, painted with the run — each STEP shows how its agents went (done · running · upcoming). Collapsed by step (a ×7 fan-out is one node)."
+          className={`view-toggle-btn${view === 'run' ? ' is-active' : ''}`}
+          aria-pressed={view === 'run'}
+          onClick={() => setView('run')}
+          title="The plan painted with this run — done · running · upcoming · failed. Click a fanned step to see its agents."
         >
-          Progress
-        </button>
-        <button
-          type="button"
-          className={`view-toggle-btn${view === 'execution' ? ' is-active' : ''}`}
-          aria-pressed={view === 'execution'}
-          onClick={() => setView('execution')}
-          title="Every AGENT that actually ran — one card each, grouped by phase (a ×7 fan-out is 7 cards). The instance-level detail."
-        >
-          Execution
+          Run
         </button>
       </div>
       {/* The always-visible one-liner that says what the current view IS. */}
       <div className="view-caption" role="note">
         {view === 'plan'
           ? 'the design — what this workflow is built to do'
-          : view === 'overlay'
-            ? 'the plan, per step — how each planned step’s run went (done · running · upcoming)'
-            : 'every agent that actually ran — one card per agent, by phase'}
+          : 'the plan, painted with this run — done · running · upcoming · failed · click a fanned step to see its agents'}
       </div>
 
-      {/* P2 folded↔unrolled MODE switch — shown only when the morph observed loop rounds. */}
-      {view === 'overlay' && overlayRounds != null && overlayRounds > 1 ? (
+      {/* P2 folded↔unrolled MODE switch — shown only when the run observed loop rounds. */}
+      {view === 'run' && overlayRounds != null && overlayRounds > 1 ? (
         <div className="mode-toggle" role="group" aria-label="loop unroll mode">
           <button
             type="button"
@@ -555,7 +645,7 @@ export function App() {
               : `${workflow.phases.length} ${workflow.phases.length === 1 ? 'phase' : 'phases'} · declared`}
           </span>
         </div>
-      ) : view === 'overlay' && run ? (
+      ) : view === 'run' && run ? (
         <div className="run-header">
           <button
             type="button"
@@ -565,7 +655,6 @@ export function App() {
           >
             {run.workflowName}
           </button>
-          <span className="run-badge run-badge-plan">progress</span>
           <span className={`run-badge run-badge-${run.status}`}>{run.status}</span>
           <span className="run-header-meta">
             {overlayBound} bound
@@ -580,31 +669,10 @@ export function App() {
             </span>
           ) : null}
         </div>
-      ) : view === 'execution' && run ? (
-        <div className="run-header">
-          <button
-            type="button"
-            className="run-header-name run-header-name-btn"
-            onClick={() => setOverviewOpen((v) => !v)}
-            title="run overview — narrator log timeline + totals"
-          >
-            {run.workflowName}
-          </button>
-          <span className={`run-badge run-badge-${run.status}`}>{run.status}</span>
-          <span className="run-header-meta">
-            {run.agents.length} {run.agents.length === 1 ? 'agent' : 'agents'} · {run.phases.length}{' '}
-            {run.phases.length === 1 ? 'phase' : 'phases'}
-          </span>
-          {run.partialFailure.present ? (
-            <span className="run-badge run-badge-partial" title={run.partialFailure.lines[0] ?? ''}>
-              partial failure
-            </span>
-          ) : null}
-        </div>
       ) : null}
 
       {/* P2: unplanned agents (label matched no plan node) surfaced honestly. */}
-      {view === 'overlay' && overlayUnplanned > 0 ? (
+      {view === 'run' && overlayUnplanned > 0 ? (
         <div className="overlay-unplanned" role="note" title="run agents whose label matched no plan node">
           <span className="overlay-unplanned-glyph" aria-hidden="true">⚠</span>
           {overlayUnplanned} unplanned agent{overlayUnplanned === 1 ? '' : 's'}
@@ -622,11 +690,11 @@ export function App() {
                 ? 'loading…'
                 : view === 'plan'
                   ? 'no declared workflows found for this project'
-                  : view === 'overlay'
-                    ? overlayError
+                  : !summary
+                    ? 'no runs found in ~/.claude'
+                    : overlayError
                       ? 'could not lay out this run’s plan'
-                      : 'no plan source found for this run'
-                    : 'no runs found in ~/.claude'}
+                      : 'no plan source found for this run'}
           </div>
         </div>
       ) : null}

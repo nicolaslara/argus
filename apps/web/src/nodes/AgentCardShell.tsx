@@ -49,6 +49,8 @@ export interface AgentCardShellProps {
   handles?: ReactNode;
   /** Behind-card silhouette for a fanned (×N) plan template. */
   silhouette?: ReactNode;
+  /** Optional trailing element pinned to the end of the head row (e.g. the expand caret). */
+  headEnd?: ReactNode;
 }
 
 export function AgentCardShell({
@@ -63,6 +65,7 @@ export function AgentCardShell({
   height,
   handles,
   silhouette,
+  headEnd,
 }: AgentCardShellProps) {
   return (
     <div
@@ -77,6 +80,7 @@ export function AgentCardShell({
           {label}
           {labelAfter}
         </span>
+        {headEnd}
       </div>
       {caption ? <div className="agent-shell-caption-row">{caption}</div> : null}
       {footer ? <div className="agent-shell-footer">{footer}</div> : null}
