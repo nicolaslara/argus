@@ -29,6 +29,9 @@ import {
   handleRunLive,
   handleAgentResult,
   handleSubUi,
+  safeRunJournalPath,
+  isValidRunId,
+  isValidSegment,
   type RouteDeps,
   type RouteResult,
 } from './routes.ts';
@@ -230,6 +233,77 @@ async function dispatchApi(url: URL): Promise<RouteResult | null> {
   return null;
 }
 
+/**
+ * L3: SSE live stream. Watches the run's `journal.jsonl` and pushes a `changed` event on
+ * every append, so the client refetches the live model immediately (no poll lag). The
+ * run-LIST poll still detects finalize (the wf_<id>.json appearing) and flips status. A
+ * heartbeat keeps the connection warm; `retry:` lets EventSource reconnect cleanly. The
+ * watch is torn down on disconnect. Token-gated by the caller (before this runs).
+ */
+function handleStream(res: ServerResponse, slug: string, session: string, runId: string): void {
+  if (!isValidSegment(slug) || !isValidSegment(session) || !isValidRunId(runId)) {
+    send(res, 400, { error: 'bad_request' });
+    return;
+  }
+  const journalPath = safeRunJournalPath(CLAUDE_HOME, slug, session, runId);
+  if (journalPath === null) {
+    send(res, 400, { error: 'bad_request' });
+    return;
+  }
+  res.writeHead(200, {
+    'content-type': 'text/event-stream; charset=utf-8',
+    'cache-control': 'no-store',
+    connection: 'keep-alive',
+    'x-content-type-options': 'nosniff',
+  });
+  let eventId = 0;
+  const emit = (event: string): void => {
+    res.write(`id: ${(eventId += 1)}\nevent: ${event}\ndata: {}\n\n`);
+  };
+  res.write('retry: 3000\n\n');
+  emit('open');
+
+  // Debounce rapid fs.watch fires (an append can emit several 'change' events).
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const onChange = (): void => {
+    if (timer) return;
+    timer = setTimeout(() => {
+      timer = null;
+      try {
+        emit('changed');
+      } catch {
+        /* the connection may have closed mid-write */
+      }
+    }, 150);
+  };
+  let unwatch: (() => void) | null = null;
+  try {
+    unwatch = deps.port.watch(journalPath, onChange);
+  } catch {
+    /* the journal vanished (finalized) — the client's run-list poll takes over */
+  }
+  const heartbeat = setInterval(() => {
+    try {
+      res.write(': hb\n\n');
+    } catch {
+      /* ignore */
+    }
+  }, 15000);
+  const cleanup = (): void => {
+    clearInterval(heartbeat);
+    if (timer) clearTimeout(timer);
+    if (unwatch) {
+      try {
+        unwatch();
+      } catch {
+        /* ignore */
+      }
+    }
+  };
+  res.on('close', cleanup);
+  res.on('error', cleanup);
+}
+
 const server = createServer((req, res) => {
   const url = new URL(req.url ?? '/', `http://${req.headers.host ?? HOST}`);
 
@@ -258,6 +332,13 @@ const server = createServer((req, res) => {
     // Only GET is supported for the read API (read-only by design).
     if (req.method && req.method !== 'GET') {
       send(res, 405, { error: 'method_not_allowed' });
+      return;
+    }
+    // L3: the SSE live stream needs the RAW response (it stays open + streams), so it is
+    // handled here, BEFORE the JSON dispatch path.
+    const streamMatch = /^\/api\/runs\/([^/]+)\/([^/]+)\/([^/]+)\/stream$/.exec(url.pathname);
+    if (streamMatch) {
+      handleStream(res, decodeURIComponent(streamMatch[1]!), decodeURIComponent(streamMatch[2]!), decodeURIComponent(streamMatch[3]!));
       return;
     }
     dispatchApi(url)

@@ -9,7 +9,7 @@ import {
   type ReactFlowInstance,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { PlanModel, ProjectRef, RunSummary, WorkflowMeta } from '@argus/contract';
 import {
   fetchProjects,
@@ -141,8 +141,31 @@ export function App() {
     queryKey: ['run', summary?.ref.slug, summary?.ref.sessionId, summary?.ref.runId, isLiveRun ? 'live' : 'final'],
     queryFn: () => (isLiveRun ? fetchRunLive(summary!.ref) : fetchRunModel(summary!.ref)),
     enabled: !!summary && (view === 'execution' || view === 'overlay'),
-    refetchInterval: isLiveRun ? 1500 : false,
+    // L3: SSE pushes a refetch on every journal append; this slow poll is a safety net for
+    // a dropped stream (and a hard backstop on macOS fs.watch, which can miss appends).
+    refetchInterval: isLiveRun ? 4000 : false,
   });
+
+  // L3: subscribe to the run's SSE stream while it's live — a journal append pushes a
+  // `changed` event → invalidate the live model immediately (no poll lag). EventSource
+  // auto-reconnects (the server sends `retry:`), giving the gate's "clean reconnect".
+  const queryClient = useQueryClient();
+  const liveSlug = summary?.ref.slug;
+  const liveSession = summary?.ref.sessionId;
+  const liveRunId = summary?.ref.runId;
+  useEffect(() => {
+    if (!isLiveRun || !liveSlug || !liveSession || !liveRunId) return;
+    const url = `/api/runs/${encodeURIComponent(liveSlug)}/${encodeURIComponent(liveSession)}/${encodeURIComponent(liveRunId)}/stream`;
+    const es = new EventSource(url);
+    const onChanged = () => {
+      void queryClient.invalidateQueries({ queryKey: ['run', liveSlug, liveSession, liveRunId, 'live'] });
+    };
+    es.addEventListener('changed', onChanged);
+    return () => {
+      es.removeEventListener('changed', onChanged);
+      es.close();
+    };
+  }, [isLiveRun, liveSlug, liveSession, liveRunId, queryClient]);
 
   // --- Workflows for the selected project (run-free Plan source). Loaded whenever a
   //     project is known so the rail's Plan-workflow list is reachable from BOTH views;
