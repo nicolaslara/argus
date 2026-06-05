@@ -54,22 +54,17 @@ transcript, I4 describe-via-Claude). See the per-workpad `tasks.md`.
   run renders correctly fullscreen in **three views** (Plan AST DAG / Morph overlay /
   Execution) with Claude captions + a project/run rail; 118 tests; 0 console errors.
   Known residual cosmetic: Plan/Morph wide-short DAG leaves vertical empty space.
-- [~] **live** — IN PROGRESS (overnight 2026-06-05). **M6 done across the stack:** L1
-  running-run detection (`classifyRunLiveness` + `discoverRunningRunsReport`) + L2
-  journal→model (`buildLiveModel`, labels recovered from the persisted script by
-  start-order binding) in the adapter; a `/live` server endpoint + running runs merged
-  into the run list; the web fetches + polls the live snapshot with a pulsing "● running"
-  badge. Verified end-to-end (curl + a frozen-fixture UI screenshot). On-disk live
-  behavior empirically locked (`workpads/live/knowledge.md` F1–F5: the finalized json is
-  written ONCE at finalize; the journal is started/result-only). **Remaining for the gate:**
-  L3 SSE/chokidar delta stream (currently a poll), L4 no-jump re-layout, L5 agentId-keyed
-  finalize reconciliation, L6 robustness.
-- [~] **inspect** — IN PROGRESS (overnight 2026-06-05). **I1 done:** clicking any node
-  (execution agent or plan node) opens a right-hand detail panel (state/model/tokens/
-  timing/tools, prompt+result previews, and the full PX caption with a baseline/✨llm
-  provenance chip + pattern name) in all three views. **Remaining:** I2 transcript (note
-  F5 — workflow-agent transcripts are unreliable on disk), I3 run-structure nav + logs[]
-  narrator timeline, I4 describe-a-workflow via the Claude API.
+- [x] **live** — GATE MET 2026-06-05. M6 (L1 detection + L2 journal→model), L3 SSE push
+  stream (journal-watch → `changed`, heartbeat, clean reconnect), L4 a running run renders
+  on Morph as done/running/**upcoming**, L5 finalize reconciliation (de-dup + agentId/start-
+  order), L6 a journal-replay test (no lost/duplicated nodes → reconciles to finalized).
+  On-disk live behavior locked (`workpads/live/knowledge.md` F1–F5). Residual future polish:
+  incremental SSE deltas + a no-jump finalize swap.
+- [x] **inspect** — GATE MET 2026-06-05. I1 node detail panel (all three views); I3
+  run-overview with the narrator `log()` timeline; I4 "describe this run" via Claude; per-
+  node results are full + readable + generatively rendered (R1 + #9). I2 (agent transcript)
+  is BLOCKED by data reality — workflow-agent `agent-*.jsonl` transcripts are not reliably
+  persisted (F5: 0/14 on the 14-agent run); deferred until they're captured live.
 - [ ] **interact** *(exploratory)* — Jump into a session; embedded agent (runs in
   the project dir) to review & modify a workflow; evaluate ACP / remote-control /
   headless SDK here. Gate: a decision-ready design matrix + spike plan; does not

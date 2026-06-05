@@ -27,8 +27,13 @@ tokens/tools/timing).
     clicking a plan node in Plan/Morph opens its panel; reads well; closeable; `tsc`/`lint`/
     `test`/`build` green; Playwright screenshot of an open panel. RunModel/PlanModel/Overlay
     contracts unchanged (panel reads existing data).
-- [ ] **I2 — Agent transcript.** Render `agent-<agentId>.jsonl` (user/assistant/
-  tool messages) readably; link tool calls to `tool-results/*.txt` where present.
+- [✗] **I2 — Agent transcript.** BLOCKED 2026-06-05 by data reality (live/knowledge.md F5):
+  per-agent `agent-<agentId>.jsonl` transcripts are NOT reliably persisted for workflow
+  sub-agents — 0/14 of the 14-agent run's agents have one on disk (only 7 stray transcripts
+  exist in that whole session, none matching). A transcript view would be empty for most
+  agents, so it's deferred until the client persists workflow-agent transcripts (or we
+  capture them live during a run). The journal `result` (R1, full + readable) + the
+  generated panel (#9) cover the per-agent content need in the meantime.
 - [~] **I3 — Run structure navigation.** LOGS TIMELINE DONE 2026-06-05. A run-overview
   panel (clicking the run-header name; node selection takes precedence) surfaces run
   totals (status/agents/phases/model/duration/started), the sanitized run `error`, the
@@ -37,9 +42,15 @@ tokens/tools/timing).
   screenshot `.argus/screenshots/i3-run-overview.png`). **Remaining:** navigate pipeline
   stages / parallel groups as structure, and the persisted-script "view source" (the
   `/run/.../plan` source already exists — surface it read-only).
-- [ ] **I4 — Describe-a-workflow (Claude).** Use the Claude API on the script +
-  run to generate a plain-language summary of what the workflow did. (First use of
-  the Claude API — read-only over local content; privacy stance applies.)
+- [x] **I4 — Describe-a-workflow (Claude).** DONE 2026-06-05. The run-overview panel's
+  "✨ describe this run" button builds a compact run DIGEST and feeds it to the #9 sub-UI
+  engine → a constrained PanelSpec ("what this workflow did") rendered by the trusted
+  GenerativePanel. Verified on the 14-agent run (success callout, metrics, per-lens
+  verdicts, a red-team-partial warning); screenshot `.argus/screenshots/i4-describe-run.png`.
+
+> **inspect gate met** — any agent node opens a readable detail view (I1); the run-overview
+> adds the logs timeline (I3) + a Claude run summary (I4); per-node results are full +
+> readable + generatively-rendered (R1, #9). I2 (transcript) is blocked by data reality (F5).
 
 ## knowledge
 Decisions (esp. the Claude-API integration boundary) land in `knowledge.md`.
