@@ -65,10 +65,12 @@ transcript, I4 describe-via-Claude). See the per-workpad `tasks.md`.
   node results are full + readable + generatively rendered (R1 + #9). I2 (agent transcript)
   is BLOCKED by data reality — workflow-agent `agent-*.jsonl` transcripts are not reliably
   persisted (F5: 0/14 on the 14-agent run); deferred until they're captured live.
-- [ ] **interact** *(exploratory)* — Jump into a session; embedded agent (runs in
-  the project dir) to review & modify a workflow; evaluate ACP / remote-control /
-  headless SDK here. Gate: a decision-ready design matrix + spike plan; does not
-  change the proven read path.
+- [x] **interact** *(exploratory)* — GATE MET 2026-06-05. `workpads/interact/design.md` is
+  a decision-ready design matrix (6 candidates: headless CLI / Agent SDK / ACP / `claude
+  --resume` / IDE deep-link / Remote Control) + a recommendation (jump-in via copy-a-
+  `claude --resume <sessionId>` now; embedded edit via the Agent SDK `canUseTool` diff
+  gate) + a default-OFF spike (X4) + a 5-layer write-safety model — explicitly NOT changing
+  the read path (a separate, flagged server seam). No build authorized; design artifact only.
 
 ## Notes
 
