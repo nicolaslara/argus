@@ -14,7 +14,7 @@ import type { PanelSpec, PanelSection, CalloutTone, SubUiStatus } from '@argus/c
 import { defaultClaudeRunner, type ClaudeRunner } from './explain.ts';
 
 /** Bump to bust ALL cached panels when the prompt/grammar changes. */
-export const SUBUI_PROMPT_VERSION = 'subui-v1';
+export const SUBUI_PROMPT_VERSION = 'subui-v2';
 
 const CALLOUT_TONES: readonly CalloutTone[] = ['info', 'success', 'warn', 'danger'];
 const MAX_SECTIONS = 12;
@@ -33,8 +33,9 @@ function s(v: unknown): string {
 export function buildSubUiPrompt(result: unknown): string {
   const resultText = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
   return [
-    'You design a compact READ-ONLY dashboard panel that best presents ONE result from a',
-    'Claude Code workflow agent. Choose the clearest layout for THIS content.',
+    'You design a compact READ-ONLY dashboard panel that best presents the given Claude Code',
+    'workflow CONTENT — either one agent\'s result, or a whole-run digest (describe what the',
+    'workflow did). Choose the clearest layout for THIS content.',
     '',
     'Reply with ONLY a JSON object (no prose, no markdown fences) of this exact shape:',
     '{ "title": string, "sections": Section[] }',

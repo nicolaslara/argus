@@ -99,6 +99,14 @@ export function fetchAgentResult(
   );
 }
 
+/** I4: a Claude-generated plain-language "what this run did" panel (whole-run digest, lazy). */
+export function fetchRunDescribe(ref: Pick<RunRef, 'slug' | 'sessionId' | 'runId'>): Promise<SubUiResponse> {
+  const { slug, sessionId, runId } = ref;
+  return getJson<SubUiResponse>(
+    `/api/runs/${encodeURIComponent(slug)}/${encodeURIComponent(sessionId)}/${encodeURIComponent(runId)}/describe`,
+  );
+}
+
 /** #9: a Claude-generated, constrained PanelSpec rendering of an agent's result (lazy). */
 export function fetchSubUi(
   ref: Pick<RunRef, 'slug' | 'sessionId' | 'runId'>,

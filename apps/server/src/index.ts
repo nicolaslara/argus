@@ -29,6 +29,7 @@ import {
   handleRunLive,
   handleAgentResult,
   handleSubUi,
+  handleDescribe,
   safeRunJournalPath,
   isValidRunId,
   isValidSegment,
@@ -163,6 +164,18 @@ async function dispatchApi(url: URL): Promise<RouteResult | null> {
       return { status: 400, body: { error: 'bad_request' } };
     }
     return handleRunExplanations(deps, slug, session, runId);
+  }
+
+  // GET /api/runs/:slug/:session/:runId/describe (I4: whole-run generative summary).
+  const runDescribeMatch = /^\/api\/runs\/([^/]+)\/([^/]+)\/([^/]+)\/describe$/.exec(pathname);
+  if (runDescribeMatch) {
+    const slug = decodeSegment(runDescribeMatch[1]!);
+    const session = decodeSegment(runDescribeMatch[2]!);
+    const runId = decodeSegment(runDescribeMatch[3]!);
+    if (slug === null || session === null || runId === null) {
+      return { status: 400, body: { error: 'bad_request' } };
+    }
+    return handleDescribe(deps, slug, session, runId);
   }
 
   // GET /api/runs/:slug/:session/:runId/subui?agentId=<id> (#9: generative panel).

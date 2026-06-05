@@ -626,7 +626,11 @@ export function App() {
       />
       {/* I3: run overview (logs timeline) — only when no node is selected (node wins). */}
       {!selectedNode && overviewOpen ? (
-        <RunOverviewPanel run={run ?? null} onClose={() => setOverviewOpen(false)} />
+        <RunOverviewPanel
+          run={run ?? null}
+          runRef={summary ? { slug: summary.ref.slug, sessionId: summary.ref.sessionId, runId: summary.ref.runId } : null}
+          onClose={() => setOverviewOpen(false)}
+        />
       ) : null}
     </div>
   );

@@ -7,8 +7,11 @@
 // Reuses the `.detail-*` panel CSS. ALL text rendered as React text nodes (logs/errors/
 // summaries can echo the user's own run content — boundaries §4). Returns null if no run.
 
-import { memo } from 'react';
+import { memo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import type { RunModel } from '@argus/contract';
+import { fetchRunDescribe } from '../api.ts';
+import { GenerativePanel } from './GenerativePanel.tsx';
 
 function fmtDuration(ms: number | null): string | null {
   if (ms === null || !Number.isFinite(ms) || ms <= 0) return null;
@@ -37,11 +40,21 @@ function Row({ label, value }: { label: string; value: string | number | null | 
 
 export const RunOverviewPanel = memo(function RunOverviewPanel({
   run,
+  runRef,
   onClose,
 }: {
   run: RunModel | null;
+  /** I4: lets the panel lazily request a Claude "describe this run" summary. */
+  runRef?: { slug: string; sessionId: string; runId: string } | null;
   onClose: () => void;
 }) {
+  const [showDescribe, setShowDescribe] = useState(false);
+  const describeQ = useQuery({
+    queryKey: ['describe', runRef?.slug, runRef?.sessionId, runRef?.runId],
+    queryFn: () => fetchRunDescribe(runRef!),
+    enabled: !!run && !!runRef && showDescribe && !run.incomplete,
+    staleTime: Infinity,
+  });
   if (!run) return null;
   // The failure line(s) also appear in logs[]; flag those rows so the timeline reads honestly.
   const failureSet = new Set(run.partialFailure.lines);
@@ -66,6 +79,31 @@ export const RunOverviewPanel = memo(function RunOverviewPanel({
         <Row label="duration" value={fmtDuration(run.durationMs)} />
         <Row label="started" value={fmtTime(run.startTime)} />
       </div>
+
+      {/* I4: Claude describes what the whole workflow DID (opt-in, finished runs). */}
+      {runRef && !run.incomplete ? (
+        <div className="detail-block">
+          <div className="detail-block-label">
+            describe
+            <button type="button" className="detail-toggle" onClick={() => setShowDescribe((v) => !v)}>
+              {showDescribe ? 'hide' : '✨ describe this run'}
+            </button>
+          </div>
+          {showDescribe ? (
+            describeQ.isFetching && !describeQ.data ? (
+              <div className="detail-summary">summarizing the run…</div>
+            ) : describeQ.data?.status === 'ready' && describeQ.data.spec ? (
+              <GenerativePanel spec={describeQ.data.spec} />
+            ) : (
+              <div className="detail-summary">
+                {describeQ.data?.status === 'unavailable'
+                  ? 'claude unavailable'
+                  : 'could not summarize this run'}
+              </div>
+            )
+          ) : null}
+        </div>
+      ) : null}
 
       {run.error ? (
         <div className="detail-block">

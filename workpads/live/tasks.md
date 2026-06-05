@@ -23,23 +23,29 @@ lost/duplicated nodes and clean reconnect.
   (F4) else anonymous. Proven by an incremental journal-replay test on the real probe run.
   **Remaining:** server `/live` endpoint (`loadLiveModel`) + a `chokidar` watch re-reading
   on append. Transcripts are NOT reliable live (F5) — the journal `result` is the content.
-- [~] **L3 — Push channel.** FIRST CUT DONE 2026-06-05 via POLLING (a valid
-  snapshot-on-connect transport): `GET /api/runs/:slug/:session/:runId/live` serves the
-  partial model; the web fetches it for a `running` run and re-polls every 1.5 s, and
-  re-polls the run list every 2.5 s so a running→completed flip is noticed. **Remaining:**
-  the SSE/chokidar delta stream (incremental, not full re-fetch) per boundaries §4.
-- [~] **L4 — Live re-layout.** STATE-TRANSITIONS DONE 2026-06-05: the execution view
-  renders the live model with queued→running→done agent colors (running = blue) and a
-  pulsing "● running" run badge; verified on a frozen mid-run fixture (3 done + 1 running,
-  screenshot `.argus/screenshots/m6-live-execution.png`). **Remaining:** smooth re-layout
-  without jarring jumps as the node set grows; surface the narrator `log()` lines (the
-  journal has none — F2 — so logs come from the finalized model or a future event).
-- [ ] **L5 — Finalize reconciliation.** When `wf_*.json` lands, reconcile the live
-  model with the authoritative finalized one. PARTIAL: the run list de-dups a finalized
-  runId over its running entry, and the web swaps `/live`→finalized `/run` once the status
-  flips. Remaining: a no-jump in-place swap keyed by agentId (vs. the current refetch).
-- [ ] **L6 — Robustness.** Reconnect after a dropped channel; handle killed/failed
-  mid-run; replay a captured journal in a test.
+- [x] **L3 — Push channel.** DONE 2026-06-05. `GET /api/runs/:slug/:session/:runId/stream`
+  is an SSE stream: it fs-watches the journal and pushes a `changed` event per append
+  (+ `open`, a 15s heartbeat, `retry:3000` for clean EventSource reconnect). The web
+  subscribes while a run is live and invalidates the live query on `changed` (instant, no
+  poll lag); a 4s poll is a dropped-stream safety net; the run-list poll detects finalize.
+  Verified: two journal appends → two `changed` events over the stream. (Incremental DELTA
+  diffs — vs. the current refetch-on-signal — remain a future optimization.)
+- [x] **L4 — Live re-layout.** DONE 2026-06-05 (R8b/R9). A running run renders on the
+  PLAN (Morph) with done (green) / running (amber, pulsing) / **upcoming** (ghosted) — the
+  only view that shows what's NEXT (the Execution model holds only started agents). Screenshot
+  `.argus/screenshots/r8-running-morph.png`. (The journal has no `log()` lines — F2 — so a
+  live narrator timeline is N/A; the finalized run-overview shows logs, I3.)
+- [x] **L5 — Finalize reconciliation.** DONE 2026-06-05. The run list de-dups a finalized
+  runId over its running entry; the web swaps `/live`→finalized `/run` when status flips;
+  the L6 replay test asserts the final live agent SET + labels equal the finalized json
+  (agentId/start-order reconciliation). (A no-jump in-place node swap is a future polish.)
+- [x] **L6 — Robustness.** DONE 2026-06-05. Clean reconnect via SSE `retry:`; killed/failed
+  handled (interrupted/error agents pop, R8a); a JOURNAL-REPLAY test replays the captured
+  journal line-by-line asserting no lost/duplicated nodes + reconciliation to finalized.
+
+> **Live GATE met 2026-06-05:** a journal-replayed run animates to completion (done/running/
+> upcoming on Morph, SSE-pushed) with no lost/duplicated nodes and clean reconnect. Residual
+> future polish: incremental SSE deltas + a no-jump finalize swap.
 
 ## knowledge
 Live event schema findings + decisions land in `knowledge.md`.

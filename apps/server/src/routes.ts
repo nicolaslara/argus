@@ -627,6 +627,55 @@ export async function handleSubUi(
 }
 
 /**
+ * GET /api/runs/:slug/:session/:runId/describe -> SubUiResponse (inspect I4).
+ * Claude generates a plain-language "what this workflow DID" panel from a compact run
+ * DIGEST (workflow / status / phases / per-agent label+state+metrics / logs / partial-
+ * failure) — reusing the #9 sub-UI engine + grammar. Reads the finalized run model only
+ * (a finished run); same M3 guards. Absent engine / unreadable run → unavailable / 404.
+ */
+export async function handleDescribe(
+  deps: RouteDeps,
+  slug: string,
+  session: string,
+  runId: string,
+): Promise<RouteResult> {
+  const wfPath = safeRunJsonPath(deps.claudeHome, slug, session, runId);
+  if (wfPath === null) return err(400, 'bad_request');
+  const target = `${runId}:describe`;
+  if (!deps.subui) return { status: 200, body: { target, status: 'unavailable', spec: null } };
+
+  let model: RunModel;
+  try {
+    const ref: RunRef = { projectPath: '', slug, sessionId: session, runId };
+    model = await loadRun(deps.port, wfPath, { ref });
+  } catch {
+    return err(404, 'not_found');
+  }
+  // A COMPACT digest (no huge result blobs — just the structure + outcomes), so the
+  // describe is about the WHOLE run, deterministic, and cache-stable.
+  const digest = {
+    workflow: model.workflowName,
+    status: model.status,
+    summary: model.summary,
+    durationMs: model.durationMs,
+    phases: model.phases.map((p) => p.title),
+    agents: model.agents.map((a) => ({
+      label: a.label,
+      phase: a.phaseIndex,
+      state: a.state,
+      model: a.model,
+      tokens: a.tokens,
+      tools: a.toolCalls,
+    })),
+    logs: model.logs,
+    partialFailure: model.partialFailure.lines,
+    error: model.error?.message ?? null,
+  };
+  const { status, spec } = await deps.subui.generate(digest);
+  return { status: 200, body: { target, status, spec } };
+}
+
+/**
  * GET /api/runs/:slug/:session/:runId/live -> RunModel (L2 partial live snapshot).
  * Reads the live `journal.jsonl` THROUGH the port and builds a partial RunModel
  * (`incomplete:true`, `status:'running'`) via the adapter's buildLiveModel. Best-effort,

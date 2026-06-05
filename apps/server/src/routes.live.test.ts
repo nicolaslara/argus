@@ -3,9 +3,11 @@ import {
   handleRunLive,
   handleProjectRuns,
   handleAgentResult,
+  handleDescribe,
   safeRunJournalPath,
   type RouteDeps,
 } from './routes.ts';
+import { SubUiEngine } from './subui.ts';
 import type { FileSystemPort } from '@argus/adapter';
 import type { RunModel, RunSummary } from '@argus/contract';
 
@@ -142,6 +144,35 @@ describe('handleAgentResult (R1 lazy full result)', () => {
     const none = await handleAgentResult(deps(), SLUG, SESS_LIVE, RUN_LIVE, 'aid2');
     expect(none.status).toBe(200);
     expect((none.body as { value: unknown }).value).toBeNull();
+  });
+});
+
+describe('handleDescribe (I4 whole-run summary)', () => {
+  it('feeds a run digest to the sub-UI engine and returns its PanelSpec', async () => {
+    let prompt = '';
+    const subui = new SubUiEngine({
+      cacheDir: '/x',
+      runner: async (p: string) => {
+        prompt = p;
+        return '{"title":"Run digest","sections":[{"kind":"callout","tone":"success","text":"ok"}]}';
+      },
+    });
+    const res = await handleDescribe({ port: makePort(), claudeHome: HOME, subui }, SLUG, SESS_DONE, 'wf_done');
+    expect(res.status).toBe(200);
+    const body = res.body as { status: string; spec: { title: string } | null };
+    expect(body.status).toBe('ready');
+    expect(body.spec?.title).toBe('Run digest');
+    // the digest the engine saw is the WHOLE run (workflow name + status), not one agent.
+    expect(prompt).toContain('modal-rust-plan-research');
+    expect(prompt).toContain('completed');
+  });
+  it('no engine → unavailable; unreadable run → 404', async () => {
+    expect((await handleDescribe(deps(), SLUG, SESS_DONE, 'wf_done')).status).toBe(200); // deps() has no subui
+    expect(((await handleDescribe(deps(), SLUG, SESS_DONE, 'wf_done')).body as { status: string }).status).toBe(
+      'unavailable',
+    );
+    const subui = new SubUiEngine({ cacheDir: '/x', runner: async () => null });
+    expect((await handleDescribe({ port: makePort(), claudeHome: HOME, subui }, SLUG, SESS_DONE, 'wf_absent')).status).toBe(404);
   });
 });
 
