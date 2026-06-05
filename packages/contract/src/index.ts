@@ -408,6 +408,44 @@ export interface ExplanationBatch {
   explanations: NodeExplanation[];
 }
 
+// ============================================================================
+// Generative sub-UI (#9) — Claude builds a TAILORED rendering for a node's result.
+// SAFETY: the LLM emits a CONSTRAINED "panel spec" (sections from a FIXED vocabulary),
+// NEVER executable HTML/JS — the web renders each section with a trusted React
+// component, all values as text nodes. So it's "generative UI" without an injection
+// surface. Content-addressed-cached like PX. Design: a fixed section grammar.
+// ============================================================================
+
+/** A `callout` tone → a trusted color treatment (no arbitrary styling from the LLM). */
+export type CalloutTone = 'info' | 'success' | 'warn' | 'danger';
+
+/** One section of a generated panel. Every leaf value is a plain string (text-node safe). */
+export type PanelSection =
+  | { kind: 'callout'; tone: CalloutTone; text: string }
+  | { kind: 'keyvalue'; items: Array<{ key: string; value: string }> }
+  | { kind: 'list'; ordered?: boolean; items: string[] }
+  | { kind: 'table'; columns: string[]; rows: string[][] }
+  | { kind: 'metrics'; items: Array<{ label: string; value: string }> }
+  | { kind: 'text'; text: string };
+
+/** The tailored panel Claude generated for one node. `title` is a short heading. */
+export interface PanelSpec {
+  title: string;
+  sections: PanelSection[];
+}
+
+/** Lifecycle of a node's generative sub-UI (mirrors ExplanationStatus). */
+export type SubUiStatus = 'pending' | 'ready' | 'error' | 'unavailable';
+
+/** The sub-UI poll/fetch response for one node's result. */
+export interface SubUiResponse {
+  /** Echoes the requested node so a stale response can be dropped. */
+  target: string;
+  status: SubUiStatus;
+  /** Present when status==='ready'; null otherwise (the caller falls back to R1's readable view). */
+  spec: PanelSpec | null;
+}
+
 /** A page of an agent's transcript (lazy, paginated). */
 export interface TranscriptPage {
   agentId: string;

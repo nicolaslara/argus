@@ -204,6 +204,8 @@ function err(status: number, error: string): RouteResult {
 export interface RouteDeps {
   port: FileSystemPort;
   claudeHome: string;
+  /** #9: the generative sub-UI engine (claude → constrained PanelSpec). Optional. */
+  subui?: import('./subui.ts').SubUiEngine;
   /**
    * The Explanation engine (PX). Optional so the M3/P0/P1 routes and their tests need no
    * engine; when present, the plan/run handlers warm it in the BACKGROUND (never awaited)
@@ -590,6 +592,38 @@ export async function handleAgentResult(
     return { status: 200, body: { agentId, value: serialized.slice(0, RESULT_EMIT_CAP), truncated: true } };
   }
   return { status: 200, body: { agentId, value, truncated: false } };
+}
+
+/**
+ * GET /api/runs/:slug/:session/:runId/subui?agentId=<id> -> SubUiResponse (#9).
+ * Claude generates a TAILORED, constrained PanelSpec for the agent's full result (read
+ * from the journal, like R1). Same M3 guards as the result route. The engine validates +
+ * caches; absent engine / no result → `unavailable` (the web falls back to R1's readable
+ * view). NEVER 500s. Generation is on-demand and may take a few seconds (cached after).
+ */
+export async function handleSubUi(
+  deps: RouteDeps,
+  slug: string,
+  session: string,
+  runId: string,
+  agentId: string,
+): Promise<RouteResult> {
+  const journalPath = safeRunJournalPath(deps.claudeHome, slug, session, runId);
+  if (journalPath === null || !isValidAgentId(agentId)) return err(400, 'bad_request');
+  const target = `${runId}:${agentId}`;
+  if (!deps.subui) {
+    return { status: 200, body: { target, status: 'unavailable', spec: null } };
+  }
+  let text: string;
+  try {
+    text = await deps.port.readFile(journalPath);
+  } catch {
+    return err(404, 'not_found');
+  }
+  const value = agentResultFromJournal(text, agentId);
+  if (value === null) return { status: 200, body: { target, status: 'error', spec: null } };
+  const { status, spec } = await deps.subui.generate(value);
+  return { status: 200, body: { target, status, spec } };
 }
 
 /**

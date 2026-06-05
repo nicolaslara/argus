@@ -28,10 +28,12 @@ import {
   handleRunPlan,
   handleRunLive,
   handleAgentResult,
+  handleSubUi,
   type RouteDeps,
   type RouteResult,
 } from './routes.ts';
 import { ExplanationEngine, explanationsCacheDir } from './explain.ts';
+import { SubUiEngine, subUiCacheDir } from './subui.ts';
 
 const HOST = '127.0.0.1';
 const PORT = Number(process.env.ARGUS_PORT ?? 4317);
@@ -55,8 +57,12 @@ const explain = EXPLAIN_ENABLED
   ? new ExplanationEngine({ cacheDir: explanationsCacheDir(REPO_ROOT) })
   : undefined;
 
+// #9: the generative sub-UI engine (claude → constrained PanelSpec, cached). Shares the
+// EXPLAIN on/off switch (both are `claude -p` features that degrade to a fallback render).
+const subui = EXPLAIN_ENABLED ? new SubUiEngine({ cacheDir: subUiCacheDir(REPO_ROOT) }) : undefined;
+
 // One shared read-only port + route deps for the process lifetime.
-const deps: RouteDeps = { port: new NodeFileSystemPort(), claudeHome: CLAUDE_HOME, explain };
+const deps: RouteDeps = { port: new NodeFileSystemPort(), claudeHome: CLAUDE_HOME, explain, subui };
 
 function send(res: ServerResponse, status: number, body: unknown): void {
   const payload = JSON.stringify(body);
@@ -154,6 +160,19 @@ async function dispatchApi(url: URL): Promise<RouteResult | null> {
       return { status: 400, body: { error: 'bad_request' } };
     }
     return handleRunExplanations(deps, slug, session, runId);
+  }
+
+  // GET /api/runs/:slug/:session/:runId/subui?agentId=<id> (#9: generative panel).
+  const runSubUiMatch = /^\/api\/runs\/([^/]+)\/([^/]+)\/([^/]+)\/subui$/.exec(pathname);
+  if (runSubUiMatch) {
+    const slug = decodeSegment(runSubUiMatch[1]!);
+    const session = decodeSegment(runSubUiMatch[2]!);
+    const runId = decodeSegment(runSubUiMatch[3]!);
+    const agentId = url.searchParams.get('agentId') ?? '';
+    if (slug === null || session === null || runId === null) {
+      return { status: 400, body: { error: 'bad_request' } };
+    }
+    return handleSubUi(deps, slug, session, runId, agentId);
   }
 
   // GET /api/runs/:slug/:session/:runId/result?agentId=<id> (R1: the lazy FULL result).

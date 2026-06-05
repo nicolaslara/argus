@@ -9,7 +9,8 @@
 import { memo, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { Node } from '@xyflow/react';
-import { fetchAgentResult } from '../api.ts';
+import { fetchAgentResult, fetchSubUi } from '../api.ts';
+import { GenerativePanel } from './GenerativePanel.tsx';
 
 interface Preview {
   text: string;
@@ -161,6 +162,14 @@ export const DetailPanel = memo(function DetailPanel({
     enabled: !!node && !!runRef && !!agentId,
     staleTime: Infinity,
   });
+  // #9: a Claude-generated sub-UI for this result — opt-in (spends a claude call), cached.
+  const [showSubUi, setShowSubUi] = useState(false);
+  const subUiQ = useQuery({
+    queryKey: ['subui', runRef?.slug, runRef?.sessionId, runRef?.runId, agentId],
+    queryFn: () => fetchSubUi(runRef!, agentId!),
+    enabled: !!node && !!runRef && !!agentId && showSubUi,
+    staleTime: Infinity,
+  });
 
   if (!node) return null;
   const d = node.data as Record<string, unknown>;
@@ -250,6 +259,31 @@ export const DetailPanel = memo(function DetailPanel({
         full={resultQ.data?.value}
         loading={!!agentId && resultQ.isFetching && resultQ.data === undefined}
       />
+
+      {/* #9: a Claude-generated, tailored panel for this result (opt-in, cached). */}
+      {agentId && resultQ.data?.value != null ? (
+        <div className="detail-block">
+          <div className="detail-block-label">
+            generated panel
+            <button type="button" className="detail-toggle" onClick={() => setShowSubUi((v) => !v)}>
+              {showSubUi ? 'hide' : '✨ generate'}
+            </button>
+          </div>
+          {showSubUi ? (
+            subUiQ.isFetching && !subUiQ.data ? (
+              <div className="detail-summary">generating a tailored panel…</div>
+            ) : subUiQ.data?.status === 'ready' && subUiQ.data.spec ? (
+              <GenerativePanel spec={subUiQ.data.spec} />
+            ) : (
+              <div className="detail-summary">
+                {subUiQ.data?.status === 'unavailable'
+                  ? 'claude unavailable — the readable result above is the fallback'
+                  : 'could not generate a panel for this result'}
+              </div>
+            )
+          ) : null}
+        </div>
+      ) : null}
     </aside>
   );
 });

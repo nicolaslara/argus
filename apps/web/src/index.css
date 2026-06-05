@@ -1195,6 +1195,127 @@ div.detail-log-fail {
   white-space: pre-wrap;
   word-break: break-word;
 }
+/* #9: generative sub-UI — trusted renderers for the Claude-generated PanelSpec. */
+.subui {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: #0b0d10;
+  border: 1px solid #21262d;
+  border-radius: 8px;
+  padding: 12px;
+  max-height: 420px;
+  overflow: auto;
+}
+.subui-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--argus-fg);
+}
+.subui-callout {
+  font-size: 12px;
+  line-height: 1.45;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border-left: 3px solid currentColor;
+}
+.subui-callout-info {
+  color: #79c0ff;
+  background: rgba(121, 192, 255, 0.08);
+}
+.subui-callout-success {
+  color: #3fb950;
+  background: rgba(63, 185, 80, 0.08);
+}
+.subui-callout-warn {
+  color: #d29922;
+  background: rgba(210, 153, 34, 0.08);
+}
+.subui-callout-danger {
+  color: #f85149;
+  background: rgba(248, 81, 73, 0.08);
+}
+.subui-text {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--argus-fg);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.subui-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+.subui-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.subui-metric-value {
+  font-size: 16px;
+  font-weight: 600;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--argus-fg);
+}
+.subui-metric-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--argus-dim);
+}
+.subui-kv {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.subui-kv-row {
+  display: grid;
+  grid-template-columns: minmax(70px, 34%) 1fr;
+  gap: 10px;
+  font-size: 12px;
+}
+.subui-kv-key {
+  color: #79c0ff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  word-break: break-word;
+}
+.subui-kv-val {
+  color: var(--argus-fg);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.subui-list {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--argus-fg);
+}
+.subui-table-wrap {
+  overflow-x: auto;
+}
+.subui-table {
+  border-collapse: collapse;
+  font-size: 11px;
+  width: 100%;
+}
+.subui-table th,
+.subui-table td {
+  border: 1px solid #21262d;
+  padding: 4px 8px;
+  text-align: left;
+  vertical-align: top;
+  word-break: break-word;
+}
+.subui-table th {
+  color: var(--argus-dim);
+  font-weight: 600;
+  background: #11161c;
+}
 .detail-pre {
   margin: 0;
   max-height: 280px;

@@ -13,6 +13,7 @@ import type {
   RunModel,
   RunRef,
   RunSummary,
+  SubUiResponse,
   WorkflowMeta,
 } from '@argus/contract';
 
@@ -95,6 +96,17 @@ export function fetchAgentResult(
   const { slug, sessionId, runId } = ref;
   return getJson<AgentResult>(
     `/api/runs/${encodeURIComponent(slug)}/${encodeURIComponent(sessionId)}/${encodeURIComponent(runId)}/result?agentId=${encodeURIComponent(agentId)}`,
+  );
+}
+
+/** #9: a Claude-generated, constrained PanelSpec rendering of an agent's result (lazy). */
+export function fetchSubUi(
+  ref: Pick<RunRef, 'slug' | 'sessionId' | 'runId'>,
+  agentId: string,
+): Promise<SubUiResponse> {
+  const { slug, sessionId, runId } = ref;
+  return getJson<SubUiResponse>(
+    `/api/runs/${encodeURIComponent(slug)}/${encodeURIComponent(sessionId)}/${encodeURIComponent(runId)}/subui?agentId=${encodeURIComponent(agentId)}`,
   );
 }
 
