@@ -186,6 +186,25 @@ body {
   backdrop-filter: blur(6px);
   z-index: 5;
 }
+/* The always-visible one-liner under the toggle: says what the current view IS. */
+.view-caption {
+  position: absolute;
+  top: 52px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  max-width: 60vw;
+  text-align: center;
+  font-size: 11px;
+  color: var(--argus-dim);
+  background: rgba(13, 17, 23, 0.7);
+  padding: 2px 10px;
+  border-radius: 999px;
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .view-toggle-btn {
   appearance: none;
   border: none;
@@ -752,6 +771,73 @@ body {
   color: var(--argus-dim);
   padding: 14px 6px 6px;
 }
+/* Unified explorer: project switcher ▸ Workflows + Runs groups (clear hierarchy). */
+.rail-project {
+  margin-bottom: 8px;
+}
+.rail-project-current {
+  width: 100%;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  appearance: none;
+  background: #161b22;
+  border: 1px solid #2d333b;
+  border-radius: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  text-align: left;
+}
+.rail-project-current[disabled] {
+  cursor: default;
+}
+.rail-project-label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--argus-dim);
+}
+.rail-project-name {
+  font-weight: 600;
+  color: var(--argus-fg);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.rail-project-caret {
+  margin-left: auto;
+  color: var(--argus-dim);
+  font-size: 11px;
+}
+.rail-project-list {
+  margin-top: 4px;
+  border-left: 1px solid #232a31;
+  padding-left: 4px;
+}
+.rail-group {
+  margin-top: 10px;
+}
+.rail-group-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 0 6px 6px;
+}
+.rail-group-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--argus-fg);
+}
+.rail-group-sub {
+  font-size: 9px;
+  color: var(--argus-dim);
+}
+/* the group's members are nested under the project → a hairline rail conveys hierarchy. */
+.rail-indent {
+  border-left: 1px solid #21262d;
+  margin-left: 7px;
+  padding-left: 5px;
+}
 .rail-list {
   list-style: none;
   margin: 0;
@@ -1166,6 +1252,16 @@ div.detail-log-fail {
   word-break: break-word;
   max-height: 300px;
   overflow: auto;
+}
+/* Missing-data reality: an honest, visible "not captured" state (vs. a confusing blank). */
+.detail-uncaptured {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--argus-dim);
+  font-style: italic;
+  border: 1px dashed #30363d;
+  border-radius: 6px;
+  padding: 8px 10px;
 }
 .detail-kv {
   display: flex;

@@ -105,19 +105,36 @@ function PreviewBlock({
   preview,
   full,
   loading,
+  showEmpty,
 }: {
   label: string;
   preview: unknown;
   /** The lazily-fetched FULL value (string or object); undefined = not fetched. */
   full?: unknown;
   loading?: boolean;
+  /** Render an honest "not captured" state when there's no data (vs. hiding the block). */
+  showEmpty?: boolean;
 }) {
   const [raw, setRaw] = useState(false);
   const pv = isPreview(preview) ? preview : null;
   const hasFull = full !== undefined && full !== null;
+  const hasText = (pv?.text?.length ?? 0) > 0 || (hasFull && (typeof full !== 'string' || full.length > 0));
   const source: unknown = hasFull ? full : (pv?.text ?? '');
   const readable = useMemo(() => tryReadable(source), [source]);
-  if (!pv && !hasFull) return null;
+  // Missing-data reality (honest, visible): a workflow agent with no recorded prompt/result
+  // shows a "not captured" note — the journal simply didn't record it — instead of a blank.
+  if (!hasText && !loading) {
+    if (!showEmpty) return null;
+    return (
+      <div className="detail-block">
+        <div className="detail-block-label">{label}</div>
+        <div className="detail-uncaptured">
+          not captured — the run journal didn’t record this {label}
+        </div>
+      </div>
+    );
+  }
+  if (!pv && !hasFull && !loading) return null;
 
   const truncated = !hasFull && !!pv?.truncated; // a capped preview; the full value isn't truncated
   const rawText = readable.kind === 'json' ? JSON.stringify(readable.value, null, 2) : readable.text;
@@ -252,12 +269,13 @@ export const DetailPanel = memo(function DetailPanel({
         )}
       </div>
 
-      <PreviewBlock label="prompt" preview={d.promptPreview} />
+      <PreviewBlock label="prompt" preview={d.promptPreview} showEmpty={isExecAgent} />
       <PreviewBlock
         label="result"
         preview={d.resultPreview}
         full={resultQ.data?.value}
         loading={!!agentId && resultQ.isFetching && resultQ.data === undefined}
+        showEmpty={isExecAgent}
       />
 
       {/* #9: a Claude-generated, tailored panel for this result (opt-in, cached). */}

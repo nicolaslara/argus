@@ -94,7 +94,7 @@ export function App() {
   //     but ANY discovered project / run / workflow can override them, and the choice
   //     survives the Plan⟷Execution toggle (state lives here, above the view). ---
   const [railCollapsed, setRailCollapsed] = useState(true); // collapsed-by-default
-  const [railSection, setRailSection] = useState<RailSection>('projects');
+  const [railSection, setRailSection] = useState<RailSection>('explorer');
   const [selectedProjectPath, setSelectedProjectPath] = useState<string | null>(null);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [selectedWorkflowName, setSelectedWorkflowName] = useState<string | null>(null);
@@ -457,14 +457,17 @@ export function App() {
         onSelectWorkflow={handleSelectWorkflow}
       />
 
-      {/* Plan ⟷ Morph ⟷ Execution view toggle. Morph (P2) paints the selected run's
-          status onto its plan template — proving plan & execution are one graph. */}
+      {/* Plan ⟷ Progress ⟷ Execution. The three are one graph at different resolutions:
+          Plan = the design; Progress (P2 overlay) = the plan painted per STEP with run
+          status; Execution = every AGENT instance that ran. A per-view caption makes the
+          step-vs-agent distinction explicit (users kept conflating Progress & Execution). */}
       <div className="view-toggle" role="group" aria-label="view mode">
         <button
           type="button"
           className={`view-toggle-btn${view === 'plan' ? ' is-active' : ''}`}
           aria-pressed={view === 'plan'}
           onClick={() => setView('plan')}
+          title="The design — what this workflow is built to do (parsed from the code). No run."
         >
           Plan
         </button>
@@ -473,18 +476,27 @@ export function App() {
           className={`view-toggle-btn${view === 'overlay' ? ' is-active' : ''}`}
           aria-pressed={view === 'overlay'}
           onClick={() => setView('overlay')}
-          title="paint this run's status onto its plan template (Plan⟷Execution morph)"
+          title="The plan, painted with the run — each STEP shows how its agents went (done · running · upcoming). Collapsed by step (a ×7 fan-out is one node)."
         >
-          Morph
+          Progress
         </button>
         <button
           type="button"
           className={`view-toggle-btn${view === 'execution' ? ' is-active' : ''}`}
           aria-pressed={view === 'execution'}
           onClick={() => setView('execution')}
+          title="Every AGENT that actually ran — one card each, grouped by phase (a ×7 fan-out is 7 cards). The instance-level detail."
         >
           Execution
         </button>
+      </div>
+      {/* The always-visible one-liner that says what the current view IS. */}
+      <div className="view-caption" role="note">
+        {view === 'plan'
+          ? 'the design — what this workflow is built to do'
+          : view === 'overlay'
+            ? 'the plan, per step — how each planned step’s run went (done · running · upcoming)'
+            : 'every agent that actually ran — one card per agent, by phase'}
       </div>
 
       {/* P2 folded↔unrolled MODE switch — shown only when the morph observed loop rounds. */}
@@ -552,7 +564,7 @@ export function App() {
           >
             {run.workflowName}
           </button>
-          <span className="run-badge run-badge-plan">morph</span>
+          <span className="run-badge run-badge-plan">progress</span>
           <span className={`run-badge run-badge-${run.status}`}>{run.status}</span>
           <span className="run-header-meta">
             {overlayBound} bound
