@@ -16,10 +16,28 @@ inspect I1 → live M6 — all shipped. PLUS PX-fit (#14): the detail panel is t
 expand surface (baseline/✨llm provenance + pattern chip), and the `claude -p` prompt
 (px-v2) now yields role-focused captions + structural pattern names.
 
-**Next candidates (not yet started — for the morning):** finish the **live** gate (L3 SSE
-stream, L4 no-jump re-layout, L5 finalize reconciliation, L6 robustness) and **inspect**
-(I2 transcript, I3 run-structure/logs timeline, I4 describe-via-Claude). #9 generative
-sub-UIs stays a forward/exploratory item. See the per-workpad `tasks.md` for the detail.
+**UX-REVIEW PASS (2026-06-05, from the user's review) — DONE.** Grounded in two research
+workflows (`workpads/research/viz-best-practices.md` + a code change-map). Shipped:
+- **R1** human-readable prompt/result (key→value/prose by default, raw-JSON toggle, lazy
+  FULL result from the journal via a new `/result` endpoint).
+- **R2** unified workflow↔run↔project selection (Plan/Morph/Execution always the same
+  workflow; a live run is one click).
+- **R3** fan-out/merge are tiny junction markers (●/◌ + hover), not boxes.
+- **R5** decisions: correct true/false labels (de-negation fix) + a visible terminal for
+  break/return arms + a labeled continuation; green/red arrowed branch edges.
+- **R7** elk PHASE-PARTITIONING (disjoint lane bands → the p4 overlap is gone) + research
+  spacing/routing.
+- **R8/R9** run-state legibility: a RUNNING run auto-opens in **Morph** showing done /
+  running / **upcoming**; a failed/interrupted step POPS (red/amber border); Morph is now
+  the primary state view (Execution = instance detail).
+- **#9 generative sub-UIs** — DONE: Claude generates a constrained, validated `PanelSpec`
+  (fixed section grammar) rendered by trusted components; opt-in `✨ generate` per result.
+- R4 (distinct fan-out) + R6 (loop edges) adequately addressed by R3 markers + the elk
+  cycle-breaking/arrowheads. ~160 tests green; each fix screenshot-validated.
+
+**Still "what's left" (continuation):** the **live** gate (L3 real SSE/chokidar stream,
+L4 no-jump re-layout, L5 finalize reconciliation, L6 robustness) and **inspect** (I2
+transcript, I4 describe-via-Claude). See the per-workpad `tasks.md`.
 
 ## Workpad Queue
 
