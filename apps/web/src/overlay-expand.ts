@@ -107,6 +107,9 @@ export function expandInstances(
   expandedNodeIds: Set<string>,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- threaded for parity with paintOverlay; arithmetic is live-independent
   live = false,
+  // STEP 3: the dead agentIds on a failed run — the matching instance card reads as the
+  // failure point (a red ring), consistent with the Run-view failure banner's attribution.
+  failureAgentIds?: Set<string>,
 ): GraphResult {
   if (expandedNodeIds.size === 0) return graph;
 
@@ -197,7 +200,7 @@ export function expandInstances(
         type: 'agentCard',
         parentId: drawer.id,
         position: pos,
-        data: agentToCardData(agent),
+        data: agentToCardData(agent, failureAgentIds?.has(agent.agentId) === true),
         draggable: false,
         selectable: false,
       } as Node;

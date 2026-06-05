@@ -3,6 +3,7 @@ import {
   handleRunLive,
   handleProjectRuns,
   handleAgentResult,
+  handleAgentActivity,
   handleDescribe,
   handleStream,
   safeRunJournalPath,
@@ -11,7 +12,7 @@ import {
 } from './routes.ts';
 import { SubUiEngine } from './subui.ts';
 import type { FileSystemPort } from '@argus/adapter';
-import type { RunModel, RunSummary } from '@argus/contract';
+import type { AgentActivity, RunModel, RunSummary } from '@argus/contract';
 
 // Live-route tests (L1 detection + L2 live snapshot). Self-contained: a fake port with a
 // WORKING stat (mtime) so running-run detection fires, over a tree that reproduces the
@@ -48,6 +49,26 @@ const LIVE_JOURNAL =
   '{"type":"started","key":"k2","agentId":"aid2"}\n';
 const LIVE_SCRIPT_NAME = `live-test-${RUN_LIVE}.js`;
 
+// A per-agent transcript for aid1, shaped like a real `agent-<id>.jsonl`: a user prompt,
+// an assistant turn carrying usage + a tool_use, and one TORN line (must be skipped).
+const AGENT_TRANSCRIPT =
+  JSON.stringify({
+    type: 'user',
+    timestamp: '2026-06-05T21:58:01.000Z',
+    message: { role: 'user', content: 'do alpha' },
+  }) +
+  '\n' +
+  JSON.stringify({
+    type: 'assistant',
+    timestamp: '2026-06-05T21:58:10.000Z',
+    message: {
+      role: 'assistant',
+      content: [{ type: 'tool_use', name: 'Read' }, { type: 'text', text: 'alpha is done' }],
+      usage: { input_tokens: 1000, output_tokens: 4, cache_read_input_tokens: 500 },
+    },
+  }) +
+  '\n{ this is a TORN malformed line\n';
+
 function makePort(): FileSystemPort {
   const files = new Map<string, { content: string; mtimeMs: number }>([
     [`${HOME}/projects/${SLUG}/${SESS_DONE}/workflows/wf_done.json`, { content: WF_DONE, mtimeMs: 1 }],
@@ -58,6 +79,10 @@ function makePort(): FileSystemPort {
     [
       `${HOME}/projects/${SLUG}/${SESS_LIVE}/workflows/scripts/${LIVE_SCRIPT_NAME}`,
       { content: LIVE_SCRIPT, mtimeMs: NOW - 3000 },
+    ],
+    [
+      `${HOME}/projects/${SLUG}/${SESS_LIVE}/subagents/workflows/${RUN_LIVE}/agent-aid1.jsonl`,
+      { content: AGENT_TRANSCRIPT, mtimeMs: NOW - 2500 },
     ],
     [`${ROOT}/.claude/workflows/plan-research.js`, { content: LIVE_SCRIPT, mtimeMs: 1 }],
   ]);
@@ -146,6 +171,27 @@ describe('handleAgentResult (R1 lazy full result)', () => {
     const none = await handleAgentResult(deps(), SLUG, SESS_LIVE, RUN_LIVE, 'aid2');
     expect(none.status).toBe(200);
     expect((none.body as { value: unknown }).value).toBeNull();
+  });
+});
+
+describe('handleAgentActivity (per-agent drill-in)', () => {
+  it('returns the parsed activity for an agent; 400 bad agentId; 404 missing transcript', async () => {
+    const ok = await handleAgentActivity(deps(), SLUG, SESS_LIVE, RUN_LIVE, 'aid1');
+    expect(ok.status).toBe(200);
+    const { activity } = ok.body as { activity: AgentActivity };
+    expect(activity.agentId).toBe('aid1');
+    expect(activity.label).toBe('do alpha');
+    // the torn line is skipped; the one real tool_use is still counted.
+    expect(activity.toolCalls).toBe(1);
+    expect(activity.tools).toEqual([{ name: 'Read', count: 1 }]);
+    expect(activity.tokens).toEqual({ input: 1000, output: 4, cacheRead: 500 });
+    expect(activity.lastText).toBe('alpha is done');
+
+    // 400 on a bad agentId (charset guard), BEFORE any FS access.
+    expect((await handleAgentActivity(deps(), SLUG, SESS_LIVE, RUN_LIVE, 'bad id')).status).toBe(400);
+    // 404 when the run dir / transcript is absent (cleaned/old run → degrade gracefully).
+    expect((await handleAgentActivity(deps(), SLUG, SESS_LIVE, RUN_LIVE, 'aid2')).status).toBe(404);
+    expect((await handleAgentActivity(deps(), SLUG, SESS_LIVE, 'wf_absent', 'aid1')).status).toBe(404);
   });
 });
 

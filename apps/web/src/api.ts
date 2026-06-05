@@ -7,6 +7,7 @@
 // the browser stays token-free.
 
 import type {
+  AgentActivity,
   ExplanationBatch,
   PlanModel,
   ProjectRef,
@@ -97,6 +98,24 @@ export function fetchAgentResult(
   return getJson<AgentResult>(
     `/api/runs/${encodeURIComponent(slug)}/${encodeURIComponent(sessionId)}/${encodeURIComponent(runId)}/result?agentId=${encodeURIComponent(agentId)}`,
   );
+}
+
+/**
+ * STEP 4 (failure-and-live-inspector §4/§5): the lazy, transcript-fed per-agent ACTIVITY
+ * summary — label, tool counts, token totals, duration, a capped tool/text timeline, and
+ * the last activity / final error line. Parsed by the adapter from `agent-<id>.jsonl`; this
+ * is the ONLY source of tokens/tools/timing for a LIVE agent (the journal is starved). Lazy:
+ * fetched only for the selected / visible agent, never bundled into the run list. The server
+ * 404s when the transcript is absent (cleaned/old run) → the caller degrades to the journal.
+ */
+export function fetchAgentActivity(
+  ref: Pick<RunRef, 'slug' | 'sessionId' | 'runId'>,
+  agentId: string,
+): Promise<AgentActivity> {
+  const { slug, sessionId, runId } = ref;
+  return getJson<{ activity: AgentActivity }>(
+    `/api/runs/${encodeURIComponent(slug)}/${encodeURIComponent(sessionId)}/${encodeURIComponent(runId)}/activity?agentId=${encodeURIComponent(agentId)}`,
+  ).then((r) => r.activity);
 }
 
 /** I4: a Claude-generated plain-language "what this run did" panel (whole-run digest, lazy). */

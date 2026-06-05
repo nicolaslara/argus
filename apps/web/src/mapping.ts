@@ -23,13 +23,16 @@ export interface GraphResult {
  * card render ignores the I1 trailing fields). Extracted verbatim from the inline build —
  * no behavior change.
  */
-export function agentToCardData(agent: AgentNode): AgentCardData {
+export function agentToCardData(agent: AgentNode, failurePoint = false): AgentCardData {
   return {
     label: agent.label || agent.agentId || 'agent',
     state: agent.state,
     model: agent.model,
     cached: agent.cached,
     failedInLogs: agent.failedInLogs,
+    // STEP 3: the dead agent on a failed run → a red failure-point ring (consistent with the
+    // Run-view banner). Off by default; set only for the failure-point instances.
+    failurePoint,
     tokens: agent.tokens,
     toolCalls: agent.toolCalls,
     durationMs: agent.durationMs,

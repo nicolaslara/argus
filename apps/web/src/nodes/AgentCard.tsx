@@ -21,6 +21,12 @@ export interface AgentCardData {
   model: string | null;
   cached: boolean;
   failedInLogs: boolean;
+  /**
+   * STEP 3: this instance is the failure point of a failed run — a dead agent that ended
+   * without a terminal result (the adapter mapped it to interrupted/error). Reads as a red
+   * failure-point ring, consistent with the Run-view failure banner's attribution.
+   */
+  failurePoint?: boolean;
   tokens: number | null;
   toolCalls: number | null;
   durationMs: number | null;
@@ -129,8 +135,11 @@ export const AgentCardNode = memo(function AgentCardNode({ data }: { data: Agent
 
   // R8: state legibility — a FAILED step must POP (red border + glow), an interrupted one
   // amber, and a RUNNING one pulse (motion reserved for running, per the viz research).
+  // STEP 3: the failure point of a failed run reads RED (consistent with the failure banner),
+  // even when the adapter normalized it to `interrupted` (started-without-result on a failed
+  // run). A plain interrupted (e.g. on a KILLED run) stays amber.
   const stateClass =
-    data.state === 'error' || data.failedInLogs
+    data.state === 'error' || data.failedInLogs || data.failurePoint
       ? ' is-failed'
       : data.state === 'interrupted'
         ? ' is-interrupted'

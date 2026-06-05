@@ -53,6 +53,9 @@ export {
 export type { JournalEvent, ParsedJournal, RunLiveness, LivenessInput, LiveModelOptions } from './live.ts';
 export { discoverRunningRunsReport } from './discovery.ts';
 
+/** Transcript path: per-agent activity (tokens/tools/timing/last-activity) from agent-<id>.jsonl. */
+export { agentActivityFromTranscript, agentActivityFromDir, ACTIVITY_TIMELINE_CAP } from './activity.ts';
+
 /** Observed-format pin. The "tested on" client version (best-effort) is resolved lazily. */
 export const ADAPTER_FORMAT = 'cc-workflow/observed-2026-06-04' as const;
 

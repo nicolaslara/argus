@@ -446,6 +446,58 @@ export interface SubUiResponse {
   spec: PanelSpec | null;
 }
 
+// ============================================================================
+// AgentActivity — the transcript-fed inspector payload (failure-and-live-inspector
+// design §4/§5). Derived by the adapter from a per-agent `agent-<id>.jsonl` transcript
+// (the ONLY place tokens/tools/timing/last-activity live; the journal is starved). LAZY:
+// never bundled into the run list — served by a dedicated per-agent route, parsed on
+// select / for live agents. Annotation-only: carries NO topology (no nodes/edges/states);
+// the run's AgentNode is byte-unchanged. All transcript knowledge stays in the adapter.
+// ============================================================================
+
+/** One distinct tool the agent invoked, with how many times it was called. */
+export interface AgentToolUse {
+  name: string;
+  count: number;
+}
+
+/**
+ * One entry in an agent's activity timeline (capped). `kind:'tool'` carries the tool
+ * `name`; `kind:'text'` is an assistant text turn (name absent). `t` is the source ISO
+ * timestamp of the originating transcript event.
+ */
+export interface AgentTimelineEntry {
+  t: string;
+  kind: 'tool' | 'text';
+  name?: string;
+}
+
+/**
+ * A transcript-derived activity summary for ONE agent (live or finished). Built by the
+ * adapter's `agentActivityFromTranscript` from `agent-<id>.jsonl`:
+ * - `label`    : derived from the first user message's first line (a real task, not a hash).
+ * - `tools`    : distinct `tool_use` names + counts; `toolCalls` is the total.
+ * - `tokens`   : Σ of assistant `message.usage` (input/output/cacheRead); null if none seen.
+ * - timing     : `startedAt`/`lastAt` (first→last event ISO timestamps) + `durationMs`.
+ * - `timeline` : ordered tool/text events (capped to a sane max).
+ * - `lastText` : the last assistant text block — the current/final activity (for a failed
+ *   agent often the `API Error: …` line, i.e. the root-cause answer).
+ * - `error`    : a detected terminal/API-error line, if any.
+ */
+export interface AgentActivity {
+  agentId: string;
+  label?: string;
+  tools: AgentToolUse[];
+  toolCalls: number;
+  tokens: { input: number; output: number; cacheRead: number } | null;
+  startedAt?: string;
+  lastAt?: string;
+  durationMs?: number;
+  timeline: AgentTimelineEntry[];
+  lastText?: string;
+  error?: string;
+}
+
 /** A page of an agent's transcript (lazy, paginated). */
 export interface TranscriptPage {
   agentId: string;

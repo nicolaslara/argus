@@ -51,6 +51,10 @@ export interface PaintedBindingFields {
   painted?: boolean;
   /** R8b: the painted run is LIVE (incomplete) — not-run reads as "upcoming", partial as "running". */
   bindLive?: boolean;
+  /** The failure-point step on a failed run (App marks the node whose bound agent died, or the
+   * last-started agent for a workflow-level failure). Renders a red ring so it never reads as
+   * a clean "done". */
+  failurePoint?: boolean;
 }
 
 /** The fan-out / instance aggregate chip text: '7/7 done' | '3/4 done · 1 failed' | (live) 'upcoming' | '2/4 done · 1 running'. */
@@ -191,7 +195,7 @@ export const PlanAgentNode = memo(function PlanAgentNode({
       }
       railColor={railColor}
       height={CARD_SHELL_HEIGHT_PLAN}
-      className={`agent-shell-plan plan-node plan-agent ${confidenceClass(data.confidence)}${data.optional ? ' is-optional' : ''}${fanned ? ' is-fanned' : ''}${ghost}${blueprint ? ' is-blueprint' : ''}${isExpanded ? ' is-expanded' : ''}`}
+      className={`agent-shell-plan plan-node plan-agent ${confidenceClass(data.confidence)}${data.optional ? ' is-optional' : ''}${fanned ? ' is-fanned' : ''}${ghost}${blueprint ? ' is-blueprint' : ''}${data.failurePoint ? ' is-failed' : ''}${isExpanded ? ' is-expanded' : ''}`}
       headEnd={caret}
       handles={
         <>

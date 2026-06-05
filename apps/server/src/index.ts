@@ -28,6 +28,7 @@ import {
   handleRunPlan,
   handleRunLive,
   handleAgentResult,
+  handleAgentActivity,
   handleSubUi,
   handleDescribe,
   handleStream,
@@ -201,6 +202,20 @@ async function dispatchApi(url: URL): Promise<RouteResult | null> {
       return { status: 400, body: { error: 'bad_request' } };
     }
     return handleAgentResult(deps, slug, session, runId, agentId);
+  }
+
+  // GET /api/runs/:slug/:session/:runId/activity?agentId=<id> (the per-agent drill-in).
+  // More specific than the snapshot route → matched first.
+  const runActivityMatch = /^\/api\/runs\/([^/]+)\/([^/]+)\/([^/]+)\/activity$/.exec(pathname);
+  if (runActivityMatch) {
+    const slug = decodeSegment(runActivityMatch[1]!);
+    const session = decodeSegment(runActivityMatch[2]!);
+    const runId = decodeSegment(runActivityMatch[3]!);
+    const agentId = url.searchParams.get('agentId') ?? '';
+    if (slug === null || session === null || runId === null) {
+      return { status: 400, body: { error: 'bad_request' } };
+    }
+    return handleAgentActivity(deps, slug, session, runId, agentId);
   }
 
   // GET /api/runs/:slug/:session/:runId/live (L2: the partial live journal snapshot).

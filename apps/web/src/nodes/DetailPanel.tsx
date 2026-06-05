@@ -9,7 +9,8 @@
 import { memo, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { Node } from '@xyflow/react';
-import { fetchAgentResult, fetchSubUi } from '../api.ts';
+import type { AgentActivity, AgentTimelineEntry } from '@argus/contract';
+import { fetchAgentActivity, fetchAgentResult, fetchSubUi } from '../api.ts';
 import { GenerativePanel } from './GenerativePanel.tsx';
 
 interface Preview {
@@ -159,6 +160,117 @@ function PreviewBlock({
   );
 }
 
+/** A compact clock label (HH:MM:SS) for a transcript ISO timestamp; null when unparseable. */
+function clockTime(iso: string): string | null {
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms)) return null;
+  try {
+    return new Date(ms).toLocaleTimeString();
+  } catch {
+    return null;
+  }
+}
+
+/** Σ of an activity's token usage (input+output+cacheRead), or null when no usage was seen. */
+function totalTokens(a: AgentActivity): number | null {
+  if (!a.tokens) return null;
+  return a.tokens.input + a.tokens.output + a.tokens.cacheRead;
+}
+
+/**
+ * STEP 4 — the per-agent ACTIVITY drill (failure-and-live-inspector §4). Lazily fetched from
+ * the transcript for the SELECTED agent only. Renders a calm, collapsible inspector: a token
+ * breakdown + tool counts, a tool/text TIMELINE (each tool_use + clock time), and the LAST
+ * activity (running = what's happening now; failed = the final error line — the root cause).
+ * Degrades to nothing when the endpoint 404s (transcript absent) — the card rows still show
+ * whatever the journal recorded.
+ */
+function ActivityBlock({ activity, loading }: { activity: AgentActivity | undefined; loading: boolean }) {
+  const [open, setOpen] = useState(false);
+  if (!activity) {
+    // Honest, quiet loading note; on 404 we render nothing (the rows above carry the journal).
+    return loading ? (
+      <div className="detail-block">
+        <div className="detail-block-label">
+          activity<span className="detail-trunc detail-loading">loading…</span>
+        </div>
+      </div>
+    ) : null;
+  }
+
+  const tok = activity.tokens;
+  const timeline = activity.timeline;
+  // Prefer the explicit error line; else the last assistant text (the current/final activity).
+  const last = activity.error ?? activity.lastText;
+  const lastIsError = !!activity.error;
+
+  return (
+    <div className="detail-block">
+      <div className="detail-block-label">
+        activity
+        {timeline.length > 0 ? (
+          <button type="button" className="detail-toggle" onClick={() => setOpen((v) => !v)}>
+            {open ? 'hide timeline' : `timeline (${timeline.length})`}
+          </button>
+        ) : null}
+      </div>
+
+      {/* tool counts — the distinct tools the agent invoked, with multiplicity. */}
+      {activity.tools.length > 0 ? (
+        <div className="detail-tools">
+          {activity.tools.map((t) => (
+            <span key={t.name} className="detail-tool-chip" title={`${t.name} ×${t.count}`}>
+              {t.name}
+              {t.count > 1 ? <span className="detail-tool-count">×{t.count}</span> : null}
+            </span>
+          ))}
+        </div>
+      ) : null}
+
+      {/* token breakdown (in / out / cache-read) when usage was recorded. */}
+      {tok ? (
+        <div className="detail-kv">
+          <div className="detail-kv-row">
+            <span className="detail-kv-key">input</span>
+            <span className="detail-kv-val">{tok.input.toLocaleString()}</span>
+          </div>
+          <div className="detail-kv-row">
+            <span className="detail-kv-key">output</span>
+            <span className="detail-kv-val">{tok.output.toLocaleString()}</span>
+          </div>
+          <div className="detail-kv-row">
+            <span className="detail-kv-key">cache read</span>
+            <span className="detail-kv-val">{tok.cacheRead.toLocaleString()}</span>
+          </div>
+        </div>
+      ) : null}
+
+      {/* the LAST activity — for a running agent this is "what's happening now"; for a failed
+          one it's the final error line (e.g. the socket-close), i.e. the root-cause answer. */}
+      {last ? (
+        <div className={lastIsError ? 'detail-log-fail' : 'detail-summary'}>{last}</div>
+      ) : null}
+
+      {/* the tool/text timeline (collapsible) — each event with its clock time. */}
+      {open && timeline.length > 0 ? (
+        <ol className="detail-timeline">
+          {timeline.map((e: AgentTimelineEntry, i) => {
+            const t = clockTime(e.t);
+            return (
+              <li key={i} className="detail-timeline-row">
+                <span className="detail-timeline-time">{t ?? '—'}</span>
+                <span className={`detail-timeline-kind detail-timeline-${e.kind}`}>
+                  {e.kind === 'tool' ? (e.name ?? 'tool') : 'text'}
+                </span>
+              </li>
+            );
+          })}
+        </ol>
+      ) : null}
+    </div>
+  );
+}
+
 export const DetailPanel = memo(function DetailPanel({
   node,
   runRef,
@@ -172,13 +284,32 @@ export const DetailPanel = memo(function DetailPanel({
   // Hooks must run unconditionally (before the early return). Derive from a possibly-null node.
   const dMaybe = (node?.data ?? {}) as Record<string, unknown>;
   const isAgent = (node?.type ?? '') === 'agentCard';
-  const agentId = isAgent ? str(dMaybe.agentId) : null;
+  // A single-agent plan step has no separate instance card to click — drill into its ONE bound
+  // agent's transcript activity straight from the plan node, so a failed single-agent step (e.g.
+  // `implement`) surfaces its root-cause last-activity, not just static template detail.
+  const boundIds = Array.isArray(dMaybe.bindAgentIds) ? (dMaybe.bindAgentIds as unknown[]) : [];
+  const agentId = isAgent ? str(dMaybe.agentId) : boundIds.length === 1 ? str(boundIds[0]) : null;
   const resultQ = useQuery({
     queryKey: ['agent-result', runRef?.slug, runRef?.sessionId, runRef?.runId, agentId],
     queryFn: () => fetchAgentResult(runRef!, agentId!),
     enabled: !!node && !!runRef && !!agentId,
     staleTime: Infinity,
   });
+  // STEP 4: the lazy transcript-fed activity for the SELECTED agent (label/tokens/tools/
+  // timeline/last-activity). Fetched ONLY for the visible agent — never eager for every card.
+  // A 404 (transcript absent: cleaned/old run) is expected → we keep the journal-only rows.
+  const activityState = str(dMaybe.state);
+  const isLiveAgent = activityState === 'running' || activityState === 'queued';
+  const activityQ = useQuery({
+    queryKey: ['agent-activity', runRef?.slug, runRef?.sessionId, runRef?.runId, agentId],
+    queryFn: () => fetchAgentActivity(runRef!, agentId!),
+    enabled: !!node && !!runRef && !!agentId,
+    staleTime: Infinity,
+    retry: false, // a 404 means "no transcript yet" — don't hammer; degrade gracefully.
+    // A live agent's transcript grows; refresh while it's running so the card/timeline keep up.
+    refetchInterval: isLiveAgent ? 4000 : false,
+  });
+  const activity = activityQ.data;
   // #9: a Claude-generated sub-UI for this result — opt-in (spends a claude call), cached.
   const [showSubUi, setShowSubUi] = useState(false);
   const subUiQ = useQuery({
@@ -192,11 +323,22 @@ export const DetailPanel = memo(function DetailPanel({
   const d = node.data as Record<string, unknown>;
   const type = node.type ?? 'node';
 
+  // STEP 4: a LIVE agent card's label is often a bare agentId (the journal has no label). The
+  // transcript's first user message yields a real task label — prefer it when the card label is
+  // missing or is just the id, so a running agent reads as a task, not a hash.
+  const cardLabel = str(d.label);
+  const activityLabel = str(activity?.label);
+  const labelIsBareId = !cardLabel || (!!agentId && cardLabel === agentId);
   // Title: prefer the fullest label we have. Plan agents carry the authored template in
   // `labelRaw` ("research:${r.key}") — richer than the static-prefix `title` the card splits
   // out; exec agents carry the concrete `label` ("research:modal-rs-surface") and no labelRaw.
   const title =
-    str(d.labelRaw) ?? str(d.label) ?? str(d.title) ?? str(d.conditionLabel) ?? type;
+    str(d.labelRaw) ??
+    (labelIsBareId && activityLabel ? activityLabel : null) ??
+    cardLabel ??
+    str(d.title) ??
+    str(d.conditionLabel) ??
+    type;
   const caption = str(d.caption) ?? str(d.subtitle);
   // PX-fit: the panel is the canonical EXPAND surface — it shows the FULL caption (the
   // node clamps to 2 lines). Surface its provenance: a baseline (deterministic) caption vs
@@ -213,6 +355,15 @@ export const DetailPanel = memo(function DetailPanel({
   const succeeded = num(d.succeeded);
   const total = d.total === 'N' ? 'N' : num(d.total);
   const failed = num(d.failed);
+
+  // STEP 4: a LIVE/running agent card has null dur/tok/tools (the live model lacks them — they
+  // live only in the transcript). Fall back to the transcript-derived activity so a running
+  // agent's rows are no longer bare. The card data wins when present (the finalized truth).
+  const durationMs = num(d.durationMs) ?? activity?.durationMs ?? null;
+  const tokens = num(d.tokens) ?? (activity ? totalTokens(activity) : null);
+  const toolCalls = num(d.toolCalls) ?? activity?.toolCalls ?? null;
+  const lastToolName =
+    str(d.lastToolName) ?? activity?.tools[activity.tools.length - 1]?.name ?? null;
 
   return (
     <aside className="detail-panel" role="complementary" aria-label="node detail">
@@ -243,11 +394,11 @@ export const DetailPanel = memo(function DetailPanel({
           <>
             <Row label="state" value={str(d.state)} />
             <Row label="model" value={str(d.model)} />
-            <Row label="duration" value={fmtDuration(num(d.durationMs))} />
-            <Row label="tokens" value={num(d.tokens) === 0 ? '— (0)' : num(d.tokens)} />
-            <Row label="tools" value={num(d.toolCalls)} />
+            <Row label="duration" value={fmtDuration(durationMs)} />
+            <Row label="tokens" value={tokens === 0 ? '— (0)' : tokens} />
+            <Row label="tools" value={toolCalls} />
             <Row label="attempt" value={num(d.attempt)} />
-            <Row label="last tool" value={str(d.lastToolName)} />
+            <Row label="last tool" value={lastToolName} />
             <Row label="queued" value={fmtTime(num(d.queuedAt))} />
             <Row label="started" value={fmtTime(num(d.startedAt))} />
             {d.cached === true ? <Row label="cached" value="yes (resume)" /> : null}
@@ -277,6 +428,16 @@ export const DetailPanel = memo(function DetailPanel({
         loading={!!agentId && resultQ.isFetching && resultQ.data === undefined}
         showEmpty={isExecAgent}
       />
+
+      {/* STEP 4: the transcript-fed activity drill — tools, tokens, timeline, last activity /
+          final error. Shown for any node with a resolvable agentId (an exec instance OR a
+          single-agent plan step); hidden entirely on a 404 (no transcript: cleaned/old run). */}
+      {agentId && (activity || activityQ.isFetching) ? (
+        <ActivityBlock
+          activity={activity}
+          loading={activityQ.isFetching && activity === undefined}
+        />
+      ) : null}
 
       {/* #9: a Claude-generated, tailored panel for this result (opt-in, cached). */}
       {agentId && resultQ.data?.value != null ? (

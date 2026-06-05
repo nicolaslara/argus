@@ -16,6 +16,7 @@
 
 import { resolve, sep } from 'node:path';
 import {
+  agentActivityFromDir,
   agentResultFromJournal,
   discoverProjects,
   discoverRuns,
@@ -117,6 +118,27 @@ export function safeRunScriptPath(
 }
 
 /**
+ * Build the absolute LIVE run DIRECTORY
+ *   `<claudeHome>/projects/<slug>/<session>/subagents/workflows/<runId>`
+ * and resolve()-verify it stays strictly inside `claudeHome` (path-escape guard on top of
+ * the segment charset check). This is the dir that holds both `journal.jsonl` and the
+ * per-agent `agent-<id>.jsonl` transcripts. Returns null on a bad segment or escape.
+ * NEVER throws.
+ */
+export function safeRunDir(
+  claudeHome: string,
+  slug: string,
+  session: string,
+  runId: string,
+): string | null {
+  if (!isValidSegment(slug) || !isValidSegment(session) || !isValidRunId(runId)) return null;
+  const homeAbs = resolve(claudeHome);
+  const candidate = resolve(homeAbs, 'projects', slug, session, 'subagents', 'workflows', runId);
+  if (candidate !== homeAbs && !candidate.startsWith(homeAbs + sep)) return null;
+  return candidate;
+}
+
+/**
  * Build the absolute LIVE journal path
  *   `<claudeHome>/projects/<slug>/<session>/subagents/workflows/<runId>/journal.jsonl`
  * and resolve()-verify it stays strictly inside `claudeHome` (path-escape guard on top of
@@ -128,20 +150,8 @@ export function safeRunJournalPath(
   session: string,
   runId: string,
 ): string | null {
-  if (!isValidSegment(slug) || !isValidSegment(session) || !isValidRunId(runId)) return null;
-  const homeAbs = resolve(claudeHome);
-  const candidate = resolve(
-    homeAbs,
-    'projects',
-    slug,
-    session,
-    'subagents',
-    'workflows',
-    runId,
-    'journal.jsonl',
-  );
-  if (candidate !== homeAbs && !candidate.startsWith(homeAbs + sep)) return null;
-  return candidate;
+  const dir = safeRunDir(claudeHome, slug, session, runId);
+  return dir === null ? null : resolve(dir, 'journal.jsonl');
 }
 
 /**
@@ -592,6 +602,33 @@ export async function handleAgentResult(
     return { status: 200, body: { agentId, value: serialized.slice(0, RESULT_EMIT_CAP), truncated: true } };
   }
   return { status: 200, body: { agentId, value, truncated: false } };
+}
+
+/**
+ * GET /api/runs/:slug/:session/:runId/activity?agentId=<id> -> { activity }.
+ * The drill-into-an-agent endpoint (failure-and-live-inspector §4/§5): lazily parses the
+ * per-agent session transcript `<runDir>/agent-<id>.jsonl` (100KB–1.2MB, possibly live/
+ * partial) into a compact {@link AgentActivity} (label, tool counts, tokens, the capped
+ * tool-use timeline, last activity text, error) via the adapter's agentActivityFromDir.
+ * Mirrors handleAgentResult's M3 posture: charset-validate slug/session/runId + agentId
+ * (400) and resolve()-inside-home guard on the run dir. The transcript is ABSENT on a
+ * cleaned/old run → the adapter returns null and we 404 (the inspector degrades to the
+ * journal + run.error). NEVER 500s / leaks a stack or path. Never bundled into the run
+ * list (cost) — fetched on select / for live agents only.
+ */
+export async function handleAgentActivity(
+  deps: RouteDeps,
+  slug: string,
+  session: string,
+  runId: string,
+  agentId: string,
+): Promise<RouteResult> {
+  const runDir = safeRunDir(deps.claudeHome, slug, session, runId);
+  if (runDir === null || !isValidAgentId(agentId)) return err(400, 'bad_request');
+
+  const activity = await agentActivityFromDir(deps.port, runDir, agentId);
+  if (activity === null) return err(404, 'not_found');
+  return { status: 200, body: { activity } };
 }
 
 /**

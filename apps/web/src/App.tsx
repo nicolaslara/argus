@@ -10,7 +10,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { PlanModel, ProjectRef, RunSummary, WorkflowMeta } from '@argus/contract';
+import type { AgentNode, PlanModel, ProjectRef, RunModel, RunSummary, WorkflowMeta } from '@argus/contract';
 import {
   fetchProjects,
   fetchProjectRuns,
@@ -95,6 +95,122 @@ function defaultRun(runs: RunSummary[] | undefined): RunSummary | undefined {
 function defaultWorkflow(workflows: WorkflowMeta[] | undefined): WorkflowMeta | undefined {
   if (!workflows || workflows.length === 0) return undefined;
   return workflows.find((w) => w.name.includes('plan-research')) ?? workflows[0];
+}
+
+/**
+ * STEP 3 — the failure point: the run agent/step that ended WITHOUT a terminal result on a
+ * failed run. The adapter already normalizes a started-without-result agent on a failed/killed
+ * run to `interrupted` (and a genuine error to `error`), and the overlay already excludes both
+ * from the done count — so this is purely the BANNER's attribution + the red failure-point ring.
+ * We pick the LAST-STARTED dead agent (design §6 Q3: the proximate failure point), and surface
+ * every dead agentId so the matching instance card reads as a failure point (not just amber).
+ */
+interface FailureInfo {
+  message: string;
+  internalDetail: string | null;
+  /** A human label for the failing step/agent (the prompt-derived label, else the id), or null. */
+  failingLabel: string | null;
+  failingAgentId: string | null;
+  /** elapsed-to-failure, ms (run.durationMs), or null when timing is unknown. */
+  elapsedMs: number | null;
+  /** Every dead agentId — the cards that should read as a failure point. */
+  failureAgentIds: Set<string>;
+}
+
+/** A short, calm elapsed-to-failure string (mirrors the card's dur formatting). */
+function formatElapsed(ms: number | null): string | null {
+  if (ms == null || !Number.isFinite(ms) || ms < 0) return null;
+  const totalSec = Math.round(ms / 1000);
+  if (totalSec < 60) return `${totalSec}s`;
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${m}m${s.toString().padStart(2, '0')}s`;
+}
+
+/**
+ * Derive the failure banner content for a run, or null when the run did not fail. A run is
+ * "failed" when status==='failed' OR it carries a non-null `error` (the adapter only keeps
+ * `error` for a non-completed run). Defensive: an absent message degrades to a generic line,
+ * never an empty banner.
+ */
+function deriveFailureInfo(run: RunModel | undefined): FailureInfo | null {
+  if (!run) return null;
+  const failed = run.status === 'failed' || run.error != null;
+  if (!failed) return null;
+
+  // A dead agent = a terminal failure state (the adapter maps started-without-result on a
+  // failed run → 'interrupted', a real error → 'error'). Both read as the failure point.
+  const dead = run.agents.filter((a) => a.state === 'error' || a.state === 'interrupted');
+  // FALLBACK: a run can fail at the WORKFLOW level (e.g. a subagent finished its work but never
+  // called StructuredOutput) with EVERY agent still recorded 'done' in the finalized tree — the
+  // error is real but unattributed. Then pin the proximate point to the LAST-STARTED agent
+  // (where the run stopped progressing) so "where" is never blank on a failed run.
+  const pointAgents = dead.length > 0 ? dead : run.agents;
+  const point = pickFailurePoint(pointAgents);
+  const failureAgentIds = new Set(
+    dead.length > 0 ? dead.map((a) => a.agentId) : point ? [point.agentId] : [],
+  );
+
+  return {
+    message: run.error?.message ?? 'this run ended in failure',
+    internalDetail: run.error?.internalDetail ?? null,
+    failingLabel: point ? point.label || point.agentId : null,
+    failingAgentId: point?.agentId ?? null,
+    elapsedMs: run.durationMs,
+    failureAgentIds,
+  };
+}
+
+/** The proximate failure point: the dead agent with the latest start (else the last listed). */
+function pickFailurePoint(dead: AgentNode[]): AgentNode | null {
+  if (dead.length === 0) return null;
+  let best = dead[0]!;
+  for (const a of dead) {
+    const at = a.startedAt ?? a.queuedAt ?? null;
+    const bestAt = best.startedAt ?? best.queuedAt ?? null;
+    if (at != null && (bestAt == null || at >= bestAt)) best = a;
+  }
+  return best;
+}
+
+/**
+ * STEP 3 — the calm, collapsible failure banner. Lives in the Run-view chrome (below the
+ * run-header, never in the sidebar). Shows the failure reason + elapsed-to-failure + the
+ * failing step/agent; a 'Details ▾' disclosure reveals run.error.internalDetail (the raw
+ * stack) BEHIND A CLICK — never raw by default. Renders nothing when the run did not fail.
+ */
+function FailureBanner({ info }: { info: FailureInfo }) {
+  const [open, setOpen] = useState(false);
+  const elapsed = formatElapsed(info.elapsedMs);
+  return (
+    <div className="run-failure-banner" role="alert">
+      <div className="run-failure-head">
+        <span className="run-failure-glyph" aria-hidden="true">⛔</span>
+        <span className="run-failure-title">run failed</span>
+        {info.failingLabel ? (
+          <span className="run-failure-at" title="the step/agent that ended without a terminal result">
+            at <code>{info.failingLabel}</code>
+          </span>
+        ) : null}
+        {elapsed ? <span className="run-failure-elapsed">after {elapsed}</span> : null}
+      </div>
+      <div className="run-failure-msg">{info.message}</div>
+      {info.internalDetail ? (
+        <div className="run-failure-details">
+          <button
+            type="button"
+            className="run-failure-disclosure"
+            aria-expanded={open}
+            onClick={() => setOpen((v) => !v)}
+            title="reveal the raw error detail (advanced)"
+          >
+            Details {open ? '▴' : '▾'}
+          </button>
+          {open ? <pre className="run-failure-stack">{info.internalDetail}</pre> : null}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 export function App() {
@@ -343,7 +459,21 @@ export function App() {
     // R8b: a live (incomplete) run paints "upcoming"/"running" instead of "planned·not-run".
     const live = run.incomplete;
     const painted = paintOverlay(overlayBaseGraph, overlay, unrolled, live);
-    return expandInstances(painted, overlay, run, expandedNodeIds, live);
+    // STEP 3: the dead/last-started agentIds → the failing INSTANCE card (in an expanded drawer)
+    // reads as the failure point; and a single-agent (non-fanned) step is marked on its painted
+    // PLAN node here, so a failed run never shows the failing step as a clean "done".
+    const failureAgentIds = deriveFailureInfo(run)?.failureAgentIds;
+    const expanded = expandInstances(painted, overlay, run, expandedNodeIds, live, failureAgentIds);
+    if (!failureAgentIds || failureAgentIds.size === 0) return expanded;
+    return {
+      ...expanded,
+      nodes: expanded.nodes.map((n) => {
+        const ids = (n.data as { bindAgentIds?: string[] } | undefined)?.bindAgentIds;
+        return Array.isArray(ids) && ids.some((id) => failureAgentIds.has(id))
+          ? { ...n, data: { ...n.data, failurePoint: true } }
+          : n;
+      }),
+    };
   }, [view, overlayBaseGraph, overlay, unrolled, run, expandedNodeIds]);
 
   const metaGraph = useMemo(() => {
@@ -502,6 +632,10 @@ export function App() {
   const overlayPartial = overlay?.bindings.filter((b) => b.status === 'partial').length ?? 0;
   const overlayUnplanned = overlay?.unplannedAgentIds.length ?? 0;
   const overlayRounds = overlay?.rounds ?? null;
+
+  // STEP 3: the failure banner content (null unless the selected run failed). Drives both the
+  // Run-view banner and the per-instance failure-point ring (the dead agentIds).
+  const failureInfo = useMemo(() => (view === 'run' ? deriveFailureInfo(run) : null), [view, run]);
 
   return (
     <div className="argus-app">
@@ -670,6 +804,10 @@ export function App() {
           ) : null}
         </div>
       ) : null}
+
+      {/* STEP 3: the failure banner — calm, dark, red-tinted, collapsible. Sits in the Run-view
+          chrome below the run-header; renders nothing unless the selected run failed. */}
+      {view === 'run' && failureInfo ? <FailureBanner info={failureInfo} /> : null}
 
       {/* P2: unplanned agents (label matched no plan node) surfaced honestly. */}
       {view === 'run' && overlayUnplanned > 0 ? (

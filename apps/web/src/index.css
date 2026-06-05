@@ -184,6 +184,98 @@ body {
 .run-badge-partial { color: #d29922; border-style: dashed; }
 .run-badge-plan { color: #a371f7; }
 
+/* ---- STEP 3: Run-view FAILURE BANNER (calm, dark, red-tinted, collapsible) ----------
+   Sits below the run-header in the Run-view chrome (NOT the sidebar). Renders only when the
+   selected run failed; collapses to nothing otherwise. The raw stack is gated behind a click
+   (Details ▾) — never shown raw by default. */
+.run-failure-banner {
+  position: absolute;
+  top: 60px; /* below the run-header chip strip (top:16px + ~36px tall) */
+  left: 68px; /* aligned with the run-header (clears the collapsed icon-rail) */
+  max-width: min(560px, 48vw);
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 14px;
+  border: 1px solid rgba(248, 81, 73, 0.45);
+  border-left: 3px solid #f85149;
+  border-radius: 8px;
+  background: rgba(45, 18, 18, 0.82); /* dark, faintly red-tinted */
+  backdrop-filter: blur(6px);
+  box-shadow: 0 0 0 1px rgba(248, 81, 73, 0.12), 0 8px 24px rgba(0, 0, 0, 0.4);
+  pointer-events: auto; /* the Details disclosure is interactive */
+}
+.run-failure-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+}
+.run-failure-glyph {
+  font-size: 12px;
+  line-height: 1;
+}
+.run-failure-title {
+  font-weight: 700;
+  color: #f85149;
+  letter-spacing: 0.01em;
+}
+.run-failure-at {
+  color: var(--argus-dim);
+}
+.run-failure-at code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--argus-fg);
+  background: rgba(248, 81, 73, 0.12);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+.run-failure-elapsed {
+  color: var(--argus-dim);
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+.run-failure-msg {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--argus-fg);
+  word-break: break-word;
+}
+.run-failure-details {
+  margin-top: 2px;
+}
+.run-failure-disclosure {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--argus-dim);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 0;
+  cursor: pointer;
+}
+.run-failure-disclosure:hover {
+  color: var(--argus-fg);
+}
+.run-failure-stack {
+  margin: 6px 0 0;
+  max-height: 220px;
+  overflow: auto;
+  padding: 8px 10px;
+  border: 1px solid #2d333b;
+  border-radius: 6px;
+  background: rgba(13, 17, 23, 0.85);
+  color: var(--argus-dim);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 /* ---- Plan ⟷ Execution view toggle (top-center) --------------------------- */
 .view-toggle {
   position: absolute;
@@ -1527,6 +1619,63 @@ div.detail-log-fail {
   color: var(--argus-fg);
   white-space: pre-wrap;
   word-break: break-word;
+}
+/* STEP 4: per-agent activity drill — tool chips, token breakdown (reuses .detail-kv), the
+   last-activity line (reuses .detail-summary / .detail-log-fail), and the tool/text timeline. */
+.detail-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 2px 0 6px;
+}
+.detail-tool-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: var(--argus-fg);
+  background: #11151b;
+  border: 1px solid #21262d;
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+.detail-tool-count {
+  color: var(--argus-dim);
+}
+.detail-timeline {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 280px;
+  overflow: auto;
+  border-top: 1px solid #21262d;
+  padding-top: 8px;
+}
+.detail-timeline-row {
+  display: grid;
+  grid-template-columns: minmax(72px, auto) 1fr;
+  gap: 10px;
+  align-items: baseline;
+  font-size: 11px;
+}
+.detail-timeline-time {
+  color: var(--argus-dim);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+}
+.detail-timeline-kind {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  word-break: break-word;
+}
+.detail-timeline-tool {
+  color: #79c0ff;
+}
+.detail-timeline-text {
+  color: var(--argus-dim);
 }
 /* #9: generative sub-UI — trusted renderers for the Claude-generated PanelSpec. */
 .subui {
