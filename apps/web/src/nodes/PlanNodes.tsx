@@ -48,14 +48,22 @@ export interface PaintedBindingFields {
   /** I1: bound run agentIds (Morph detail panel reads these; the card render ignores them). */
   bindAgentIds?: string[];
   painted?: boolean;
+  /** R8b: the painted run is LIVE (incomplete) — not-run reads as "upcoming", partial as "running". */
+  bindLive?: boolean;
 }
 
-/** The fan-out / instance aggregate chip text: '7/7 done' | '3/4 done · 1 failed'. */
+/** The fan-out / instance aggregate chip text: '7/7 done' | '3/4 done · 1 failed' | (live) 'upcoming' | '2/4 done · 1 running'. */
 export function aggregateChipText(b: PaintedBindingFields): string | null {
   if (!b.painted || b.bindStatus === undefined) return null;
-  if (b.bindStatus === 'not-run') return 'planned · not run';
+  if (b.bindStatus === 'not-run') return b.bindLive ? 'upcoming' : 'planned · not run';
   const total = b.bindTotal === 'N' ? 'N' : String(b.bindTotal);
   const done = `${b.bindSucceeded ?? 0}/${total} done`;
+  if (b.bindLive && b.bindStatus === 'partial') {
+    const totalN = b.bindTotal === 'N' ? 0 : (b.bindTotal as number);
+    const running = totalN - (b.bindSucceeded ?? 0) - (b.bindFailed ?? 0);
+    const seg = (b.bindFailed ?? 0) > 0 ? ` · ${b.bindFailed} failed` : '';
+    return running > 0 ? `${done} · ${running} running${seg}` : `${done}${seg}`;
+  }
   return (b.bindFailed ?? 0) > 0 ? `${done} · ${b.bindFailed} failed` : done;
 }
 

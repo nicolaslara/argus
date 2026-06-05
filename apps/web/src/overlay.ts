@@ -141,11 +141,13 @@ export function buildOverlay(plan: PlanModel, run: RunModel): Overlay {
   for (const b of bindables) {
     const bound = boundByNode.get(b.node.id) ?? [];
     const failed = bound.filter(isFailedInstance).length;
-    const succeeded = bound.length - failed;
+    // succeeded = instances that actually COMPLETED (state 'done'). A still-RUNNING instance
+    // (live run) is neither succeeded nor failed — it must NOT count as done (R8b).
+    const succeeded = bound.filter((a) => a.state === 'done').length;
     const total = computeTotal(b.node, bound.length);
     const ambiguous = ambiguousByNode.get(b.node.id) === true;
     const confidence = classify(bound, agentToNode, b.node.id, ambiguous);
-    const status = aggregateStatus(bound, failed, total);
+    const status = aggregateStatus(bound, succeeded, failed, total);
     bindings.push({
       planNodeId: b.node.id,
       agentIds: bound.map((a) => a.agentId),
@@ -262,13 +264,16 @@ function isFailedInstance(a: AgentNode): boolean {
  */
 function aggregateStatus(
   bound: AgentNode[],
+  succeeded: number,
   failed: number,
   total: number | 'N',
 ): PlanBinding['status'] {
   if (bound.length === 0) return 'not-run';
   // If the template floor exceeds the bound count, a member was dropped → partial.
   const shortfall = typeof total === 'number' && total > bound.length;
-  return failed === 0 && !shortfall ? 'complete' : 'partial';
+  // 'complete' only when EVERY bound instance finished successfully (none failed, none
+  // still running) and the planned floor is met. A running instance (live) → 'partial'.
+  return failed === 0 && !shortfall && succeeded === bound.length ? 'complete' : 'partial';
 }
 
 /** Strip a trailing ` rN` round suffix from a phase title (`Critique r2` → `Critique`). */

@@ -188,6 +188,30 @@ function mkRun(agents: AgentNode[]): RunModel {
   };
 }
 
+describe('buildOverlay — R8b: a still-RUNNING instance is NOT counted done (live run)', () => {
+  it('a running bound agent → status partial, succeeded excludes it', () => {
+    const plan = mkPlan([
+      planNode({ id: 'A', labelTemplate: { literalPrefix: 'stage:verify', holes: [], raw: 'stage:verify' } }),
+    ]);
+    const run = mkRun([agentNode({ agentId: 'a1', label: 'stage:verify', state: 'running' })]);
+    const ov = buildOverlay(plan, run);
+    const a = ov.bindings.find((b) => b.planNodeId === 'A')!;
+    expect(a.succeeded).toBe(0); // running ≠ done
+    expect(a.failed).toBe(0); // running ≠ failed
+    expect(a.status).toBe('partial'); // in-flight, not complete
+  });
+  it('a done bound agent → status complete (finalized behavior unchanged)', () => {
+    const plan = mkPlan([
+      planNode({ id: 'A', labelTemplate: { literalPrefix: 'stage:build', holes: [], raw: 'stage:build' } }),
+    ]);
+    const run = mkRun([agentNode({ agentId: 'a1', label: 'stage:build', state: 'done' })]);
+    const ov = buildOverlay(plan, run);
+    const a = ov.bindings.find((b) => b.planNodeId === 'A')!;
+    expect(a.succeeded).toBe(1);
+    expect(a.status).toBe('complete');
+  });
+});
+
 describe('buildOverlay — §6 three-way tie-break', () => {
   it('exact literal > prefix+index: an exact match wins over a prefix candidate', () => {
     // Plan node A: exact literal `build`. Plan node B: prefix `build` (template hole).

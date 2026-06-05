@@ -36,7 +36,12 @@ export interface PaintedBinding {
  * containers receive the observed round count + the folded↔unrolled `unrolled` flag (the
  * MODE switch); toggling `unrolled` re-renders the loop header only — no canvas relayout.
  */
-export function paintOverlay(graph: GraphResult, overlay: Overlay, unrolled = false): GraphResult {
+export function paintOverlay(
+  graph: GraphResult,
+  overlay: Overlay,
+  unrolled = false,
+  live = false,
+): GraphResult {
   if (overlay.bindings.length === 0 && overlay.unplannedAgentIds.length === 0 && overlay.rounds == null) {
     return graph;
   }
@@ -51,7 +56,7 @@ export function paintOverlay(graph: GraphResult, overlay: Overlay, unrolled = fa
   const painted: Node[] = graph.nodes.map((n) => {
     // Loop containers receive the observed run rounds + the folded↔unrolled mode flag.
     if (n.type === 'planLoop') {
-      return { ...n, data: { ...n.data, observedRounds: overlay.rounds, unrolled, painted: true } };
+      return { ...n, data: { ...n.data, observedRounds: overlay.rounds, unrolled, painted: true, bindLive: live } };
     }
     const b = byNodeId.get(n.id);
     if (!b) return n;
@@ -68,7 +73,7 @@ export function paintOverlay(graph: GraphResult, overlay: Overlay, unrolled = fa
       bindAmbiguous: b.ambiguous,
       bindAgentIds: b.agentIds,
     };
-    return { ...n, data: { ...n.data, ...fields, painted: true } };
+    return { ...n, data: { ...n.data, ...fields, painted: true, bindLive: live } };
   });
 
   // Second pass: roll a coarse status up to each phase lane (ghost a wholly not-run lane).

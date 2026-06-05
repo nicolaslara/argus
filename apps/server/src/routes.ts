@@ -474,6 +474,19 @@ export async function handleRunPlan(
   try {
     header = await deps.port.readJson(wfPath);
   } catch {
+    // R8b: a RUNNING run has no finalized wf_<id>.json yet — recover its plan from the
+    // persisted per-run script directly (so Morph can paint the live run on the plan).
+    const file = await findLiveScriptBasename(deps, slug, session, runId);
+    if (file !== null) {
+      const scriptsPath = safeRunScriptPath(deps.claudeHome, slug, session, runId, file);
+      if (scriptsPath !== null) {
+        try {
+          return { status: 200, body: await loadRunPlan(deps.port, scriptsPath, file) };
+        } catch {
+          /* fall through to 404 */
+        }
+      }
+    }
     return err(404, 'not_found');
   }
 

@@ -251,8 +251,9 @@ export function App() {
   // Paint (data-only) — separate from layout so the folded↔unrolled toggle never relayouts.
   const overlayGraph = useMemo(() => {
     if (view !== 'overlay' || overlayBaseGraph.nodes.length === 0 || !overlay) return EMPTY_GRAPH;
-    return paintOverlay(overlayBaseGraph, overlay, unrolled);
-  }, [view, overlayBaseGraph, overlay, unrolled]);
+    // R8b: a live (incomplete) run paints "upcoming"/"running" instead of "planned·not-run".
+    return paintOverlay(overlayBaseGraph, overlay, unrolled, run?.incomplete ?? false);
+  }, [view, overlayBaseGraph, overlay, unrolled, run?.incomplete]);
 
   const metaGraph = useMemo(() => {
     if (view !== 'plan') return EMPTY_GRAPH;
@@ -346,7 +347,10 @@ export function App() {
   function handleSelectRun(r: RunSummary) {
     setSelectedRunId(r.ref.runId);
     setSelectedWorkflowName(r.workflowName);
-    setView('execution');
+    // R8b/R9: a RUNNING run lands in Morph — the plan painted with live state is the only
+    // view that shows what's running AND what's still upcoming (the Execution model only
+    // contains agents that already started). Finished runs land in Execution as before.
+    setView(r.status === 'running' ? 'overlay' : 'execution');
   }
   // Picking a workflow drives the Plan view AND selects that workflow's most-recent run (if
   // any) so Morph/Execution follow it too — and so a live run is one click from validation.
