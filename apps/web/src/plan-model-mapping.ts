@@ -23,7 +23,7 @@
 // Confidence is encoded as a node BORDER style by the node components (declared/static/
 // heuristic), never as edge color. The single multiplicity glyph is a node decoration.
 
-import type { Edge, Node } from '@xyflow/react';
+import { MarkerType, type Edge, type Node } from '@xyflow/react';
 import type {
   DecisionNode,
   LoopNode,
@@ -166,39 +166,49 @@ function dataFor(node: PlanNode, laneTitle: string | null): Record<string, unkno
 }
 
 /** Edge visual: distinguished by DASH + CURVATURE only (kind is never carried by color). */
-function edgeStyle(edge: PlanEdge): Pick<Edge, 'type' | 'animated' | 'style' | 'label' | 'labelStyle' | 'labelBgStyle'> {
+function edgeStyle(
+  edge: PlanEdge,
+): Pick<Edge, 'type' | 'animated' | 'style' | 'label' | 'labelStyle' | 'labelBgStyle' | 'markerEnd'> {
   const base = { stroke: EDGE_COLOR, strokeWidth: 1.6 };
+  const arrow = { type: MarkerType.ArrowClosed, width: 14, height: 14, color: EDGE_COLOR } as const;
   switch (edge.kind) {
     case 'fanout':
-      // 1→N spawn: straight, solid, slightly emphasized.
+      // 1→N spawn: straight, solid, slightly emphasized (head is the agent card).
       return { type: 'default', animated: false, style: { ...base, strokeWidth: 1.8 } };
     case 'merge':
-      // N→1 barrier join: straight, solid.
+      // N→1 barrier join: straight, solid (head is the merge marker).
       return { type: 'default', animated: false, style: base };
-    case 'optional':
-      // conditional branch off a decision: DASHED, carries the true/false label.
+    case 'optional': {
+      // R5: a decision branch — DASHED, an ARROWHEAD (direction), and a TINTED true/false
+      // verdict label (green=true / red=false) so each path's destination is unmistakable.
+      const isTrue = edge.label === 'true';
+      const isFalse = edge.label === 'false';
+      const tint = isTrue ? '#3fb950' : isFalse ? '#f85149' : '#9aa4b2';
       return {
         type: 'default',
         animated: false,
-        style: { ...base, strokeDasharray: '5 4' },
+        style: { ...base, strokeDasharray: '5 4', stroke: isTrue || isFalse ? tint : EDGE_COLOR },
+        markerEnd: { ...arrow, color: isTrue || isFalse ? tint : EDGE_COLOR },
         label: edge.label,
-        labelStyle: { fill: '#9aa4b2', fontSize: 11 },
-        labelBgStyle: { fill: '#0b0d10', fillOpacity: 0.85 },
+        labelStyle: { fill: tint, fontSize: 11, fontWeight: 600 },
+        labelBgStyle: { fill: '#0b0d10', fillOpacity: 0.9 },
       };
+    }
     case 'loop-back':
-      // back-edge: DASHED + curved (smoothstep), labeled with the stop condition.
+      // back-edge: DASHED + curved (smoothstep), arrowed, labeled with the stop condition.
       return {
         type: 'smoothstep',
         animated: false,
         style: { ...base, strokeDasharray: '6 4', stroke: '#6b7280' },
+        markerEnd: { ...arrow, color: '#6b7280' },
         label: edge.label,
         labelStyle: { fill: '#9aa4b2', fontSize: 11 },
         labelBgStyle: { fill: '#0b0d10', fillOpacity: 0.85 },
       };
     case 'flow':
     default:
-      // sequential: straight, solid.
-      return { type: 'default', animated: false, style: base };
+      // sequential: straight, solid, arrowed.
+      return { type: 'default', animated: false, style: base, markerEnd: arrow };
   }
 }
 

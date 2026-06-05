@@ -47,6 +47,22 @@ function isNode(v: unknown): v is AnyNode {
   return !!v && typeof v === 'object' && typeof (v as { type?: unknown }).type === 'string';
 }
 
+/**
+ * R5: classify a decision arm that produced no plan node by its top-level control-flow
+ * effect (break → exit the enclosing loop, continue → next round, return → return). Used
+ * to render a visible terminal for the branch so its destination is never invisible.
+ */
+function branchControlFlow(node: AnyNode): 'break' | 'continue' | 'return' | null {
+  const stmts =
+    node.type === 'BlockStatement' ? (node.body as unknown[]).filter(isNode) : [node];
+  for (const s of stmts) {
+    if (s.type === 'BreakStatement') return 'break';
+    if (s.type === 'ContinueStatement') return 'continue';
+    if (s.type === 'ReturnStatement') return 'return';
+  }
+  return null;
+}
+
 // ============================================================================
 // Public entry — PURE, never throws.
 // ============================================================================
@@ -287,6 +303,9 @@ class PlanBuilder {
   private ordinal = 0;
   private lastNodeId: string | null = null; // for flow edges in the active sequence
   private recognized = 0;
+  // R5: when an if has NO else, its fall-through continuation IS the other branch — label
+  // the decision's next flow edge with that branch's verdict (so both paths are clear).
+  private pendingBranchLabel = new Map<string, string>();
   private total = 0;
 
   constructor(
@@ -318,7 +337,14 @@ class PlanBuilder {
   /** Add a flow edge from the previous node in the active sequence to `toId`. */
   private flowTo(toId: string, _ctx: WalkCtx): void {
     if (this.lastNodeId && this.lastNodeId !== toId) {
-      this.edges.push({ id: this.nextId('e-flow'), from: this.lastNodeId, to: toId, kind: 'flow' });
+      // R5: a decision with no else labels its continuation edge with the missing verdict.
+      const pending = this.pendingBranchLabel.get(this.lastNodeId);
+      if (pending !== undefined) {
+        this.edges.push({ id: this.nextId('e-optional'), from: this.lastNodeId, to: toId, kind: 'optional', label: pending });
+        this.pendingBranchLabel.delete(this.lastNodeId);
+      } else {
+        this.edges.push({ id: this.nextId('e-flow'), from: this.lastNodeId, to: toId, kind: 'flow' });
+      }
     }
     this.lastNodeId = toId;
   }
@@ -682,23 +708,38 @@ class PlanBuilder {
     this.nodes.push(decision);
     this.flowTo(decisionId, ctx);
 
+    // R5: classifyCondition de-negates the displayed label (`!implGreen` → "implGreen?"),
+    // so when the test is negated the CONSEQUENT runs on the *false* verdict and the
+    // ALTERNATE on *true* — swap the arm labels to match the displayed question.
+    const negated = isNode(test) && test.type === 'UnaryExpression' && (test as AnyNode).operator === '!';
+    const consequentLabel = negated ? 'false' : 'true';
+    const alternateLabel = negated ? 'true' : 'false';
+
     // Both arms are OPTIONAL (conditional) and parented to this decision. The
     // active-sequence cursor restarts from the decision for each arm so branch nodes
     // attach to the diamond via dashed `optional` edges (not to each other linearly).
     const branchCtx: WalkCtx = { ...ctx, optional: true, parentDecisionId: decisionId };
 
-    if (isNode(s.consequent)) {
-      this.walkBranch(s.consequent as AnyNode, branchCtx, decisionId, 'true');
-    }
-    if (isNode(s.alternate)) {
-      this.walkBranch(s.alternate as AnyNode, branchCtx, decisionId, 'false');
-    }
+    const consEmitted = isNode(s.consequent)
+      ? this.walkBranch(s.consequent as AnyNode, branchCtx, decisionId, consequentLabel)
+      : false;
+    const altEmitted = isNode(s.alternate)
+      ? this.walkBranch(s.alternate as AnyNode, branchCtx, decisionId, alternateLabel)
+      : false;
+    // R5: label the decision's CONTINUATION (fall-through) edge with the verdict of the arm
+    // that produced no node — so both paths read clearly even when one arm just falls
+    // through (no else → the implicit else; or a node-less arm like `{ log(...) }`).
+    let pending: string | undefined;
+    if (!isNode(s.alternate) || !altEmitted) pending = alternateLabel;
+    if (isNode(s.consequent) && !consEmitted) pending = consequentLabel;
+    if (pending !== undefined) this.pendingBranchLabel.set(decisionId, pending);
     // After the if/else, the sequence continues from the decision node.
     this.lastNodeId = decisionId;
   }
 
-  /** Walk one decision arm; the first node of the arm gets a dashed `optional` edge. */
-  private walkBranch(node: AnyNode, ctx: WalkCtx, decisionId: string, label: string): void {
+  /** Walk one decision arm; the first node of the arm gets a dashed `optional` edge.
+   *  Returns true iff the arm produced a node (or a control-flow terminal) + its edge. */
+  private walkBranch(node: AnyNode, ctx: WalkCtx, decisionId: string, label: string): boolean {
     const before = this.nodes.length;
     const savedLast = this.lastNodeId;
     this.lastNodeId = null;
@@ -707,8 +748,19 @@ class PlanBuilder {
     } else {
       this.walkStatement(node, ctx);
     }
-    // The first node emitted in this branch is the entry; wire the dashed optional edge.
-    const firstNew = this.nodes.slice(before).find((n) => n.kind !== 'process' || true);
+    let firstNew: PlanNode | undefined = this.nodes.slice(before)[0];
+    if (!firstNew) {
+      // R5: the arm produced no plan node. If it is a control-flow EXIT (break/continue/
+      // return), emit a tiny terminal so the branch + its destination are VISIBLE — this
+      // fixes "the true branch goes nowhere / both go to the same place" (e.g. refine-plan's
+      // `if (material.length===0) break`). A pure fall-through (no exit) needs no node.
+      const cf = branchControlFlow(node);
+      if (cf) {
+        const title = cf === 'break' ? 'exit loop' : cf === 'continue' ? 'next round' : 'return';
+        this.pushBranchTerminal(title, ctx);
+        firstNew = this.nodes[this.nodes.length - 1];
+      }
+    }
     if (firstNew) {
       this.edges.push({
         id: this.nextId('e-optional'),
@@ -719,6 +771,25 @@ class PlanBuilder {
       });
     }
     this.lastNodeId = savedLast;
+    return firstNew !== undefined;
+  }
+
+  /** A tiny terminal pill for a control-flow-only decision arm (break/continue/return). */
+  private pushBranchTerminal(title: string, ctx: WalkCtx): void {
+    this.nodes.push({
+      id: this.nextId('branch'),
+      kind: 'output',
+      title,
+      labelTemplate: null,
+      agentType: null,
+      phaseRef: ctx.phaseRef,
+      multiplicity: { kind: 'one' },
+      optional: true,
+      loopRef: ctx.loopRef,
+      parentDecisionId: ctx.parentDecisionId,
+      annotation: { subtitle: null, typed: false, source: 'static' },
+      confidence: 'static',
+    });
   }
 
   // --- while/for → loop container + dashed loop-back + stop-condition ---

@@ -88,6 +88,47 @@ describe('build-modal-rust-sdk → Auth/Operations OPTIONAL under the BUILD_GREE
   });
 });
 
+describe('R5 — decision branches: de-negation + visible break terminal + labeled continuation', () => {
+  it('de-negates `if (!x) { } else { agent }` so the ELSE (run-when-true) is labeled true', () => {
+    const src = `export const meta = { name: 'x', description: 'd', phases: [{ title: 'P' }] }
+phase('P')
+const ok = await agent('impl', { label: 'impl', phase: 'P' })
+const green = /GREEN/.test(ok)
+if (!green) { log('skip') } else { await agent('verify it', { label: 'verify', phase: 'P' }) }
+await agent('review it', { label: 'review', phase: 'P' })`;
+    const plan = parsePlan(src, 'neg.js');
+    const dec = plan.nodes.find((n) => n.kind === 'decision')!;
+    const verify = plan.nodes.find((n) => n.labelTemplate?.raw === 'verify')!;
+    const toVerify = plan.edges.find((e) => e.from === dec.id && e.to === verify.id);
+    expect(toVerify?.kind).toBe('optional');
+    expect(toVerify?.label).toBe('true'); // the else runs when the de-negated condition is true
+    // the node-less consequent (`{ log }`) → the continuation edge carries the FALSE verdict.
+    const falseEdge = plan.edges.find((e) => e.from === dec.id && e.label === 'false');
+    expect(falseEdge).toBeDefined();
+  });
+
+  it('renders a visible "exit loop" terminal for an `if (cond) break` arm; continuation = false', () => {
+    const src = `export const meta = { name: 'x', description: 'd', phases: [{ title: 'C' }, { title: 'R' }] }
+let dry = false
+while (!dry) {
+  phase('C')
+  const issues = await agent('critique', { label: 'critique', phase: 'C' })
+  if (issues.length === 0) { dry = true; break }
+  phase('R')
+  await agent('revise', { label: 'revise', phase: 'R' })
+}`;
+    const plan = parsePlan(src, 'loop.js');
+    const dec = plan.nodes.find((n) => n.kind === 'decision')!;
+    const exit = plan.nodes.find((n) => n.kind === 'output' && n.title === 'exit loop');
+    expect(exit, 'a visible "exit loop" terminal for the break arm').toBeDefined();
+    const trueEdge = plan.edges.find((e) => e.from === dec.id && e.to === exit!.id);
+    expect(trueEdge?.label).toBe('true');
+    const revise = plan.nodes.find((n) => n.labelTemplate?.raw === 'revise')!;
+    const falseEdge = plan.edges.find((e) => e.from === dec.id && e.to === revise.id);
+    expect(falseEdge?.label).toBe('false'); // the continuation (no else) carries the false verdict
+  });
+});
+
 describe('plan-research → fan-out over a const array (fixed N)', () => {
   const plan = parseFixture('plan-research.js');
 
