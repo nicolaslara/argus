@@ -40,6 +40,7 @@ import {
   PLAN_AGENT_W,
   PLAN_AGENT_H,
   PLAN_PROCESS_W,
+  PLAN_MARKER_SIZE,
   PLAN_PROCESS_H,
   PLAN_DECISION_SIZE,
   PLAN_OUTPUT_W,
@@ -80,6 +81,12 @@ function geomFor(node: PlanNode): KindGeom {
     case 'unparsed':
       return { type: 'planUnparsed', width: PLAN_UNPARSED_W, height: PLAN_UNPARSED_H };
     case 'process':
+      // R3: fan-out / merge are tiny edge-junction MARKERS, not boxes. A real "op" process
+      // (pipeline/subworkflow stub) keeps the box.
+      if (node.title === 'fan-out' || node.title === 'merge') {
+        return { type: 'planMarker', width: PLAN_MARKER_SIZE, height: PLAN_MARKER_SIZE };
+      }
+      return { type: 'planProcess', width: PLAN_PROCESS_W, height: PLAN_PROCESS_H };
     case 'pipeline':
     case 'subworkflow':
     default:

@@ -447,6 +447,47 @@ body {
   border: 1px solid #2d333b;
   border-radius: 8px;
 }
+/* R3: fan-out / merge MARKER — a tiny junction dot, not a box. color drives the dot (and
+   its morph-state tint via currentColor); ● filled = fan-out, ◌ hollow ring = merge. */
+.plan-marker {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #6b7585;
+}
+.plan-marker-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+}
+.plan-marker-split .plan-marker-dot {
+  background: currentColor;
+}
+.plan-marker-merge .plan-marker-dot {
+  background: transparent;
+  border: 2px solid currentColor;
+}
+.plan-marker-count {
+  position: absolute;
+  top: -7px;
+  right: -11px;
+  font-size: 9px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--argus-dim);
+}
+/* morph paint: the junction takes the bound aggregate's state hue. */
+.plan-marker-complete {
+  color: #3fb950;
+}
+.plan-marker-partial {
+  color: #d29922;
+}
+.plan-marker-not-run {
+  color: #3a414c;
+}
 .plan-process-label {
   font-size: 11px;
   font-weight: 600;

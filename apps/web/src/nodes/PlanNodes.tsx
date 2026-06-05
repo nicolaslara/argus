@@ -66,6 +66,7 @@ export const PLAN_AGENT_W = CARD_SHELL_WIDTH;
 export const PLAN_AGENT_H = CARD_SHELL_HEIGHT_PLAN;
 export const PLAN_PROCESS_W = 132;
 export const PLAN_PROCESS_H = 48;
+export const PLAN_MARKER_SIZE = 28; // R3: fan-out/merge are tiny edge-junction markers, not boxes
 export const PLAN_DECISION_SIZE = 116; // the diamond's bounding box (square)
 export const PLAN_OUTPUT_W = 120;
 export const PLAN_OUTPUT_H = 44;
@@ -197,6 +198,31 @@ export const PlanProcessNode = memo(function PlanProcessNode({ data }: { data: P
           {data.subtitle}
         </div>
       ) : null}
+    </div>
+  );
+});
+
+// ============================================================================
+// fan-out / merge MARKER (R3) — a tiny edge-junction dot, NOT a box. The edge
+// topology already shows scatter/gather; the marker just punctuates the junction
+// (● filled = fan-out/scatter, ◌ hollow ring = merge/gather) with a hover description.
+// We keep it as a real node so elk still routes edges through the junction point.
+// ============================================================================
+export const FanMarkerNode = memo(function FanMarkerNode({ data }: { data: PlanProcessData }) {
+  const isSplit = data.role === 'split';
+  const m = data.multiplicity;
+  const count = m.kind === 'fixed' ? `×${m.n}` : m.kind === 'unbounded' ? `×${m.max}` : '';
+  const hover = `${isSplit ? 'fan-out' : 'merge'}${count ? ` · ${count}` : ''}`;
+  return (
+    <div
+      className={`plan-marker plan-marker-${isSplit ? 'split' : 'merge'}${data.painted && data.bindStatus ? ` plan-marker-${data.bindStatus}` : ''}`}
+      title={hover}
+      aria-label={hover}
+    >
+      <Handle type="target" position={Position.Left} style={hidden} />
+      <Handle type="source" position={Position.Right} style={hidden} />
+      <span className="plan-marker-dot" aria-hidden="true" />
+      {count ? <span className="plan-marker-count">{count}</span> : null}
     </div>
   );
 });

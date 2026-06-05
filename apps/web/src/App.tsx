@@ -36,6 +36,7 @@ import { PhaseLaneNode } from './nodes/PhaseLane.tsx';
 import {
   PlanAgentNode,
   PlanProcessNode,
+  FanMarkerNode,
   DecisionDiamond,
   LoopContainer,
   OutputTerminal,
@@ -52,6 +53,7 @@ const nodeTypes: NodeTypes = {
   agentCard: AgentCardNode,
   planAgent: PlanAgentNode,
   planProcess: PlanProcessNode,
+  planMarker: FanMarkerNode,
   planDecision: DecisionDiamond,
   planLoop: LoopContainer,
   planOutput: OutputTerminal,
