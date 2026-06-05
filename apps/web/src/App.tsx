@@ -79,6 +79,13 @@ type ViewMode = 'plan' | 'run';
 
 const EMPTY_GRAPH: GraphResult = { nodes: [], edges: [] };
 
+// STEP 3 (inline-expand): the readability budget for the one-time auto-expand seed. On a
+// run change we default-expand every fanned step so each subagent is visible — but bounded:
+// once the running total of auto-expanded INSTANCES would exceed this cap, we stop opening
+// further (larger) fans and leave them collapsed (aggregate chips). Keeps a 50-agent fan
+// from exploding the canvas while still surfacing the small/medium fans by default.
+const EXPAND_BUDGET = 24;
+
 /** Dogfood DEFAULT (M4: overridable): prefer modal-rust; else the first project. */
 function defaultProject(projects: ProjectRef[] | undefined): ProjectRef | undefined {
   if (!projects || projects.length === 0) return undefined;
@@ -444,12 +451,14 @@ export function App() {
   );
 
   // --- Merged Run view: RESET + SEED expandedNodeIds on run change (run-view-merge-plan.md
-  //     §2 "Default behavior"). The expand set is reset whenever the selected run identity
-  //     changes, then seeded ONCE off the live flag: a RUNNING run auto-expands its active
-  //     fan(s) (bindings still partial that bound >1 agent — what is executing right now);
-  //     a FINISHED run seeds empty (all fans collapsed → aggregate chips). It is seeded only
-  //     ONCE per run (keyed on a ref), so live SSE re-paints never re-derive it and fight a
-  //     user who manually collapsed a drawer (Risk 1). User-owned thereafter via toggle. ---
+  //     §2 + STEP 3 inline-expand). The expand set is reset whenever the selected run identity
+  //     changes, then seeded ONCE so every subagent is visible by default: we default-expand
+  //     ALL fanned steps (bindings that bound >1 agent) for BOTH running and finished runs.
+  //     This is bounded by EXPAND_BUDGET — fans are opened SMALLEST-first and we stop once the
+  //     running instance total would exceed the cap, so a single huge fan (e.g. 50 agents)
+  //     stays collapsed (aggregate chip) instead of exploding the canvas. Seeded only ONCE per
+  //     run (keyed on a ref), so live SSE re-paints never re-derive it and fight a user who
+  //     manually collapsed a drawer (Risk 1). User-owned thereafter via toggle. ---
   const runIdentityKey = summary
     ? `${summary.ref.slug}/${summary.ref.sessionId}/${summary.ref.runId}`
     : null;
@@ -463,16 +472,23 @@ export function App() {
     }
     if (runIdentityKey == null || !overlay) return; // wait until the overlay is built
     if (seededRunKey.current === runIdentityKey) return; // already seeded for this run
-    // Seed: running → active fans auto-expanded; finished → empty.
+    // Seed: expand every fanned step (agentIds.length > 1), running or finished, but bounded
+    // by EXPAND_BUDGET. Open the SMALLEST fans first so the budget surfaces the most fans; once
+    // adding the next fan would blow the cap, stop and leave the remaining (larger) fans
+    // collapsed. (A 0/1-instance binding is not a fan and is never seeded.)
+    const fans = overlay.bindings
+      .filter((b) => b.agentIds.length > 1)
+      .sort((a, b) => a.agentIds.length - b.agentIds.length);
     const seed = new Set<string>();
-    if (isLiveRun) {
-      for (const b of overlay.bindings) {
-        if (b.status === 'partial' && b.agentIds.length > 1) seed.add(b.planNodeId);
-      }
+    let used = 0;
+    for (const b of fans) {
+      if (used + b.agentIds.length > EXPAND_BUDGET) break; // budget hit → leave bigger fans collapsed
+      seed.add(b.planNodeId);
+      used += b.agentIds.length;
     }
     setExpandedNodeIds(seed);
     seededRunKey.current = runIdentityKey;
-  }, [runIdentityKey, overlay, isLiveRun]);
+  }, [runIdentityKey, overlay]);
 
   const overlayLayoutReady = !!runPlan && runPlan.derivedFrom === 'static-source' && runPlan.nodes.length > 0;
   const [overlayBaseGraph, setOverlayBaseGraph] = useState<GraphResult>(EMPTY_GRAPH);

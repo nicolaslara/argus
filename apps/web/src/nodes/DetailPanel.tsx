@@ -160,6 +160,35 @@ function PreviewBlock({
   );
 }
 
+/**
+ * STEP 2 — the agent PROMPT block (the task handed to the agent). Renders the FULL
+ * transcript prompt (`activity.prompt`, already capped by the adapter) VERBATIM in a
+ * calm, collapsible monospace pre. Long prompts are clamped to a few lines with a
+ * "show more / show less" toggle so the panel stays scannable; nothing is fetched here
+ * (the prompt rides the already-lazy activity query). Renders NOTHING when no prompt.
+ */
+function PromptBlock({ prompt }: { prompt: string | undefined }) {
+  const [expanded, setExpanded] = useState(false);
+  const text = typeof prompt === 'string' ? prompt : '';
+  if (text.trim().length === 0) return null;
+  // "Long" = enough to be worth clamping (either many lines or a lot of characters).
+  const lineCount = text.split('\n').length;
+  const isLong = lineCount > 12 || text.length > 800;
+  return (
+    <div className="detail-block">
+      <div className="detail-block-label">
+        prompt
+        {isLong ? (
+          <button type="button" className="detail-toggle" onClick={() => setExpanded((v) => !v)}>
+            {expanded ? 'show less' : 'show more'}
+          </button>
+        ) : null}
+      </div>
+      <pre className={`detail-pre${isLong && !expanded ? ' detail-pre-clamp' : ''}`}>{text}</pre>
+    </div>
+  );
+}
+
 /** A compact clock label (HH:MM:SS) for a transcript ISO timestamp; null when unparseable. */
 function clockTime(iso: string): string | null {
   const ms = Date.parse(iso);
@@ -420,7 +449,13 @@ export const DetailPanel = memo(function DetailPanel({
         )}
       </div>
 
-      <PreviewBlock label="prompt" preview={d.promptPreview} showEmpty={isExecAgent} />
+      {/* STEP 2: the agent PROMPT — the verbatim transcript task when we have it (richer than
+          the card's capped preview), else the card-data preview. Sits above RESULT/ACTIVITY. */}
+      {activity?.prompt ? (
+        <PromptBlock prompt={activity.prompt} />
+      ) : (
+        <PreviewBlock label="prompt" preview={d.promptPreview} showEmpty={isExecAgent} />
+      )}
       <PreviewBlock
         label="result"
         preview={d.resultPreview}

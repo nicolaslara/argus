@@ -476,6 +476,8 @@ export interface AgentTimelineEntry {
  * A transcript-derived activity summary for ONE agent (live or finished). Built by the
  * adapter's `agentActivityFromTranscript` from `agent-<id>.jsonl`:
  * - `label`    : derived from the first user message's first line (a real task, not a hash).
+ * - `prompt`   : the FULL text of the first user message — the task handed to the agent
+ *   (capped to a sane length). `label` is its first line; `prompt` is the whole thing.
  * - `tools`    : distinct `tool_use` names + counts; `toolCalls` is the total.
  * - `tokens`   : Σ of assistant `message.usage` (input/output/cacheRead); null if none seen.
  * - timing     : `startedAt`/`lastAt` (first→last event ISO timestamps) + `durationMs`.
@@ -487,6 +489,7 @@ export interface AgentTimelineEntry {
 export interface AgentActivity {
   agentId: string;
   label?: string;
+  prompt?: string;
   tools: AgentToolUse[];
   toolCalls: number;
   tokens: { input: number; output: number; cacheRead: number } | null;

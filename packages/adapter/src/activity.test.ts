@@ -73,6 +73,10 @@ describe('agentActivityFromTranscript', () => {
     expect(a.label).toBe('Diagnose the failing run');
   });
 
+  it('captures the full first user message as the prompt', () => {
+    expect(a.prompt).toBe('Diagnose the failing run\nand report the root cause.');
+  });
+
   it('sums tokens across assistant usage', () => {
     expect(a.tokens).toEqual({ input: 3100, output: 54, cacheRead: 1500 });
   });
@@ -117,11 +121,20 @@ describe('agentActivityFromTranscript — defensive', () => {
     expect(empty.toolCalls).toBe(0);
     expect(empty.timeline).toEqual([]);
     expect(empty.label).toBeUndefined();
+    expect(empty.prompt).toBeUndefined();
     expect(empty.durationMs).toBeUndefined();
 
     const garbage = agentActivityFromTranscript('not json\n{also bad\n42\nnull', 'a');
     expect(garbage.tokens).toBeNull();
     expect(garbage.timeline).toEqual([]);
+    expect(garbage.prompt).toBeUndefined();
+  });
+
+  it('caps a huge prompt to a sane length', () => {
+    const huge = 'x'.repeat(20_000);
+    const a = agentActivityFromTranscript(userPrompt(huge, '2026-06-05T22:00:00.000Z'), 'a');
+    expect(a.prompt).toBeDefined();
+    expect(a.prompt!.length).toBe(4000);
   });
 
   it('caps the timeline at ACTIVITY_TIMELINE_CAP', () => {

@@ -1902,3 +1902,8 @@ div.detail-log-fail {
   border-radius: 8px;
   padding: 10px 12px;
 }
+/* STEP 2: a long PROMPT clamps to a calm preview height until "show more" expands it. */
+.detail-pre-clamp {
+  max-height: 132px;
+  overflow: hidden;
+}

@@ -5,7 +5,8 @@
 //   - JSONL of events; each event has type 'user' | 'assistant' | 'attachment' and a
 //     top-level ISO `timestamp`.
 //   - the FIRST `user` event's `message.content` (a string, or content blocks) = the
-//     agent PROMPT → the label (its first non-empty line).
+//     agent PROMPT (the task handed to the agent): the full (capped) text is `prompt`,
+//     its first non-empty line is the `label`.
 //   - each `assistant` event carries `message.usage` {input_tokens, output_tokens,
 //     cache_read_input_tokens} (TOKENS) and `message.content[]` blocks; a
 //     {type:'tool_use', name} block is a TOOL call; a {type:'text', text} block is an
@@ -31,6 +32,8 @@ import type { FileSystemPort } from './index.ts';
 export const ACTIVITY_TIMELINE_CAP = 500;
 /** Hard cap on the emitted label / lastText lengths (text-node safe, never the whole turn). */
 const TEXT_CAP = 4 * 1024;
+/** Hard cap on the emitted prompt length (the first user message; tolerate huge tasks). */
+const PROMPT_CAP = 4000;
 
 // --- tolerant transcript-event schema (the only format-aware piece) ----------
 //
@@ -131,7 +134,8 @@ export function agentActivityFromTranscript(transcriptText: string, agentId: str
   let timelineFull = false;
 
   let label: string | undefined;
-  let labelLocked = false; // label comes from the FIRST user event only
+  let prompt: string | undefined; // full first-user-message text (capped); label is its first line
+  let labelLocked = false; // label/prompt come from the FIRST user event only
 
   let input = 0;
   let output = 0;
@@ -169,11 +173,13 @@ export function agentActivityFromTranscript(transcriptText: string, agentId: str
     const ts = typeof ev.timestamp === 'string' ? ev.timestamp : '';
 
     if (ev.type === 'user') {
-      // The FIRST user event is the prompt → the label.
+      // The FIRST user event is the task handed to the agent: its first line → the label,
+      // its full (capped) text → the prompt.
       if (!labelLocked && msg) {
         const text = promptText(msg.content);
         if (typeof text === 'string') {
           label = firstLine(text);
+          prompt = text.length > PROMPT_CAP ? text.slice(0, PROMPT_CAP) : text;
           labelLocked = true;
         }
       }
@@ -229,6 +235,7 @@ export function agentActivityFromTranscript(transcriptText: string, agentId: str
     timeline,
   };
   if (label !== undefined) out.label = label;
+  if (prompt !== undefined) out.prompt = prompt;
   if (startedAt !== undefined) out.startedAt = startedAt;
   if (lastAt !== undefined) out.lastAt = lastAt;
   if (startedAt !== undefined && lastAt !== undefined) {
