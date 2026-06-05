@@ -1,0 +1,1433 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"/><title>argus · run-view merge gallery</title><style>
+:root{--bg:#0d1117;--panel:#11161c;--panel-2:#0b0f14;--fg:#e6edf3;--dim:#8b949e;--faint:#6e7681;--line:#21262d;--line-2:#30363d;--accent:#5b9dff;--green:#3fb950;--amber:#d29922;--red:#f85149;--purple:#a371f7;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,system-ui,sans-serif}
+*{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans)}body{padding:40px 40px 80px;line-height:1.5}
+.page-head{max-width:1080px;margin:0 auto 30px}.page-head h1{font-size:26px;margin:0 0 6px}.page-head .sub{color:var(--dim);font-size:15px}
+.gallery{display:grid;grid-template-columns:1fr;gap:24px;max-width:1180px;margin:0 auto}
+.card{background:var(--panel-2);border:1px solid var(--line);border-radius:12px;padding:18px 20px 22px}
+.card h3{margin:0 0 2px;font-size:16px}.card .cap{margin:4px 0 16px;font-size:13px;color:var(--dim)}.card .cap em{color:var(--fg);font-style:normal;font-weight:600}
+.canvas{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;font-family:var(--mono);font-size:12px;overflow:auto}
+.g-done{color:var(--green)}.g-part{color:var(--amber)}.g-fail{color:var(--red)}.g-kill{color:var(--amber)}.g-run{color:var(--accent)}
+.pulse{animation:pulse 1.8s ease-in-out infinite}@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+</style></head><body><div class="page-head"><h1>argus · run-view merge gallery</h1><p class="sub">Six ways to MERGE Progress + Execution into one click-to-expand run view (Plan stays separate), rendered over one sample run (modal-rust-plan-research · fan-out + 1 failed) using the harness grammar: dashed = pending · solid card = active · accent diamond = decision · dashed-accent = loop. See workpads/design/run-view-merge-plan.md for the converged decision.</p></div><div class="gallery">
+<section class="card" data-view="lane-expand">
+  <h3>Lane-expand</h3>
+  <p class="cap">
+    <em>best for: one run, two zooms — the painted plan DAG that drills into real instances without leaving the view.</em>
+    Stance: <strong>ONE run view</strong> (Plan stays a separate template view; Progress + Execution collapse into this). Default is the collapsed plan shape — pending steps are dashed ghosts, done/running steps are solid cards. A fanned step shows a <code>▾</code> caret + <code>×N</code> chip and <strong>expands inline</strong> into its instance cards (failed = red, upcoming = dashed) — "click to expand, not a separate tab." Handles <strong>adversarial-verification</strong> as an accent VERIFY diamond gate that the fan-in passes through; renders <strong>loop-until-done</strong> as a dashed accent back-edge off the gate, and <strong>tournament</strong> by letting each bracket round be its own expandable fan-out lane (the eliminated branch's instances stay red/dimmed in the drawer).
+  </p>
+
+  <style>
+    [data-view="lane-expand"]{
+      --bg:#0d1117;--panel:#11161c;--panel-2:#0b0f14;--fg:#e6edf3;--dim:#8b949e;--faint:#6e7681;
+      --line:#21262d;--line-2:#30363d;--accent:#5b9dff;--green:#3fb950;--amber:#d29922;--red:#f85149;--purple:#a371f7;
+      --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+      --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,system-ui,sans-serif;
+    }
+    [data-view="lane-expand"] .canvas{ background:var(--bg); position:relative; }
+    /* run header */
+    [data-view="lane-expand"] .lx-runbar{
+      display:flex; align-items:center; gap:10px; margin-bottom:18px;
+      font-family:var(--mono); font-size:11.5px; color:var(--dim);
+    }
+    [data-view="lane-expand"] .lx-runbar .lx-name{ color:var(--fg); font-weight:600; }
+    [data-view="lane-expand"] .lx-runbar .lx-sep{ color:var(--faint); }
+    [data-view="lane-expand"] .lx-runbar .lx-expandall{
+      margin-left:auto; font-size:10.5px; color:var(--accent);
+      border:1px solid color-mix(in srgb, var(--accent) 32%, var(--line));
+      border-radius:5px; padding:3px 9px; cursor:pointer; background:color-mix(in srgb, var(--accent) 7%, transparent);
+    }
+
+    /* the single left -> right run lane */
+    [data-view="lane-expand"] .lx-lane{
+      display:flex; align-items:flex-start; gap:0; min-width:1040px;
+    }
+    [data-view="lane-expand"] .lx-phase{ position:relative; }
+    /* phase band label (dimension-bracket-ish) */
+    [data-view="lane-expand"] .lx-band{
+      font-family:var(--mono); font-size:9.5px; letter-spacing:.13em; text-transform:uppercase;
+      color:var(--faint); margin:0 0 8px 2px; display:flex; align-items:center; gap:7px;
+    }
+    [data-view="lane-expand"] .lx-band .lx-idx{
+      display:inline-flex; align-items:center; justify-content:center; width:15px; height:15px;
+      border-radius:50%; border:1px solid var(--line-2); color:var(--dim); font-size:9px;
+    }
+
+    /* connector spine between phases */
+    [data-view="lane-expand"] .lx-conn{
+      align-self:flex-start; margin-top:46px; display:flex; flex-direction:column; align-items:center; gap:2px;
+      width:38px; flex:none;
+    }
+    [data-view="lane-expand"] .lx-conn .lx-wire{ width:100%; height:1px; background:var(--line-2); }
+    [data-view="lane-expand"] .lx-conn.dashed .lx-wire{
+      height:0; border-top:1px dashed var(--line-2);
+    }
+    [data-view="lane-expand"] .lx-conn .lx-marker{
+      font-family:var(--mono); font-size:11px; line-height:1; color:var(--dim);
+    }
+    [data-view="lane-expand"] .lx-conn .lx-marker.fan{ color:var(--accent); }
+
+    /* a realized step = solid card */
+    [data-view="lane-expand"] .lx-step{
+      position:relative; width:210px;
+      background:var(--panel); border:1px solid var(--line-2); border-radius:9px;
+      padding:11px 12px 12px; box-shadow:0 1px 0 rgba(0,0,0,.35), 0 6px 16px -10px rgba(0,0,0,.6);
+      font-family:var(--mono);
+    }
+    [data-view="lane-expand"] .lx-step .lx-dot{
+      position:absolute; top:10px; right:11px; font-size:11px; line-height:1;
+    }
+    [data-view="lane-expand"] .lx-step .lx-title{ font-size:12px; color:var(--fg); padding-right:16px; }
+    [data-view="lane-expand"] .lx-step .lx-meta{ font-size:10.5px; color:var(--dim); margin-top:5px; }
+    [data-view="lane-expand"] .lx-step .lx-chip{
+      display:inline-flex; align-items:center; gap:5px; margin-top:9px;
+      font-size:10px; color:var(--dim);
+      border:1px solid var(--line-2); border-radius:5px; padding:2px 7px; cursor:pointer;
+      user-select:none;
+    }
+    [data-view="lane-expand"] .lx-step .lx-chip .lx-caret{ color:var(--accent); font-size:9px; }
+    [data-view="lane-expand"] .lx-step .lx-chip .lx-n{ color:var(--fg); }
+    [data-view="lane-expand"] .lx-step .lx-chip:hover{ border-color:var(--line); }
+
+    /* a pending step = dashed ghost */
+    [data-view="lane-expand"] .lx-ghost{
+      width:210px; border:1px dashed var(--line-2); border-radius:9px; background:transparent;
+      padding:11px 12px 12px; font-family:var(--mono); box-shadow:none;
+    }
+    [data-view="lane-expand"] .lx-ghost .lx-dot{ position:absolute; }
+    [data-view="lane-expand"] .lx-ghost .lx-title{ font-size:12px; color:var(--faint); }
+    [data-view="lane-expand"] .lx-ghost .lx-meta{ font-size:10.5px; color:var(--faint); margin-top:5px; }
+    [data-view="lane-expand"] .lx-ghost.glabel{
+      font-size:9.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--faint);
+    }
+
+    /* accent verify gate: diamond outline + label, wrapping the REVIEW fan */
+    [data-view="lane-expand"] .lx-verifywrap{ position:relative; }
+    [data-view="lane-expand"] .lx-verifyhdr{
+      display:flex; align-items:center; gap:7px; margin:0 0 7px 1px;
+      font-family:var(--mono); font-size:9.5px; letter-spacing:.06em; color:var(--accent);
+    }
+    [data-view="lane-expand"] .lx-diamond{
+      width:11px; height:11px; border:1.5px solid var(--accent); transform:rotate(45deg);
+      border-radius:2px; flex:none; background:color-mix(in srgb, var(--accent) 8%, transparent);
+    }
+    [data-view="lane-expand"] .lx-step.verify{
+      border-color:color-mix(in srgb, var(--accent) 38%, var(--line-2));
+      background:linear-gradient(180deg, color-mix(in srgb, var(--accent) 6%, transparent), transparent 60%), var(--panel);
+    }
+    /* loop-until-done back-edge annotation off the gate */
+    [data-view="lane-expand"] .lx-loop{
+      margin-top:9px; font-size:9.5px; color:var(--accent); font-family:var(--mono);
+      border-top:1px dashed color-mix(in srgb, var(--accent) 35%, transparent); padding-top:7px;
+      display:flex; align-items:center; gap:6px;
+    }
+    [data-view="lane-expand"] .lx-loop .lx-arc{ font-size:12px; }
+
+    /* the inline drawer: instance cards revealed under an expanded step */
+    [data-view="lane-expand"] .lx-drawer{
+      margin-top:11px; border:1px dashed var(--line-2); border-radius:9px;
+      padding:9px 9px 10px; background:color-mix(in srgb, var(--panel-2) 70%, transparent);
+    }
+    [data-view="lane-expand"] .lx-drawer .lx-dhdr{
+      font-family:var(--mono); font-size:9.5px; color:var(--faint); letter-spacing:.06em;
+      margin:0 0 8px 1px;
+    }
+    [data-view="lane-expand"] .lx-grid{ display:grid; grid-template-columns:repeat(2, 1fr); gap:7px; }
+    [data-view="lane-expand"] .lx-grid.cols3{ grid-template-columns:repeat(3, 1fr); }
+    [data-view="lane-expand"] .lx-inst{
+      background:var(--panel); border:1px solid var(--line); border-radius:7px;
+      padding:8px 9px; position:relative; font-family:var(--mono); min-height:48px; cursor:pointer;
+    }
+    [data-view="lane-expand"] .lx-inst:hover{ border-color:var(--line-2); }
+    [data-view="lane-expand"] .lx-inst.fail{ border-color:color-mix(in srgb, var(--red) 55%, var(--line)); }
+    [data-view="lane-expand"] .lx-inst .lx-idot{ position:absolute; top:7px; right:8px; font-size:10px; line-height:1; }
+    [data-view="lane-expand"] .lx-inst .lx-iname{ font-size:11px; color:var(--fg); padding-right:14px; }
+    [data-view="lane-expand"] .lx-inst .lx-imeta{ font-size:9.5px; color:var(--dim); margin-top:6px; }
+    [data-view="lane-expand"] .lx-inst .lx-imeta.err{ color:var(--red); }
+    /* upcoming instance = dashed ghost tile inside the drawer */
+    [data-view="lane-expand"] .lx-inst.ghost{
+      border:1px dashed var(--line-2); background:transparent; cursor:default;
+      display:flex; align-items:center; justify-content:center; color:var(--faint); font-size:10px;
+    }
+
+    [data-view="lane-expand"] .g-done{color:var(--green);}
+    [data-view="lane-expand"] .g-fail{color:var(--red);}
+    [data-view="lane-expand"] .g-run{color:var(--accent);}
+    [data-view="lane-expand"] .pulse{ animation:lx-pulse 1.7s ease-in-out infinite; }
+    @keyframes lx-pulse{ 0%,100%{opacity:1} 50%{opacity:.35} }
+  </style>
+
+  <div class="canvas">
+    <div class="lx-runbar">
+      <span class="lx-name">modal-rust-plan-research</span>
+      <span class="lx-sep">·</span><span>10 agents</span>
+      <span class="lx-sep">·</span><span>6m02s</span>
+      <span class="lx-sep">·</span><span>4 phases</span>
+      <span class="lx-sep">·</span><span class="g-run pulse">◌ review in progress</span>
+      <span class="lx-expandall">⊞ Expand all</span>
+    </div>
+
+    <div class="lx-lane">
+
+      <!-- PHASE 1: RESEARCH — fan-out, EXPANDED inline into its 5 instances (realized fan-out) -->
+      <div class="lx-phase" style="width:400px;">
+        <div class="lx-band"><span class="lx-idx">1</span> Research</div>
+        <div class="lx-step" style="width:400px;">
+          <span class="lx-dot g-done">●</span>
+          <div class="lx-title">research</div>
+          <div class="lx-meta">parallel research · client-availability, connection, data-contract, graph-viz, ts-stack</div>
+          <span class="lx-chip"><span class="lx-caret">▴</span> <span class="lx-n">×5</span> · 5/5 done</span>
+
+          <!-- inline drawer: the real agent instances (the demoted Execution view, anchored to the plan step) -->
+          <div class="lx-drawer">
+            <div class="lx-dhdr">┄ instances · ×5 · 5/5 done ┄ click a card → detail panel</div>
+            <div class="lx-grid cols3">
+              <div class="lx-inst"><span class="lx-idot g-done">●</span><div class="lx-iname">client-availability</div><div class="lx-imeta">done · 8.3k · 12 tools</div></div>
+              <div class="lx-inst"><span class="lx-idot g-done">●</span><div class="lx-iname">connection-strategy</div><div class="lx-imeta">done · 9.1k · 14 tools</div></div>
+              <div class="lx-inst"><span class="lx-idot g-done">●</span><div class="lx-iname">data-contract</div><div class="lx-imeta">done · 6.0k · 9 tools</div></div>
+              <div class="lx-inst"><span class="lx-idot g-done">●</span><div class="lx-iname">graph-viz</div><div class="lx-imeta">done · 6.8k · 10 tools</div></div>
+              <div class="lx-inst"><span class="lx-idot g-done">●</span><div class="lx-iname">ts-stack</div><div class="lx-imeta">done · 5.5k · 8 tools</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- spine: fan-in to DESIGN -->
+      <div class="lx-conn"><div class="lx-wire"></div><span class="lx-marker fan">◆</span><div class="lx-wire"></div></div>
+
+      <!-- PHASE 2: DESIGN — single, collapsed solid card -->
+      <div class="lx-phase" style="width:210px;">
+        <div class="lx-band"><span class="lx-idx">2</span> Design</div>
+        <div class="lx-step">
+          <span class="lx-dot g-done">●</span>
+          <div class="lx-title">synthesize-approach</div>
+          <div class="lx-meta">done · 11.2k · 6 tools</div>
+        </div>
+      </div>
+
+      <!-- spine: fan-out to REVIEW -->
+      <div class="lx-conn"><div class="lx-wire"></div><span class="lx-marker fan">●</span><div class="lx-wire"></div></div>
+
+      <!-- PHASE 3: REVIEW — adversarial verify gate, fan-out of 3, RUNNING variant -->
+      <div class="lx-phase" style="width:248px;">
+        <div class="lx-band"><span class="lx-idx">3</span> Review</div>
+        <div class="lx-verifywrap">
+          <div class="lx-verifyhdr"><span class="lx-diamond"></span> ADVERSARIAL VERIFY · ×3</div>
+          <div class="lx-step verify" style="width:248px;">
+            <span class="lx-dot g-run pulse">◌</span>
+            <div class="lx-title">review</div>
+            <div class="lx-meta">2 running · 1 failed — gate is OPEN (blocks fan-in)</div>
+            <span class="lx-chip"><span class="lx-caret">▴</span> <span class="lx-n">×3</span> · <span class="g-fail">1 failed</span></span>
+
+            <div class="lx-drawer">
+              <div class="lx-dhdr">┄ instances · ×3 · 0/3 settled ┄ failed branch stays red</div>
+              <div class="lx-grid">
+                <div class="lx-inst"><span class="lx-idot g-run pulse">◌</span><div class="lx-iname">review:correctness</div><div class="lx-imeta g-run">running… · 4.1k</div></div>
+                <div class="lx-inst"><span class="lx-idot g-run pulse">◌</span><div class="lx-iname">review:security</div><div class="lx-imeta g-run">running… · 3.7k</div></div>
+                <div class="lx-inst fail"><span class="lx-idot g-fail">✕</span><div class="lx-iname">review:feasibility</div><div class="lx-imeta err">error · — · 2 tools</div></div>
+              </div>
+            </div>
+
+            <!-- loop-until-done back-edge annotation off the gate -->
+            <div class="lx-loop"><span class="lx-arc">↺</span> on fail → loop back to design (max 2 retries)</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- spine: fan-in to SYNTHESIZE — DASHED because the gate hasn't passed yet -->
+      <div class="lx-conn dashed"><div class="lx-wire"></div><span class="lx-marker">◇</span><div class="lx-wire"></div></div>
+
+      <!-- PHASE 4: SYNTHESIZE — PENDING, rendered as a DASHED GHOST (not yet run) -->
+      <div class="lx-phase" style="width:210px;">
+        <div class="lx-band"><span class="lx-idx">4</span> Synthesize</div>
+        <div class="lx-ghost">
+          <span class="lx-dot" style="position:absolute;top:10px;right:11px;color:var(--faint);">◌</span>
+          <div class="lx-title">lock-decisions</div>
+          <div class="lx-meta">upcoming · waits on verify gate</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<section class="card" data-view="accordion">
+<style>
+[data-view="accordion"]{
+  --bg:#0d1117;--panel:#11161c;--panel-2:#0b0f14;--fg:#e6edf3;--dim:#8b949e;--faint:#6e7681;
+  --line:#21262d;--line-2:#30363d;--accent:#5b9dff;--green:#3fb950;--amber:#d29922;--red:#f85149;--purple:#a371f7;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+[data-view="accordion"] .canvas{background:var(--bg);padding:16px 18px 20px;overflow:auto;font-family:var(--mono);}
+
+/* run header */
+[data-view="accordion"] .ac-head{display:flex;align-items:baseline;gap:12px;padding:0 2px 13px;margin-bottom:8px;border-bottom:1px solid var(--line);}
+[data-view="accordion"] .ac-head .ac-title{color:var(--fg);font-size:13px;font-weight:600;letter-spacing:.2px;}
+[data-view="accordion"] .ac-head .ac-live{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--accent);padding:2px 8px;border:1px solid color-mix(in srgb,var(--accent) 38%,transparent);border-radius:999px;background:color-mix(in srgb,var(--accent) 9%,transparent);}
+[data-view="accordion"] .ac-head .ac-meta{margin-left:auto;color:var(--dim);font-size:11px;}
+
+/* the vertical outline = stacked phase rows */
+[data-view="accordion"] .ac-list{display:flex;flex-direction:column;gap:8px;}
+
+/* one phase = a row that is also the disclosure */
+[data-view="accordion"] .ac-phase{border:1px solid var(--line);border-radius:9px;background:var(--panel);overflow:hidden;position:relative;}
+/* colored status spine on the left edge */
+[data-view="accordion"] .ac-phase::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--faint);opacity:.6;}
+[data-view="accordion"] .ac-phase.done::before{background:var(--green);}
+[data-view="accordion"] .ac-phase.run::before{background:var(--accent);}
+[data-view="accordion"] .ac-phase.fail::before{background:var(--red);}
+
+/* the clickable summary row */
+[data-view="accordion"] .ac-row{display:grid;grid-template-columns:18px 16px 1fr auto auto;align-items:center;gap:11px;padding:11px 14px 11px 16px;cursor:default;}
+[data-view="accordion"] .ac-row .caret{color:var(--faint);font-size:10px;text-align:center;transition:color .15s;}
+[data-view="accordion"] .ac-phase.open .ac-row .caret{color:var(--dim);}
+[data-view="accordion"] .ac-row .g{font-size:13px;line-height:1;text-align:center;}
+[data-view="accordion"] .ac-row .ttl{display:flex;align-items:baseline;gap:10px;min-width:0;}
+[data-view="accordion"] .ac-row .ttl .nm{color:var(--fg);font-size:12px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;}
+[data-view="accordion"] .ac-row .ttl .shape{color:var(--faint);font-size:10px;letter-spacing:.3px;}
+/* aggregate rollup chips */
+[data-view="accordion"] .ac-roll{display:flex;align-items:center;gap:7px;font-size:10.5px;color:var(--dim);}
+[data-view="accordion"] .ac-roll .pill{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border:1px solid var(--line-2);border-radius:999px;background:var(--panel-2);}
+[data-view="accordion"] .ac-roll .pill.count{color:var(--fg);}
+[data-view="accordion"] .ac-roll .pill .n{color:var(--fg);font-weight:600;}
+[data-view="accordion"] .ac-roll .pill.ok .n{color:var(--green);}
+[data-view="accordion"] .ac-roll .pill.runc .n{color:var(--accent);}
+[data-view="accordion"] .ac-roll .pill.bad{border-color:color-mix(in srgb,var(--red) 45%,var(--line-2));}
+[data-view="accordion"] .ac-roll .pill.bad .n{color:var(--red);}
+/* mini rollup bar: proportional done/run/fail */
+[data-view="accordion"] .ac-bar{display:flex;width:84px;height:5px;border-radius:3px;overflow:hidden;background:var(--line);}
+[data-view="accordion"] .ac-bar i{height:100%;}
+[data-view="accordion"] .ac-bar i.d{background:var(--green);}
+[data-view="accordion"] .ac-bar i.r{background:var(--accent);}
+[data-view="accordion"] .ac-bar i.f{background:var(--red);}
+[data-view="accordion"] .ac-row .span{color:var(--faint);font-size:10px;font-variant-numeric:tabular-nums;white-space:nowrap;}
+
+/* expanded body: the instance cards */
+[data-view="accordion"] .ac-body{padding:2px 14px 14px 38px;border-top:1px solid var(--line);background:color-mix(in srgb,var(--panel-2) 60%,var(--panel));}
+[data-view="accordion"] .ac-phase:not(.open) .ac-body{display:none;}
+[data-view="accordion"] .ac-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(196px,1fr));gap:9px;margin-top:12px;}
+
+/* a realized instance card (SOLID) */
+[data-view="accordion"] .icard{position:relative;border:1px solid var(--line);border-radius:7px;background:var(--bg);padding:9px 11px 10px;box-shadow:0 1px 2px rgba(0,0,0,.35);}
+[data-view="accordion"] .icard .ic-top{display:flex;align-items:center;gap:8px;margin-bottom:7px;}
+[data-view="accordion"] .icard .ic-dot{font-size:11px;line-height:1;flex:none;}
+[data-view="accordion"] .icard .ic-nm{color:var(--fg);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+[data-view="accordion"] .icard .ic-meta{display:flex;justify-content:space-between;font-size:9.5px;color:var(--faint);font-variant-numeric:tabular-nums;}
+[data-view="accordion"] .icard .ic-meta .dur{color:var(--dim);}
+[data-view="accordion"] .icard.run{border-color:color-mix(in srgb,var(--accent) 38%,var(--line));background:linear-gradient(180deg,color-mix(in srgb,var(--accent) 6%,transparent),transparent 70%),var(--bg);}
+[data-view="accordion"] .icard.run .ic-meta .dur{color:var(--accent);}
+[data-view="accordion"] .icard.fail{border-color:color-mix(in srgb,var(--red) 45%,var(--line));background:color-mix(in srgb,var(--red) 6%,var(--bg));}
+[data-view="accordion"] .icard.fail .ic-nm{color:#ffb4ae;}
+[data-view="accordion"] .icard.fail .ic-meta .dur{color:var(--red);}
+/* tiny live progress bar inside running cards */
+[data-view="accordion"] .icard .ic-prog{height:3px;border-radius:2px;background:var(--line);margin-top:8px;overflow:hidden;position:relative;}
+[data-view="accordion"] .icard .ic-prog i{position:absolute;inset:0 auto 0 0;border-radius:2px;background:linear-gradient(90deg,color-mix(in srgb,var(--accent) 50%,transparent),var(--accent));}
+
+/* a GHOST instance card (DASHED placeholder, not yet spawned) */
+[data-view="accordion"] .icard.ghost{background:none;border:1px dashed var(--line-2);box-shadow:none;}
+[data-view="accordion"] .icard.ghost .ic-nm{color:var(--faint);}
+[data-view="accordion"] .icard.ghost .ic-dot{color:var(--faint);}
+
+/* a PENDING / not-yet-run phase = the whole row is a dashed ghost, no fill, cannot expand */
+[data-view="accordion"] .ac-phase.pending{border:1px dashed var(--line-2);background:none;}
+[data-view="accordion"] .ac-phase.pending::before{background:none;}
+[data-view="accordion"] .ac-phase.pending .ac-row{cursor:not-allowed;}
+[data-view="accordion"] .ac-phase.pending .ac-row .caret{color:#3a4049;}
+[data-view="accordion"] .ac-phase.pending .ac-row .g{color:var(--faint);}
+[data-view="accordion"] .ac-phase.pending .ac-row .ttl .nm{color:var(--faint);font-weight:500;}
+[data-view="accordion"] .ac-phase.pending .ac-roll .pill{border-style:dashed;background:none;color:var(--faint);}
+
+/* decision-gate badge on the adversarial review phase (accent-outlined diamond glyph) */
+[data-view="accordion"] .gate{display:inline-flex;align-items:center;gap:5px;font-size:9.5px;letter-spacing:.4px;color:var(--accent);text-transform:uppercase;padding:1px 7px 1px 5px;border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);border-radius:999px;}
+[data-view="accordion"] .gate.tripped{color:var(--red);border-color:color-mix(in srgb,var(--red) 45%,transparent);}
+[data-view="accordion"] .gate .dia{font-size:8px;transform:translateY(-.5px);}
+
+/* loop-back affordance footer (dashed accent return edge metaphor) */
+[data-view="accordion"] .ac-loop{display:flex;align-items:center;gap:9px;margin-top:6px;padding:7px 12px 7px 16px;font-size:10px;color:var(--faint);}
+[data-view="accordion"] .ac-loop .arc{flex:none;color:var(--accent);opacity:.8;}
+[data-view="accordion"] .ac-loop em{color:var(--dim);font-style:normal;}
+
+[data-view="accordion"] .g-done{color:var(--green);}
+[data-view="accordion"] .g-fail{color:var(--red);}
+[data-view="accordion"] .g-run{color:var(--accent);}
+[data-view="accordion"] .pulse{animation:ac-pulse 1.7s ease-in-out infinite;}
+@keyframes ac-pulse{0%,100%{opacity:1}50%{opacity:.4}}
+</style>
+
+<h3>Accordion / phase outline</h3>
+<p class="cap"><em>best for: many-agent runs &amp; vertical scanning</em> — ONE run view: each phase is an outline row showing a status rollup (×N, mini-bar) that expands downward to its instance cards. Plan stays a separate view; here Progress and Execution fold into a single click-to-expand outline (aggregate row = old Progress, expanded cards = old Execution). Dashed-vs-solid carries plan-vs-run: a not-yet-run phase is a dashed ghost row that can't expand; spawned instances are solid cards, un-spawned ones dashed ghost tiles. Hardest patterns: <b>adversarial-verification</b> renders as the accent gate badge on the REVIEW row (turns red when a reviewer trips it); <b>loop-until-done</b> is a dashed accent return row under the gate; a <b>tournament</b> nests as round sub-rows inside one phase (each round an inner accordion).</p>
+
+<div class="canvas">
+  <div class="ac-head">
+    <span class="ac-title">modal-rust-plan-research</span>
+    <span class="ac-live"><span class="g-run pulse">◌</span> running</span>
+    <span class="ac-meta">10 agents · 4 phases · 04:12 elapsed</span>
+  </div>
+
+  <div class="ac-list">
+
+    <!-- RESEARCH — done, EXPANDED → realized fan-out of 5 solid cards -->
+    <div class="ac-phase done open">
+      <div class="ac-row">
+        <span class="caret">▾</span>
+        <span class="g g-done">●</span>
+        <span class="ttl"><span class="nm">Research</span><span class="shape">fan-out ×5 · parallel</span></span>
+        <span class="ac-roll">
+          <span class="pill count"><span class="n">5</span> agents</span>
+          <span class="pill ok"><span class="n">5</span>/5 done</span>
+          <span class="ac-bar"><i class="d" style="width:100%"></i></span>
+        </span>
+        <span class="span">00:00 – 02:10</span>
+      </div>
+      <div class="ac-body">
+        <div class="ac-grid">
+          <div class="icard"><div class="ic-top"><span class="ic-dot g-done">●</span><span class="ic-nm">client-availability</span></div><div class="ic-meta"><span>00:00→01:48</span><span class="dur">1m48s</span></div></div>
+          <div class="icard"><div class="ic-top"><span class="ic-dot g-done">●</span><span class="ic-nm">connection-strategy</span></div><div class="ic-meta"><span>00:00→02:05</span><span class="dur">2m05s</span></div></div>
+          <div class="icard"><div class="ic-top"><span class="ic-dot g-done">●</span><span class="ic-nm">data-contract</span></div><div class="ic-meta"><span>00:00→01:32</span><span class="dur">1m32s</span></div></div>
+          <div class="icard"><div class="ic-top"><span class="ic-dot g-done">●</span><span class="ic-nm">graph-viz</span></div><div class="ic-meta"><span>00:00→02:10</span><span class="dur">2m10s</span></div></div>
+          <div class="icard"><div class="ic-top"><span class="ic-dot g-done">●</span><span class="ic-nm">ts-stack</span></div><div class="ic-meta"><span>00:00→01:20</span><span class="dur">1m20s</span></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DESIGN — done, COLLAPSED (single agent) -->
+    <div class="ac-phase done">
+      <div class="ac-row">
+        <span class="caret">▸</span>
+        <span class="g g-done">●</span>
+        <span class="ttl"><span class="nm">Design</span><span class="shape">single</span></span>
+        <span class="ac-roll">
+          <span class="pill count"><span class="n">1</span> agent</span>
+          <span class="pill ok"><span class="n">1</span>/1 done</span>
+          <span class="ac-bar"><i class="d" style="width:100%"></i></span>
+        </span>
+        <span class="span">02:10 – 03:40</span>
+      </div>
+      <div class="ac-body">
+        <div class="ac-grid">
+          <div class="icard"><div class="ic-top"><span class="ic-dot g-done">●</span><span class="ic-nm">synthesize-approach</span></div><div class="ic-meta"><span>02:10→03:40</span><span class="dur">1m30s</span></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- REVIEW — IN PROGRESS, EXPANDED → 2 running (solid) + 1 failed; adversarial gate badge tripped -->
+    <div class="ac-phase fail open">
+      <div class="ac-row">
+        <span class="caret">▾</span>
+        <span class="g g-run pulse">◌</span>
+        <span class="ttl">
+          <span class="nm">Review</span>
+          <span class="shape">fan-out ×3 · adversarial</span>
+          <span class="gate tripped"><span class="dia">◆</span> verify gate · failed</span>
+        </span>
+        <span class="ac-roll">
+          <span class="pill count"><span class="n">3</span> agents</span>
+          <span class="pill runc"><span class="n">2</span> running</span>
+          <span class="pill bad"><span class="n">1</span> failed</span>
+          <span class="ac-bar"><i class="r" style="width:66.6%"></i><i class="f" style="width:33.3%"></i></span>
+        </span>
+        <span class="span">03:40 – now</span>
+      </div>
+      <div class="ac-body">
+        <div class="ac-grid">
+          <div class="icard run">
+            <div class="ic-top"><span class="ic-dot g-run pulse">◌</span><span class="ic-nm">review:correctness</span></div>
+            <div class="ic-meta"><span>03:40 · running</span><span class="dur">~0m32s</span></div>
+            <div class="ic-prog"><i style="width:54%"></i></div>
+          </div>
+          <div class="icard run">
+            <div class="ic-top"><span class="ic-dot g-run pulse">◌</span><span class="ic-nm">review:security</span></div>
+            <div class="ic-meta"><span>03:40 · running</span><span class="dur">~0m32s</span></div>
+            <div class="ic-prog"><i style="width:48%"></i></div>
+          </div>
+          <div class="icard fail">
+            <div class="ic-top"><span class="ic-dot g-fail">✕</span><span class="ic-nm">review:feasibility</span></div>
+            <div class="ic-meta"><span>03:40→04:01 · error</span><span class="dur">0m21s</span></div>
+          </div>
+        </div>
+        <div class="ac-loop">
+          <svg class="arc" width="34" height="16" viewBox="0 0 34 16" fill="none">
+            <path d="M32 3 H8 a5 5 0 0 0 -5 5 v0 a5 5 0 0 0 5 5 H24" stroke="currentColor" stroke-width="1.3" stroke-dasharray="3 2.5" fill="none"/>
+            <path d="M27 9 l-3.5 3.5 v-7 Z" fill="currentColor"/>
+          </svg>
+          <em>verify gate failed → loop-until-done: replan &amp; re-run Review (back-edge to Design)</em>
+        </div>
+      </div>
+    </div>
+
+    <!-- SYNTHESIZE — PENDING ghost: dashed row, ghost instance tile, cannot expand -->
+    <div class="ac-phase pending">
+      <div class="ac-row">
+        <span class="caret">▸</span>
+        <span class="g">◌</span>
+        <span class="ttl"><span class="nm">Synthesize</span><span class="shape">single · gated on Review</span></span>
+        <span class="ac-roll">
+          <span class="pill">×1 planned</span>
+          <span class="pill">upcoming</span>
+        </span>
+        <span class="span">— blocked —</span>
+      </div>
+      <div class="ac-body">
+        <div class="ac-grid">
+          <div class="icard ghost"><div class="ic-top"><span class="ic-dot">◌</span><span class="ic-nm">lock-decisions</span></div><div class="ic-meta"><span>not started</span><span class="dur">—</span></div></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</section>
+
+<section class="card" data-view="semantic-zoom">
+<style>
+[data-view="semantic-zoom"]{
+  --bg:#0d1117;--panel:#11161c;--panel-2:#0b0f14;--fg:#e6edf3;--dim:#8b949e;--faint:#6e7681;
+  --line:#21262d;--line-2:#30363d;--accent:#5b9dff;--green:#3fb950;--amber:#d29922;--red:#f85149;--purple:#a371f7;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  /* level-of-detail driver: 0 = plan shape, 1 = mid (fan-outs materialize), 2 = full per-instance */
+  --lod:1;
+}
+[data-view="semantic-zoom"] .canvas{
+  background:var(--bg);border:1px solid var(--line);border-radius:8px;
+  padding:0;overflow:auto;font-family:var(--mono);position:relative;
+}
+
+/* ── run header + the zoom/detail slider that drives the LOD ── */
+[data-view="semantic-zoom"] .sz-head{
+  display:flex;align-items:center;gap:12px;
+  padding:13px 18px;border-bottom:1px solid var(--line);
+  background:linear-gradient(180deg,rgba(91,157,255,.04),transparent);
+}
+[data-view="semantic-zoom"] .sz-head .nm{font-size:13px;font-weight:600;color:var(--fg);letter-spacing:.2px;}
+[data-view="semantic-zoom"] .sz-head .live{
+  display:inline-flex;align-items:center;gap:6px;font-size:10.5px;color:var(--accent);
+  padding:2px 8px;border:1px solid color-mix(in srgb,var(--accent) 38%,transparent);
+  border-radius:999px;background:color-mix(in srgb,var(--accent) 9%,transparent);
+}
+[data-view="semantic-zoom"] .sz-head .meta{font-size:10.5px;color:var(--dim);}
+[data-view="semantic-zoom"] .sz-zoom{margin-left:auto;display:flex;align-items:center;gap:10px;}
+[data-view="semantic-zoom"] .sz-zoom .zl{font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);}
+[data-view="semantic-zoom"] .sz-track{
+  position:relative;width:188px;height:4px;border-radius:3px;background:var(--line-2);
+}
+[data-view="semantic-zoom"] .sz-track .fill{
+  position:absolute;left:0;top:0;bottom:0;width:54%;border-radius:3px;
+  background:linear-gradient(90deg,color-mix(in srgb,var(--accent) 45%,transparent),var(--accent));
+}
+[data-view="semantic-zoom"] .sz-track .knob{
+  position:absolute;top:50%;left:54%;width:13px;height:13px;border-radius:50%;
+  transform:translate(-50%,-50%);background:var(--fg);border:2px solid var(--accent);
+  box-shadow:0 0 0 4px rgba(91,157,255,.12);
+}
+[data-view="semantic-zoom"] .sz-track .tick{
+  position:absolute;top:50%;width:5px;height:5px;border-radius:50%;transform:translate(-50%,-50%);
+  background:var(--line-2);
+}
+[data-view="semantic-zoom"] .sz-zoom .lvl{
+  font-size:10px;color:var(--accent);min-width:74px;text-align:right;
+}
+
+/* ── the stage: one canvas, left→right phase bands, ~1080px ── */
+[data-view="semantic-zoom"] .sz-stage{position:relative;width:1080px;height:476px;}
+[data-view="semantic-zoom"] .sz-svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1;}
+[data-view="semantic-zoom"] .sz-bands{position:absolute;inset:0;z-index:0;display:grid;
+  grid-template-columns:296px 214px 286px 284px;}
+[data-view="semantic-zoom"] .sz-band{border-right:1px dashed var(--line);}
+[data-view="semantic-zoom"] .sz-band:last-child{border-right:none;}
+[data-view="semantic-zoom"] .sz-band .ph{
+  font:600 10px/1 var(--mono);letter-spacing:.14em;color:var(--faint);
+  text-transform:uppercase;padding:14px 0 0 20px;
+}
+[data-view="semantic-zoom"] .sz-band .ph .c{color:#4a525c;font-weight:400;letter-spacing:0;}
+[data-view="semantic-zoom"] .sz-nodes{position:absolute;inset:0;z-index:2;}
+
+/* ── GHOST: dashed rounded-rect = pending / not-yet-materialized step ── */
+[data-view="semantic-zoom"] .ghost{
+  position:absolute;border:1.5px dashed var(--line-2);border-radius:9px;background:transparent;
+  display:flex;flex-direction:column;justify-content:center;gap:5px;padding:11px 13px;
+}
+[data-view="semantic-zoom"] .ghost .gname{font-size:11.5px;color:var(--faint);display:flex;align-items:center;gap:7px;}
+[data-view="semantic-zoom"] .ghost .gname .d{font-size:11px;}
+[data-view="semantic-zoom"] .ghost .gsub{font-size:9.5px;color:#454d57;}
+
+/* ── SOLID CARD: realized/active step (subtle bg, faint shadow, corner status dot) ── */
+[data-view="semantic-zoom"] .card-n{
+  position:absolute;background:var(--panel);border:1px solid var(--line);border-radius:9px;
+  padding:10px 12px 11px;box-shadow:0 1px 3px rgba(0,0,0,.45);
+}
+[data-view="semantic-zoom"] .card-n .dot{
+  position:absolute;top:9px;right:10px;font-size:11px;line-height:1;
+}
+[data-view="semantic-zoom"] .card-n .cn{
+  font-size:11.5px;color:var(--fg);padding-right:16px;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;
+}
+[data-view="semantic-zoom"] .card-n .csub{font-size:9.5px;color:var(--dim);margin-top:6px;}
+[data-view="semantic-zoom"] .card-n .csub .dur{color:var(--faint);}
+[data-view="semantic-zoom"] .card-n.fail{border-color:rgba(248,81,73,.42);background:rgba(248,81,73,.05);}
+[data-view="semantic-zoom"] .card-n.fail .csub .dur{color:var(--red);}
+[data-view="semantic-zoom"] .card-n.run{border-color:color-mix(in srgb,var(--accent) 40%,var(--line));
+  background:linear-gradient(180deg,rgba(91,157,255,.06),transparent),var(--panel);}
+
+/* ── AGGREGATE fan-node: the ×N collapsed silhouette (low-zoom representation) ── */
+[data-view="semantic-zoom"] .agg{
+  position:absolute;border-radius:9px;padding:10px 12px 11px;
+  background:var(--panel);border:1px solid var(--line);box-shadow:0 1px 3px rgba(0,0,0,.45);
+}
+/* stacked-paper silhouette behind the aggregate = "this is many" */
+[data-view="semantic-zoom"] .agg::before,[data-view="semantic-zoom"] .agg::after{
+  content:"";position:absolute;inset:0;border:1px solid var(--line);border-radius:9px;
+  background:var(--panel-2);z-index:-1;
+}
+[data-view="semantic-zoom"] .agg::before{transform:translate(4px,4px);}
+[data-view="semantic-zoom"] .agg::after{transform:translate(8px,8px);opacity:.6;}
+[data-view="semantic-zoom"] .agg .atop{display:flex;align-items:center;gap:7px;}
+[data-view="semantic-zoom"] .agg .an{font-size:11.5px;color:var(--fg);}
+[data-view="semantic-zoom"] .agg .xn{
+  margin-left:auto;font-size:10px;color:var(--dim);
+  border:1px solid var(--line-2);border-radius:5px;padding:1px 6px;
+}
+[data-view="semantic-zoom"] .agg .asub{font-size:9.5px;color:var(--dim);margin-top:7px;}
+[data-view="semantic-zoom"] .agg.fail .xn{color:#ffa198;border-color:rgba(248,81,73,.4);}
+
+/* ── MATERIALIZED fan: a thin "lens" frame that brackets the instances that bloomed in place ── */
+[data-view="semantic-zoom"] .lens{
+  position:absolute;border:1px solid color-mix(in srgb,var(--accent) 26%,var(--line));
+  border-radius:11px;background:rgba(91,157,255,.025);
+}
+[data-view="semantic-zoom"] .lens .ltag{
+  position:absolute;top:-8px;left:14px;font-size:9px;letter-spacing:.06em;
+  color:var(--accent);background:var(--bg);padding:0 7px;
+}
+[data-view="semantic-zoom"] .lens .ltag .x{color:var(--dim);}
+/* the small instance cards that materialized inside the lens */
+[data-view="semantic-zoom"] .inst{
+  position:absolute;background:var(--bg);border:1px solid var(--line);border-radius:7px;
+  padding:7px 9px;box-shadow:0 1px 2px rgba(0,0,0,.4);
+}
+[data-view="semantic-zoom"] .inst .iname{font-size:10.5px;color:var(--fg);display:flex;align-items:center;gap:6px;}
+[data-view="semantic-zoom"] .inst .iname .d{font-size:10px;flex:none;}
+[data-view="semantic-zoom"] .inst .iname .t{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+[data-view="semantic-zoom"] .inst .imeta{font-size:9px;color:var(--faint);margin-top:5px;}
+[data-view="semantic-zoom"] .inst.fail{border-color:rgba(248,81,73,.4);background:rgba(248,81,73,.05);}
+[data-view="semantic-zoom"] .inst.run{border-color:color-mix(in srgb,var(--accent) 38%,var(--line));}
+/* a dashed instance-slot inside a still-running fan = an upcoming agent not yet spawned */
+[data-view="semantic-zoom"] .inst.ghost-i{
+  background:transparent;border:1.5px dashed var(--line-2);box-shadow:none;
+}
+[data-view="semantic-zoom"] .inst.ghost-i .iname{color:var(--faint);}
+
+/* ── DECISION / verify gate: accent-outlined diamond ── */
+[data-view="semantic-zoom"] .gate{
+  position:absolute;width:34px;height:34px;transform:rotate(45deg);
+  border:1.5px solid var(--accent);border-radius:7px;
+  background:color-mix(in srgb,var(--accent) 8%,var(--bg));z-index:3;
+}
+[data-view="semantic-zoom"] .gate.fail-gate{border-color:var(--red);background:color-mix(in srgb,var(--red) 9%,var(--bg));}
+[data-view="semantic-zoom"] .gate .glab{
+  position:absolute;inset:0;transform:rotate(-45deg);display:flex;align-items:center;justify-content:center;
+  font-size:12px;
+}
+[data-view="semantic-zoom"] .gate-cap{
+  position:absolute;z-index:3;font-size:9px;color:var(--dim);text-align:center;width:90px;
+}
+
+/* dimension bracket annotation (spec-sheet metaphor) */
+[data-view="semantic-zoom"] .dim{position:absolute;z-index:3;display:flex;flex-direction:column;align-items:center;}
+[data-view="semantic-zoom"] .dim .bar{width:100%;height:5px;border:1px solid var(--line-2);border-bottom:none;border-radius:2px 2px 0 0;}
+[data-view="semantic-zoom"] .dim .txt{font-size:8.5px;color:var(--faint);margin-top:3px;letter-spacing:.04em;}
+
+[data-view="semantic-zoom"] .g-done{color:var(--green);}
+[data-view="semantic-zoom"] .g-fail{color:var(--red);}
+[data-view="semantic-zoom"] .g-run{color:var(--accent);}
+[data-view="semantic-zoom"] .pulse{animation:sz-pulse 1.7s ease-in-out infinite;}
+@keyframes sz-pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+/* legend footer */
+[data-view="semantic-zoom"] .sz-foot{
+  display:flex;flex-wrap:wrap;gap:16px;align-items:center;
+  padding:10px 18px;border-top:1px solid var(--line);color:var(--faint);font-size:10px;
+}
+[data-view="semantic-zoom"] .sz-foot .k{display:inline-flex;align-items:center;gap:6px;}
+[data-view="semantic-zoom"] .sz-foot .sw-ghost{width:20px;height:11px;border:1.5px dashed var(--line-2);border-radius:4px;}
+[data-view="semantic-zoom"] .sz-foot .sw-card{width:20px;height:11px;border:1px solid var(--line);border-radius:4px;background:var(--panel);}
+[data-view="semantic-zoom"] .sz-foot .sw-dia{width:11px;height:11px;border:1.5px solid var(--accent);border-radius:2px;transform:rotate(45deg);}
+</style>
+
+<h3>Semantic zoom</h3>
+<p class="cap"><em>best for: one fluid run view with no tabs</em> — the SAME canvas at every zoom: dragging the detail slider morphs the run between the plan <i>shape</i> (zoomed out: fan-outs are single ×N nodes, dashed where pending) and the per-instance reality (zoomed in: each fan-out <b>materializes into individual agent cards in place</b>). <b>Stance: ONE run view</b> — Progress and Execution were the same run at two zooms, so they collapse into a slider; Plan stays a separate run-free template. <b>Loop-until-done</b> reads as a dashed-accent back-edge off the verify diamond (re-runs land as new instances inside the same fan, the LOD just deepens); a <b>tournament</b> is the same gate cascaded — each bracket round is one fan-out feeding the next, so deeper zoom reveals more rounds rather than a new layout. The frame below is held at <b>mid-zoom</b>: RESEARCH has bloomed into its 5 solid instance cards (a realized fan-out) while SYNTHESIZE is still a dashed ghost — the article's "solid card amid dashed placeholders," in one view.</p>
+
+<div class="canvas">
+
+  <!-- run header + zoom/detail slider -->
+  <div class="sz-head">
+    <span class="nm">modal-rust-plan-research</span>
+    <span class="live"><span class="g-run pulse">◌</span> running</span>
+    <span class="meta">10 agents · 4 phases · 03:41 elapsed</span>
+    <div class="sz-zoom">
+      <span class="zl">plan shape</span>
+      <div class="sz-track">
+        <span class="tick" style="left:0%"></span>
+        <span class="tick" style="left:50%"></span>
+        <span class="tick" style="left:100%"></span>
+        <span class="fill"></span>
+        <span class="knob"></span>
+      </div>
+      <span class="zl">instances</span>
+      <span class="lvl">detail: mid</span>
+    </div>
+  </div>
+
+  <!-- the single morphing stage -->
+  <div class="sz-stage">
+
+    <!-- phase bands (the plan skeleton is always present; nodes materialize within it) -->
+    <div class="sz-bands">
+      <div class="sz-band"><div class="ph">Research <span class="c">· fan-out ×5</span></div></div>
+      <div class="sz-band"><div class="ph">Design <span class="c">· single</span></div></div>
+      <div class="sz-band"><div class="ph">Review <span class="c">· verify ×3</span></div></div>
+      <div class="sz-band"><div class="ph">Synthesize <span class="c">· upcoming</span></div></div>
+    </div>
+
+    <svg class="sz-svg" viewBox="0 0 1080 476" preserveAspectRatio="none">
+      <defs>
+        <marker id="sz-arr" markerWidth="7" markerHeight="7" refX="5.5" refY="3" orient="auto">
+          <path d="M0,0 L6,3 L0,6 Z" fill="var(--line-2)"/>
+        </marker>
+        <marker id="sz-arr-a" markerWidth="7" markerHeight="7" refX="5.5" refY="3" orient="auto">
+          <path d="M0,0 L6,3 L0,6 Z" fill="var(--accent)"/>
+        </marker>
+        <marker id="sz-arr-f" markerWidth="7" markerHeight="7" refX="5.5" refY="3" orient="auto">
+          <path d="M0,0 L6,3 L0,6 Z" fill="rgba(248,81,73,.55)"/>
+        </marker>
+      </defs>
+
+      <!-- merge: the 5 materialized RESEARCH instances fan-IN to the DESIGN card.
+           Edges dock to the lens frame, not to each card, so the spine stays calm as the fan blooms. -->
+      <path d="M256,236 H300" stroke="var(--line-2)" stroke-width="1.5" fill="none" marker-end="url(#sz-arr)"/>
+
+      <!-- DESIGN done -> review fan-out via the VERIFY gate diamond -->
+      <path d="M510,236 H548" stroke="var(--line-2)" stroke-width="1.5" fill="none"/>
+      <!-- gate -> 3 reviewers (aggregate node sits to the right of the diamond) -->
+      <path d="M588,236 H620" stroke="var(--accent)" stroke-width="1.5" fill="none" marker-end="url(#sz-arr-a)"/>
+
+      <!-- REVIEW aggregate -> SYNTHESIZE ghost: dashed because the target is pending -->
+      <path d="M876,236 H924" stroke="var(--line-2)" stroke-width="1.5" stroke-dasharray="5 4" fill="none" marker-end="url(#sz-arr)"/>
+
+      <!-- LOOP-UNTIL-DONE: dashed accent back-edge from the verify diamond returning to the top of DESIGN
+           (a failed/insufficient review loops back; the re-run lands as a NEW instance in the same fan) -->
+      <path d="M568,232 H545 Q536,232 536,222 V158 Q536,148 526,148 H390 Q380,148 380,158 V210"
+            stroke="var(--accent)" stroke-width="1.4" stroke-dasharray="5 4" fill="none"
+            opacity=".7" marker-end="url(#sz-arr-a)"/>
+    </svg>
+
+    <div class="sz-nodes">
+
+      <!-- ════ RESEARCH: a MATERIALIZED fan-out — bloomed into 5 solid instance cards in place ════ -->
+      <!-- the lens frame brackets the instances that the zoom revealed; the fan-in edge docks to it -->
+      <div class="lens" style="left:20px;top:64px;width:236px;height:344px;">
+        <span class="ltag">research <span class="x">×5</span> · materialized · 5/5 ●</span>
+      </div>
+      <div class="inst" style="left:36px;top:84px;width:204px;">
+        <div class="iname"><span class="d g-done">●</span><span class="t">client-availability</span></div>
+        <div class="imeta">00:00→01:48 · 1m48s</div>
+      </div>
+      <div class="inst" style="left:36px;top:146px;width:204px;">
+        <div class="iname"><span class="d g-done">●</span><span class="t">connection-strategy</span></div>
+        <div class="imeta">00:00→02:05 · 2m05s</div>
+      </div>
+      <div class="inst" style="left:36px;top:208px;width:204px;">
+        <div class="iname"><span class="d g-done">●</span><span class="t">data-contract</span></div>
+        <div class="imeta">00:00→01:32 · 1m32s</div>
+      </div>
+      <div class="inst" style="left:36px;top:270px;width:204px;">
+        <div class="iname"><span class="d g-done">●</span><span class="t">graph-viz</span></div>
+        <div class="imeta">00:00→02:10 · 2m10s</div>
+      </div>
+      <div class="inst" style="left:36px;top:332px;width:204px;">
+        <div class="iname"><span class="d g-done">●</span><span class="t">ts-stack</span></div>
+        <div class="imeta">00:00→01:20 · 1m20s</div>
+      </div>
+      <!-- dimension bracket annotating the fan-out's ×5 height (spec-sheet metaphor) -->
+      <div class="dim" style="left:20px;top:418px;width:236px;">
+        <div class="bar"></div><div class="txt">fan-out ×5 · all done</div>
+      </div>
+
+      <!-- ════ DESIGN: single solid card (already realized, ●done) ════ -->
+      <div class="card-n" style="left:300px;top:212px;width:160px;">
+        <span class="dot g-done">●</span>
+        <div class="cn">synthesize-approach</div>
+        <div class="csub">02:10→03:40 · <span class="dur">1m30s</span></div>
+      </div>
+
+      <!-- ════ VERIFY GATE: accent diamond between DESIGN and REVIEW ════ -->
+      <div class="gate" style="left:551px;top:219px;"><span class="glab g-run pulse">◌</span></div>
+      <div class="gate-cap" style="left:523px;top:260px;">verify gate · loops on fail</div>
+
+      <!-- ════ REVIEW: still an AGGREGATE ×3 node at this zoom (running, 1 failed) ════
+           At mid-zoom the in-progress fan stays collapsed; pushing the slider right would bloom it
+           into 2 ◌running + 1 ✕failed instance cards exactly like RESEARCH above. -->
+      <div class="agg fail run" style="left:620px;top:206px;width:198px;">
+        <div class="atop">
+          <span class="g-run pulse">◌</span>
+          <span class="an">review:*</span>
+          <span class="xn">×3</span>
+        </div>
+        <div class="asub">2 running · <span class="g-fail">1 failed</span> · adversarial</div>
+      </div>
+      <div class="dim" style="left:620px;top:264px;width:198px;">
+        <div class="bar"></div><div class="txt">drag zoom → blooms to 3 instances</div>
+      </div>
+
+      <!-- ════ SYNTHESIZE: a DASHED GHOST — upcoming, not yet materialized ════ -->
+      <div class="ghost" style="left:924px;top:206px;width:148px;height:58px;">
+        <div class="gname"><span class="d">◌</span>lock-decisions</div>
+        <div class="gsub">upcoming · blocked on verify</div>
+      </div>
+      <div class="dim" style="left:924px;top:272px;width:148px;">
+        <div class="bar" style="border-style:dashed;"></div><div class="txt">pending · 0 instances</div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="sz-foot">
+    <span class="k"><span class="sw-ghost"></span> pending step (ghost)</span>
+    <span class="k"><span class="sw-card"></span> realized / running step</span>
+    <span class="k"><span class="sw-dia"></span> verify gate</span>
+    <span class="k">● done <span class="g-run">◌</span> running <span class="g-fail">✕</span> failed</span>
+    <span class="k">slider drives level-of-detail — fan-outs materialize in place, no tab switch</span>
+  </div>
+
+</div>
+</section>
+
+<section class="card" data-view="split-detail">
+<style>
+[data-view="split-detail"]{--bg:#0d1117;--panel:#11161c;--panel-2:#0b0f14;--fg:#e6edf3;--dim:#8b949e;--faint:#6e7681;--line:#21262d;--line-2:#30363d;--accent:#5b9dff;--green:#3fb950;--amber:#d29922;--red:#f85149;--purple:#a371f7;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;}
+[data-view="split-detail"] .canvas{padding:0;overflow:auto;background:var(--bg);}
+/* run header */
+[data-view="split-detail"] .sd-head{display:flex;align-items:center;gap:14px;padding:11px 16px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,rgba(91,157,255,.04),transparent);}
+[data-view="split-detail"] .sd-head .ttl{font:600 13px/1 var(--mono);color:var(--fg);}
+[data-view="split-detail"] .sd-head .sub{font:400 11px/1 var(--mono);color:var(--dim);}
+[data-view="split-detail"] .sd-head .sub b{color:var(--accent);font-weight:600;}
+[data-view="split-detail"] .sd-head .spacer{flex:1;}
+[data-view="split-detail"] .sd-head .ctl{font:500 10px/1 var(--mono);color:var(--dim);border:1px solid var(--line-2);border-radius:6px;padding:5px 9px;letter-spacing:.04em;}
+[data-view="split-detail"] .sd-head .ctl.on{color:var(--accent);border-color:rgba(91,157,255,.4);background:rgba(91,157,255,.06);}
+
+/* === TOP: painted plan DAG ====================================== */
+[data-view="split-detail"] .sd-dag{position:relative;height:210px;}
+[data-view="split-detail"] .sd-svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1;}
+[data-view="split-detail"] .sd-bands{position:absolute;inset:0;z-index:0;display:grid;grid-template-columns:230px 250px 290px 1fr;}
+[data-view="split-detail"] .sd-band{border-right:1px solid var(--line);padding:13px 0 0;}
+[data-view="split-detail"] .sd-band:last-child{border-right:none;}
+[data-view="split-detail"] .sd-band .ph{font:600 10px/1 var(--mono);letter-spacing:.15em;color:var(--faint);text-transform:uppercase;padding-left:20px;}
+[data-view="split-detail"] .sd-band .ph .n{color:var(--accent);opacity:.7;}
+[data-view="split-detail"] .sd-band .pht{font:400 9px/1.4 var(--mono);color:#4a525c;padding-left:20px;margin-top:5px;}
+[data-view="split-detail"] .sd-nodes{position:absolute;inset:0;z-index:2;}
+
+/* a node = a planned step painted with this run's status */
+[data-view="split-detail"] .nd{position:absolute;width:186px;background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:8px 10px;box-shadow:0 1px 2px rgba(0,0,0,.45);cursor:pointer;transition:border-color .12s,box-shadow .12s,background .12s;}
+[data-view="split-detail"] .nd:hover{border-color:var(--line-2);}
+[data-view="split-detail"] .nd .nm{display:flex;align-items:center;gap:7px;font:500 12px/1.15 var(--mono);color:var(--fg);}
+[data-view="split-detail"] .nd .nm .g{font-size:11px;line-height:1;flex:none;}
+[data-view="split-detail"] .nd .nm .cnt{margin-left:auto;font:600 9px/1 var(--mono);color:var(--faint);letter-spacing:.05em;}
+[data-view="split-detail"] .nd .meta{display:flex;justify-content:space-between;margin-top:6px;font:400 10px/1 var(--mono);color:var(--dim);}
+[data-view="split-detail"] .nd .meta .dur{color:var(--faint);}
+[data-view="split-detail"] .nd.fail{border-color:rgba(248,81,73,.4);}
+[data-view="split-detail"] .nd.fail .meta .dur{color:var(--red);}
+/* stacked silhouette behind a fan-out aggregate */
+[data-view="split-detail"] .nd.fan::before,[data-view="split-detail"] .nd.fan::after{content:"";position:absolute;left:5px;right:5px;height:100%;border:1px solid var(--line-2);border-radius:7px;background:var(--panel-2);z-index:-1;}
+[data-view="split-detail"] .nd.fan::before{top:5px;}
+[data-view="split-detail"] .nd.fan::after{top:10px;opacity:.55;}
+/* the SELECTED step — drives the detail region */
+[data-view="split-detail"] .nd.sel{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),0 0 0 5px rgba(91,157,255,.12);background:#121a26;}
+[data-view="split-detail"] .nd.sel .nm .cnt{color:var(--accent);}
+/* ghost / pending step: dashed, no fill */
+[data-view="split-detail"] .nd.ghost{background:transparent;border:1.5px dashed var(--line-2);box-shadow:none;color:var(--faint);cursor:default;}
+[data-view="split-detail"] .nd.ghost .nm{color:var(--faint);}
+[data-view="split-detail"] .nd.ghost .meta{color:#4a525c;}
+
+/* spine markers (fan-out / merge dots) */
+[data-view="split-detail"] .mk{position:absolute;z-index:3;width:11px;height:11px;border-radius:50%;background:var(--bg);border:2px solid var(--green);}
+[data-view="split-detail"] .mk.run{border-color:var(--accent);box-shadow:0 0 0 4px rgba(91,157,255,.12);}
+[data-view="split-detail"] .mk.pend{border-color:var(--line-2);border-style:dashed;}
+
+/* dimension bracket annotating the fan-out width */
+[data-view="split-detail"] .dim{position:absolute;z-index:3;font:500 9px/1 var(--mono);color:var(--faint);letter-spacing:.05em;}
+[data-view="split-detail"] .dim .bar{position:absolute;border-top:1px solid var(--line-2);height:5px;border-left:1px solid var(--line-2);border-right:1px solid var(--line-2);left:0;right:0;top:6px;}
+[data-view="split-detail"] .dim .lbl{position:absolute;top:9px;left:50%;transform:translateX(-50%);background:var(--bg);padding:0 5px;white-space:nowrap;}
+
+/* === BOTTOM: detail drawer for the selected step =============== */
+[data-view="split-detail"] .sd-detail{border-top:1px solid var(--line-2);background:var(--panel-2);}
+[data-view="split-detail"] .dt-head{display:flex;align-items:center;gap:10px;padding:9px 16px;border-bottom:1px solid var(--line);}
+[data-view="split-detail"] .dt-head .tab{font:600 11px/1 var(--mono);color:var(--accent);letter-spacing:.04em;display:flex;align-items:center;gap:7px;}
+[data-view="split-detail"] .dt-head .tab .g{font-size:11px;}
+[data-view="split-detail"] .dt-head .chip{font:500 10px/1 var(--mono);color:var(--dim);border:1px solid var(--line);border-radius:999px;padding:3px 9px;}
+[data-view="split-detail"] .dt-head .chip b.amber{color:var(--amber);font-weight:600;}
+[data-view="split-detail"] .dt-head .x{margin-left:auto;color:var(--faint);font:400 13px/1 var(--mono);}
+
+/* instance grid — the demoted Execution, now in-context */
+[data-view="split-detail"] .dt-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding:14px 16px 16px;}
+[data-view="split-detail"] .inst{background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:9px 11px;cursor:pointer;transition:border-color .12s;}
+[data-view="split-detail"] .inst:hover{border-color:var(--accent);}
+[data-view="split-detail"] .inst .ih{display:flex;align-items:center;gap:7px;font:500 11px/1.15 var(--mono);color:var(--fg);}
+[data-view="split-detail"] .inst .ih .g{font-size:10px;flex:none;}
+[data-view="split-detail"] .inst .ir{margin-top:6px;font:400 10px/1.35 var(--mono);color:var(--dim);}
+[data-view="split-detail"] .inst .im{display:flex;gap:12px;margin-top:7px;font:400 9px/1 var(--mono);color:var(--faint);}
+[data-view="split-detail"] .inst.fail{border-color:rgba(248,81,73,.45);}
+[data-view="split-detail"] .inst.fail .ir{color:#ffa198;}
+[data-view="split-detail"] .inst.running{border-color:rgba(91,157,255,.4);}
+/* selected instance → opens full DetailPanel (shown as right-rail callout) */
+[data-view="split-detail"] .inst.open{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),0 0 0 4px rgba(91,157,255,.1);}
+/* pending instance ghost inside the drawer */
+[data-view="split-detail"] .inst.ghost{background:transparent;border:1.5px dashed var(--line-2);cursor:default;}
+[data-view="split-detail"] .inst.ghost .ih{color:var(--faint);}
+
+[data-view="split-detail"] .hint{padding:0 16px 14px;font:400 10px/1.4 var(--mono);color:#4a525c;}
+[data-view="split-detail"] .hint code{color:var(--dim);}
+</style>
+
+<h3>Split / master-detail</h3>
+<p class="cap"><em>best for: the everyday "what ran &amp; what happened" loop</em> — the painted plan DAG up top is the map, and selecting any step opens a detail drawer of its actual instance cards below. <b>ONE run view with a detail region</b>: it folds the old Execution tab into an in-context drawer ("click to expand, not a diff tab"), keeping the template-vs-instances distinction as map-vs-detail rather than two redundant canvases. <em>Hardest patterns:</em> <b>fan-out-and-synthesize</b> is native (an aggregate node up top, its N instances in the drawer). A <b>loop-until-done</b> reads as a verify diamond with a dashed accent back-edge in the DAG; selecting the loop step lists each iteration as a dated instance row in the drawer (re-runs stack chronologically). A <b>tournament</b> selects a round to reveal that round's matchups as instances, with eliminated branches greyed — the bracket stays in the map, the per-match detail drops below.</p>
+
+<div class="canvas">
+
+  <!-- run header -->
+  <div class="sd-head">
+    <span class="ttl">modal-rust-plan-research</span>
+    <span class="sub">10 agents · 6m02s · 4 phases · <b>running</b></span>
+    <span class="spacer"></span>
+    <span class="ctl">Plan</span>
+    <span class="ctl on">Run</span>
+    <span class="ctl">Expand all</span>
+  </div>
+
+  <!-- ===== TOP: plan DAG painted with this run's status (RUNNING moment) ===== -->
+  <div class="sd-dag">
+    <div class="sd-bands">
+      <div class="sd-band"><div class="ph"><span class="n">①</span> RESEARCH</div><div class="pht">fan-out · 5 parallel</div></div>
+      <div class="sd-band"><div class="ph"><span class="n">②</span> DESIGN</div><div class="pht">synthesize</div></div>
+      <div class="sd-band"><div class="ph"><span class="n">③</span> REVIEW</div><div class="pht">adversarial · 3 judges</div></div>
+      <div class="sd-band"><div class="ph"><span class="n">④</span> SYNTHESIZE</div><div class="pht">lock decisions</div></div>
+    </div>
+
+    <!-- spine edges + the fan-out bracket -->
+    <svg class="sd-svg" viewBox="0 0 1080 300" preserveAspectRatio="none">
+      <!-- research(agg) -> design -->
+      <path d="M214 120 C 250 120, 250 120, 286 120" fill="none" stroke="#30363d" stroke-width="1.5"/>
+      <!-- design -> review(agg) -->
+      <path d="M474 120 C 510 120, 510 120, 546 120" fill="none" stroke="#30363d" stroke-width="1.5"/>
+      <!-- review(agg) -> synthesize(ghost): dashed because target is upcoming -->
+      <path d="M734 120 C 790 120, 790 120, 846 120" fill="none" stroke="#5b9dff" stroke-width="1.5" stroke-dasharray="5 4" opacity=".65"/>
+    </svg>
+
+    <div class="sd-nodes">
+      <!-- ① RESEARCH: realized fan-out (aggregate), all 5 done -->
+      <div class="nd fan" style="left:18px;top:90px">
+        <div class="nm"><span class="g g-done">●</span>research:&#36;{key}<span class="cnt">×5</span></div>
+        <div class="meta"><span class="g-done">5/5 done</span><span class="dur">2m41s</span></div>
+      </div>
+      <span class="mk" style="left:206px;top:114px" title="fan-out"></span>
+      <!-- dimension bracket annotating the ×5 fan width -->
+      <div class="dim" style="left:18px;top:158px;width:186px;height:22px"><span class="bar"></span><span class="lbl">×5 parallel</span></div>
+
+      <!-- ② DESIGN: 1 done -->
+      <div class="nd" style="left:264px;top:90px">
+        <div class="nm"><span class="g g-done">●</span>synthesize-approach<span class="cnt">×1</span></div>
+        <div class="meta"><span class="g-done">1/1 done</span><span class="dur">1m07s</span></div>
+      </div>
+      <span class="mk" style="left:540px;top:114px" title="merge"></span>
+
+      <!-- ③ REVIEW: SELECTED — fan-out IN PROGRESS (2 running, 1 failed) -->
+      <div class="nd fan sel" style="left:550px;top:90px">
+        <div class="nm"><span class="g g-run pulse">◌</span>review:&#36;{lens}<span class="cnt">×3</span></div>
+        <div class="meta"><span class="g-part">2 running · 1 failed</span><span class="dur g-run">live</span></div>
+      </div>
+      <span class="mk run pulse" style="left:728px;top:114px" title="fan-in (live)"></span>
+      <div class="dim" style="left:550px;top:158px;width:184px;height:22px"><span class="bar"></span><span class="lbl">×3 adversarial</span></div>
+
+      <!-- ④ SYNTHESIZE: PENDING ghost (dashed) — upstream review not yet merged -->
+      <div class="nd ghost" style="left:850px;top:90px">
+        <div class="nm"><span class="g">◌</span>lock-decisions<span class="cnt">×1</span></div>
+        <div class="meta"><span>upcoming</span><span class="dur">—</span></div>
+      </div>
+      <span class="mk pend" style="left:840px;top:114px" title="pending"></span>
+    </div>
+  </div>
+
+  <!-- ===== BOTTOM: detail region for the SELECTED step (REVIEW) ===== -->
+  <div class="sd-detail">
+    <div class="dt-head">
+      <span class="tab"><span class="g g-run pulse">◌</span>review:&#36;{lens}</span>
+      <span class="chip">×3 instances</span>
+      <span class="chip"><b class="amber">2 running · 1 failed</b></span>
+      <span class="chip">phase ③ · adversarial</span>
+      <span class="x">esc to close ✕</span>
+    </div>
+
+    <div class="dt-grid">
+      <!-- instance 1: running -->
+      <div class="inst running">
+        <div class="ih"><span class="g g-run pulse">◌</span>review:correctness</div>
+        <div class="ir">checking adapter-boundary invariants &amp; data-contract fidelity…</div>
+        <div class="im"><span>opus-4.8</span><span>3.1k tok</span><span>4 tools</span><span class="g-run">running</span></div>
+      </div>
+
+      <!-- instance 2: running -->
+      <div class="inst running">
+        <div class="ih"><span class="g g-run pulse">◌</span>review:security</div>
+        <div class="ir">scanning for secret leakage in journal capture path…</div>
+        <div class="im"><span>opus-4.8</span><span>2.7k tok</span><span>3 tools</span><span class="g-run">running</span></div>
+      </div>
+
+      <!-- instance 3: FAILED — selected, drives the full DetailPanel -->
+      <div class="inst fail open">
+        <div class="ih"><span class="g g-fail">✕</span>review:feasibility</div>
+        <div class="ir">✗ blocked: ELK partition cannot guarantee disjoint X for 14-agent fan</div>
+        <div class="im"><span>opus-4.8</span><span>1.9k tok</span><span class="g-fail">exit 1 · 38s</span></div>
+      </div>
+
+      <!-- the synthesize step's instance does NOT appear here — it's a ghost in the DAG -->
+    </div>
+
+    <div class="hint">Top = the plan painted with this run (aggregate per step). Bottom = the <code>selected</code> step's real <code>run.agents[]</code> as instance cards. Click an instance → full <code>DetailPanel</code> (state · model · tokens · tools · result + ✨). The dashed <code>lock-decisions</code> ghost has no instances yet, so it isn't selectable — the dashed-vs-solid grammar carries straight into the drawer.</div>
+  </div>
+
+</div>
+</section>
+
+<section class="card" data-view="badge-peek">
+<style>
+[data-view="badge-peek"]{--bg:#0d1117;--panel:#11161c;--panel-2:#0b0f14;--fg:#e6edf3;--dim:#8b949e;--faint:#6e7681;--line:#21262d;--line-2:#30363d;--accent:#5b9dff;--green:#3fb950;--amber:#d29922;--red:#f85149;--purple:#a371f7;--mono:ui-monospace,"SF Mono",Menlo,monospace;}
+[data-view="badge-peek"] .canvas{background:var(--bg);position:relative;overflow:visible;}
+[data-view="badge-peek"] .bp-stage{position:relative;width:1080px;height:480px;}
+
+/* phase bands */
+[data-view="badge-peek"] .bp-bands{position:absolute;inset:0;z-index:0;display:grid;grid-template-columns:280px 250px 290px 260px;}
+[data-view="badge-peek"] .bp-band{border-right:1px solid var(--line);}
+[data-view="badge-peek"] .bp-band:last-child{border-right:none;}
+[data-view="badge-peek"] .bp-band .ph{font:600 10px/1 var(--mono);letter-spacing:.14em;color:var(--faint);text-transform:uppercase;padding:14px 0 0 20px;}
+[data-view="badge-peek"] .bp-band .ph-t{font:400 10px/1.4 var(--mono);color:#4a525c;padding:5px 0 0 20px;}
+
+/* edges */
+[data-view="badge-peek"] .bp-svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1;}
+
+/* node layer */
+[data-view="badge-peek"] .bp-nodes{position:absolute;inset:0;z-index:2;}
+
+/* a realized / active step = solid card */
+[data-view="badge-peek"] .step{position:absolute;width:212px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 12px;box-shadow:0 1px 2px rgba(0,0,0,.45);cursor:pointer;transition:border-color .12s,box-shadow .12s;}
+[data-view="badge-peek"] .step:hover{border-color:var(--line-2);box-shadow:0 2px 10px rgba(0,0,0,.5);}
+[data-view="badge-peek"] .step.is-open{border-color:rgba(91,157,255,.55);box-shadow:0 0 0 1px rgba(91,157,255,.25),0 6px 22px rgba(0,0,0,.55);}
+[data-view="badge-peek"] .step .nm{display:flex;align-items:center;gap:7px;font:500 12px/1.2 var(--mono);color:var(--fg);}
+[data-view="badge-peek"] .step .nm .g{font-size:12px;line-height:1;flex:none;}
+[data-view="badge-peek"] .step .nm .caret{margin-left:auto;color:var(--faint);font-size:10px;flex:none;}
+[data-view="badge-peek"] .step.is-open .nm .caret{color:var(--accent);}
+[data-view="badge-peek"] .step .meta{display:flex;justify-content:space-between;align-items:center;margin-top:8px;font:400 10px/1 var(--mono);color:var(--dim);}
+[data-view="badge-peek"] .step .meta .dur{color:var(--faint);}
+[data-view="badge-peek"] .step.fail{border-color:rgba(248,81,73,.4);}
+
+/* the badge cluster on a fanned step — count-per-status, the heart of the design */
+[data-view="badge-peek"] .badges{display:inline-flex;align-items:center;gap:6px;}
+[data-view="badge-peek"] .bdg{display:inline-flex;align-items:center;gap:3px;font:600 10px/1 var(--mono);padding:2px 6px 2px 5px;border-radius:999px;border:1px solid transparent;}
+[data-view="badge-peek"] .bdg .d{font-size:9px;line-height:1;}
+[data-view="badge-peek"] .bdg.b-done{background:rgba(63,185,80,.12);border-color:rgba(63,185,80,.3);color:#56d364;}
+[data-view="badge-peek"] .bdg.b-run{background:rgba(91,157,255,.12);border-color:rgba(91,157,255,.32);color:#79b3ff;}
+[data-view="badge-peek"] .bdg.b-fail{background:rgba(248,81,73,.14);border-color:rgba(248,81,73,.35);color:#ff7b72;}
+[data-view="badge-peek"] .bdg.b-ghost{background:transparent;border:1px dashed var(--line-2);color:var(--faint);}
+[data-view="badge-peek"] .fan-x{font:600 10px/1 var(--mono);color:var(--faint);}
+
+/* decision / verify gate = accent-outlined diamond */
+[data-view="badge-peek"] .gate{position:absolute;z-index:3;width:30px;height:30px;transform:rotate(45deg);border:1.5px solid var(--accent);border-radius:6px;background:var(--panel);box-shadow:0 0 0 4px rgba(91,157,255,.08);}
+[data-view="badge-peek"] .gate.fail{border-color:var(--red);box-shadow:0 0 0 4px rgba(248,81,73,.1);}
+[data-view="badge-peek"] .gate .gl{position:absolute;inset:0;transform:rotate(-45deg);display:flex;align-items:center;justify-content:center;font:700 12px/1 var(--mono);}
+[data-view="badge-peek"] .gate-lbl{position:absolute;z-index:3;font:600 9px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--faint);}
+
+/* fan-out spray marker */
+[data-view="badge-peek"] .marker{position:absolute;z-index:2;width:11px;height:11px;border-radius:50%;background:var(--bg);border:2px solid var(--green);box-shadow:0 0 0 4px rgba(63,185,80,.1);}
+
+/* a PENDING / not-yet-run step = dashed ghost (no fill) */
+[data-view="badge-peek"] .ghost{position:absolute;z-index:2;width:212px;border:1px dashed var(--line-2);border-radius:8px;padding:10px 12px;background:transparent;}
+[data-view="badge-peek"] .ghost .nm{display:flex;align-items:center;gap:7px;font:500 12px/1.2 var(--mono);color:var(--faint);}
+[data-view="badge-peek"] .ghost .nm .g{color:var(--faint);}
+[data-view="badge-peek"] .ghost .meta{margin-top:8px;font:400 10px/1 var(--mono);color:#475059;}
+
+/* THE PEEK popover — ephemeral, on demand; DAG itself stays compact */
+[data-view="badge-peek"] .peek{position:absolute;z-index:9;width:296px;background:var(--panel-2);border:1px solid var(--line-2);border-radius:10px;box-shadow:0 10px 34px rgba(0,0,0,.6);padding:0;}
+[data-view="badge-peek"] .peek::before{content:"";position:absolute;left:42px;top:-7px;width:12px;height:12px;background:var(--panel-2);border-left:1px solid var(--line-2);border-top:1px solid var(--line-2);transform:rotate(45deg);}
+[data-view="badge-peek"] .peek-h{display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--line);}
+[data-view="badge-peek"] .peek-h .pt{font:600 11px/1.2 var(--mono);color:var(--fg);}
+[data-view="badge-peek"] .peek-h .pc{margin-left:auto;font:400 10px/1 var(--mono);color:var(--dim);}
+[data-view="badge-peek"] .peek-list{padding:5px;max-height:212px;overflow:auto;}
+[data-view="badge-peek"] .inst{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;cursor:pointer;}
+[data-view="badge-peek"] .inst:hover{background:rgba(91,157,255,.08);}
+[data-view="badge-peek"] .inst .g{font-size:11px;line-height:1;flex:none;width:11px;text-align:center;}
+[data-view="badge-peek"] .inst .il{font:500 11px/1.2 var(--mono);color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;}
+[data-view="badge-peek"] .inst .id{font:400 10px/1 var(--mono);color:var(--faint);flex:none;}
+[data-view="badge-peek"] .inst.fail .id{color:var(--red);}
+[data-view="badge-peek"] .inst .arrow{color:var(--faint);font-size:11px;flex:none;opacity:0;transition:opacity .1s;}
+[data-view="badge-peek"] .inst:hover .arrow{opacity:1;color:var(--accent);}
+[data-view="badge-peek"] .peek-f{padding:7px 12px;border-top:1px solid var(--line);font:400 10px/1.3 var(--mono);color:var(--faint);}
+[data-view="badge-peek"] .peek-f b{color:var(--dim);font-weight:600;}
+
+[data-view="badge-peek"] .g-done{color:var(--green);}
+[data-view="badge-peek"] .g-run{color:var(--accent);}
+[data-view="badge-peek"] .g-fail{color:var(--red);}
+[data-view="badge-peek"] .pulse{animation:bp-pulse 1.8s ease-in-out infinite;}
+@keyframes bp-pulse{0%,100%{opacity:1}50%{opacity:.4}}
+</style>
+
+<h3>Badge-Peek</h3>
+<p class="cap"><em>best for: a dense, stable run overview you drill on demand.</em> The plan DAG stays compact — a fanned step never grows; it wears a status-count badge cluster (<span style="font-family:var(--mono)">●3 ◌2 ✕1</span>) and the verify step is an accent diamond. Click/hover a step → an ephemeral <b>peek</b> lists its instances (label · status · duration); each row opens the DetailPanel. <b>Stance: ONE run view</b> (plan-shaped) + a throwaway popover — the badge answers "how many / which states" at a glance, the peek answers "which ones," the panel answers "everything about one." Plan stays its own separate view. <b>Loop-until-done</b>: the back-edge re-enters the same compact node; its badge just re-counts per pass (×pass shown in the peek footer) — the node never multiplies. <b>Tournament</b>: each round is one fanned step whose badge reads survivors (e.g. <span style="font-family:var(--mono)">●4 ✕4</span>); the peek lists winners↑ / eliminated↓ without widening the bracket. Shown mid-run: REVIEW is the live decision gate (correctness+security ◌ running, feasibility ✕ failed) with its peek open, so SYNTHESIZE is still a dashed ghost.</p>
+
+<div class="canvas">
+<div class="bp-stage">
+
+<div class="bp-bands">
+<div class="bp-band"><div class="ph">Research</div><div class="ph-t">fan-out ×5 · 00:00–02:10</div></div>
+<div class="bp-band"><div class="ph">Design</div><div class="ph-t">02:10–03:40</div></div>
+<div class="bp-band"><div class="ph">Review</div><div class="ph-t">verify ×3 · 03:40– …</div></div>
+<div class="bp-band"><div class="ph">Synthesize</div><div class="ph-t">upcoming</div></div>
+</div>
+
+<svg class="bp-svg" viewBox="0 0 1080 480" preserveAspectRatio="none">
+<defs>
+<marker id="bp-arr" markerWidth="7" markerHeight="7" refX="5.5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#30363d"/></marker>
+<marker id="bp-arr-a" markerWidth="7" markerHeight="7" refX="5.5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="rgba(91,157,255,.6)"/></marker>
+<marker id="bp-arr-g" markerWidth="7" markerHeight="7" refX="5.5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#30363d"/></marker>
+</defs>
+
+<!-- entry -> RESEARCH fan-out marker -->
+<path d="M12,150 H30" stroke="#30363d" stroke-width="1.5" fill="none"/>
+<!-- fan-out marker -> RESEARCH step -->
+<path d="M41,150 H48" stroke="#30363d" stroke-width="1.5" fill="none" marker-end="url(#bp-arr)"/>
+
+<!-- RESEARCH (right x=272) -> DESIGN (left x=300) -->
+<path d="M272,150 H300" stroke="#30363d" stroke-width="1.5" fill="none" marker-end="url(#bp-arr)"/>
+
+<!-- DESIGN (right x=512) -> REVIEW gate (diamond center x=556) -->
+<path d="M512,150 H544" stroke="#30363d" stroke-width="1.5" fill="none"/>
+<!-- gate -> REVIEW step -->
+<path d="M568,150 H590" stroke="rgba(91,157,255,.6)" stroke-width="1.5" fill="none" marker-end="url(#bp-arr-a)"/>
+
+<!-- REVIEW (right x=802) -> SYNTHESIZE ghost (left x=836): dashed = pending -->
+<path d="M802,150 H836" stroke="#30363d" stroke-width="1.5" stroke-dasharray="4 4" fill="none" marker-end="url(#bp-arr-g)"/>
+
+<!-- loop-until-done back-edge: dashed accent leaving the gate ABOVE the nodes, returning to DESIGN -->
+<path d="M556,132 V104 H406 V128" stroke="rgba(91,157,255,.5)" stroke-width="1.4" stroke-dasharray="5 4" fill="none" marker-end="url(#bp-arr-a)"/>
+</svg>
+
+<div class="bp-nodes">
+
+<!-- entry fan-out marker -->
+<div class="marker" style="left:30px;top:145px;" title="fan-out"></div>
+
+<!-- loop-until-done label on the back-edge -->
+<div class="gate-lbl" style="left:436px;top:97px;color:rgba(121,179,255,.75);background:var(--bg);padding:0 5px;">↺ loop-until-done</div>
+
+<!-- RESEARCH fanned step: compact, badge cluster (all 5 done) -->
+<div class="step" style="left:48px;top:128px;">
+  <div class="nm"><span class="g g-done">●</span>research:&#8727;<span class="fan-x">&#160;×5</span><span class="caret">▾ peek</span></div>
+  <div class="meta">
+    <span class="badges"><span class="bdg b-done"><span class="d">●</span>5</span></span>
+    <span class="dur">5/5 done · 2m10s</span>
+  </div>
+</div>
+
+<!-- DESIGN single step -->
+<div class="step" style="left:300px;top:128px;">
+  <div class="nm"><span class="g g-done">●</span>synthesize-approach</div>
+  <div class="meta"><span>02:10→03:40</span><span class="dur">1m30s</span></div>
+</div>
+
+<!-- REVIEW decision gate diamond -->
+<div class="gate fail" style="left:541px;top:135px;" title="adversarial verify"><div class="gl g-fail">◆</div></div>
+<div class="gate-lbl" style="left:531px;top:172px;">verify</div>
+
+<!-- REVIEW fanned step: LIVE — badge cluster ●? ◌2 ✕1, peek open -->
+<div class="step is-open" style="left:590px;top:128px;">
+  <div class="nm"><span class="g g-run pulse">◌</span>review:&#8727;<span class="fan-x">&#160;×3</span><span class="caret">▴ peek</span></div>
+  <div class="meta">
+    <span class="badges">
+      <span class="bdg b-run"><span class="d pulse">◌</span>2</span>
+      <span class="bdg b-fail"><span class="d">✕</span>1</span>
+    </span>
+    <span class="dur">2 running · 1 failed</span>
+  </div>
+</div>
+
+<!-- SYNTHESIZE: dashed GHOST (pending / not yet run) -->
+<div class="ghost" style="left:836px;top:128px;">
+  <div class="nm"><span class="g">◌</span>lock-decisions</div>
+  <div class="meta">upcoming · awaits REVIEW</div>
+</div>
+
+<!-- ===== THE PEEK popover, anchored below the open REVIEW step (ghost stays visible) ===== -->
+<div class="peek" style="left:580px;top:200px;">
+  <div class="peek-h">
+    <span class="g g-run pulse" style="font-size:11px">◌</span>
+    <span class="pt">review:&#8727; · instances</span>
+    <span class="pc">×3</span>
+  </div>
+  <div class="peek-list">
+    <div class="inst">
+      <span class="g g-run pulse">◌</span>
+      <span class="il">review:correctness</span>
+      <span class="id">running · 1m18s</span>
+      <span class="arrow">→</span>
+    </div>
+    <div class="inst">
+      <span class="g g-run pulse">◌</span>
+      <span class="il">review:security</span>
+      <span class="id">running · 1m04s</span>
+      <span class="arrow">→</span>
+    </div>
+    <div class="inst fail">
+      <span class="g g-fail">✕</span>
+      <span class="il">review:feasibility</span>
+      <span class="id">error · 21s</span>
+      <span class="arrow">→</span>
+    </div>
+  </div>
+  <div class="peek-f">click a row → <b>DetailPanel</b> (model · tokens · tools · result). 1 failure may trip the loop-until-done back-edge to DESIGN.</div>
+</div>
+
+</div>
+</div>
+</div>
+</section>
+
+<section class="card" data-view="two-kept">
+<style>
+[data-view="two-kept"]{--ink:#e6edf3;}
+[data-view="two-kept"] .canvas{background:var(--bg);position:relative;overflow:auto;padding:0;}
+
+/* ── view tab strip: only TWO views kept ── */
+[data-view="two-kept"] .tk-tabs{display:flex;align-items:center;gap:2px;padding:10px 14px 0;border-bottom:1px solid var(--line);}
+[data-view="two-kept"] .tk-tab{font:600 12px/1 var(--mono);letter-spacing:.04em;color:var(--dim);padding:8px 14px 10px;border-bottom:2px solid transparent;cursor:default;}
+[data-view="two-kept"] .tk-tab.on{color:var(--fg);border-bottom-color:var(--accent);}
+[data-view="two-kept"] .tk-tab .sub{color:var(--faint);font-weight:400;margin-left:6px;}
+
+/* ── run header + the DENSITY control (replaces Progress/Execution tabs) ── */
+[data-view="two-kept"] .tk-head{display:flex;align-items:center;gap:14px;padding:12px 16px;flex-wrap:wrap;}
+[data-view="two-kept"] .tk-runname{font:600 13px/1 var(--mono);color:var(--fg);}
+[data-view="two-kept"] .tk-runmeta{font:400 11px/1 var(--mono);color:var(--dim);}
+[data-view="two-kept"] .tk-runmeta .live{color:var(--accent);}
+[data-view="two-kept"] .tk-density{margin-left:auto;display:flex;align-items:center;gap:10px;}
+[data-view="two-kept"] .tk-density .dl{font:600 9px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--faint);}
+[data-view="two-kept"] .tk-seg{display:flex;background:var(--panel-2);border:1px solid var(--line-2);border-radius:8px;padding:2px;}
+[data-view="two-kept"] .tk-seg button{font:600 11px/1 var(--mono);color:var(--dim);background:none;border:0;padding:6px 13px;border-radius:6px;cursor:default;}
+[data-view="two-kept"] .tk-seg button.on{color:var(--fg);background:rgba(91,157,255,.16);box-shadow:inset 0 0 0 1px rgba(91,157,255,.4);}
+[data-view="two-kept"] .tk-seg button .ic{color:var(--faint);margin-right:6px;}
+[data-view="two-kept"] .tk-seg button.on .ic{color:var(--accent);}
+[data-view="two-kept"] .tk-densnote{flex-basis:100%;font:400 10px/1.4 var(--mono);color:var(--faint);margin:-4px 16px 0 0;text-align:right;}
+[data-view="two-kept"] .tk-densnote b{color:var(--dim);font-weight:600;}
+
+/* ── canvas stage with phase bands ── */
+[data-view="two-kept"] .tk-stage{position:relative;width:1060px;height:486px;margin:6px 0 4px;}
+[data-view="two-kept"] .tk-bands{position:absolute;inset:0;z-index:0;display:grid;grid-template-columns:200px 198px 372px 290px;}
+[data-view="two-kept"] .tk-band{border-right:1px solid var(--line);}
+[data-view="two-kept"] .tk-band:last-child{border-right:none;}
+[data-view="two-kept"] .tk-band .ph{font:600 10px/1 var(--mono);letter-spacing:.14em;color:var(--faint);text-transform:uppercase;padding:13px 0 0 18px;}
+[data-view="two-kept"] .tk-band .ph-t{font:400 10px/1.4 var(--mono);color:#4a525c;padding:5px 0 0 18px;}
+[data-view="two-kept"] .tk-svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1;}
+[data-view="two-kept"] .tk-nodes{position:absolute;inset:0;z-index:2;}
+
+/* ── status glyph colors ── */
+[data-view="two-kept"] .g-done{color:var(--green);}
+[data-view="two-kept"] .g-fail{color:var(--red);}
+[data-view="two-kept"] .g-run{color:var(--accent);}
+
+/* ── SOLID realized card (an active/done step) ── */
+[data-view="two-kept"] .node{position:absolute;background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:8px 10px;box-shadow:0 1px 2px rgba(0,0,0,.4);}
+[data-view="two-kept"] .node .nm{display:flex;align-items:center;gap:7px;font:500 12px/1.2 var(--mono);color:var(--fg);}
+[data-view="two-kept"] .node .nm .g{font-size:11px;line-height:1;flex:none;}
+[data-view="two-kept"] .node .meta{display:flex;justify-content:space-between;gap:10px;margin-top:6px;font:400 10px/1 var(--mono);color:var(--dim);}
+[data-view="two-kept"] .node .meta .dur{color:var(--faint);}
+[data-view="two-kept"] .node.fail{border-color:rgba(248,81,73,.4);}
+[data-view="two-kept"] .node.fail .meta .dur{color:var(--red);}
+[data-view="two-kept"] .node.running{border-color:rgba(91,157,255,.42);}
+
+/* ── DASHED ghost (a pending / not-yet-run step) ── */
+[data-view="two-kept"] .ghost{position:absolute;border:1px dashed var(--line-2);border-radius:7px;background:transparent;padding:8px 10px;}
+[data-view="two-kept"] .ghost .nm{display:flex;align-items:center;gap:7px;font:500 12px/1.2 var(--mono);color:var(--faint);}
+[data-view="two-kept"] .ghost .nm .g{font-size:11px;color:var(--faint);}
+[data-view="two-kept"] .ghost .meta{margin-top:6px;font:400 10px/1 var(--mono);color:#4a525c;}
+
+/* ── fan-out / merge spine markers ── */
+[data-view="two-kept"] .marker{position:absolute;z-index:2;width:13px;height:13px;border-radius:50%;background:var(--bg);border:2px solid var(--green);box-shadow:0 0 0 4px rgba(63,185,80,.10);}
+[data-view="two-kept"] .marker.run{border-color:var(--accent);box-shadow:0 0 0 4px rgba(91,157,255,.12);}
+[data-view="two-kept"] .marker.ghost{border-style:dashed;border-color:var(--line-2);background:var(--bg);box-shadow:none;}
+
+/* ── the realized fan-out group: a template chip + its instance grid (mid density) ── */
+[data-view="two-kept"] .fan{position:absolute;border:1px solid var(--line);border-radius:9px;background:rgba(255,255,255,.012);box-shadow:0 1px 2px rgba(0,0,0,.4);}
+[data-view="two-kept"] .fan .fan-head{display:flex;align-items:center;gap:8px;padding:8px 11px 7px;border-bottom:1px solid var(--line);}
+[data-view="two-kept"] .fan .fan-head .ttl{font:600 12px/1 var(--mono);color:var(--fg);}
+[data-view="two-kept"] .fan .fan-head .cnt{font:400 10px/1 var(--mono);color:var(--accent);background:rgba(91,157,255,.12);padding:3px 6px;border-radius:5px;}
+[data-view="two-kept"] .fan .fan-head .agg{font:400 10px/1 var(--mono);color:var(--dim);margin-left:auto;}
+[data-view="two-kept"] .fan .fan-head .agg b.ok{color:var(--green);font-weight:600;}
+[data-view="two-kept"] .fan .fan-head .agg b.bad{color:var(--red);font-weight:600;}
+[data-view="two-kept"] .fan-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px;padding:9px 11px 11px;}
+[data-view="two-kept"] .inst{background:var(--panel-2);border:1px solid var(--line);border-radius:6px;padding:6px 8px;}
+[data-view="two-kept"] .inst .il{display:flex;align-items:center;gap:6px;font:500 11px/1.15 var(--mono);color:var(--ink);}
+[data-view="two-kept"] .inst .il .g{font-size:10px;flex:none;}
+[data-view="two-kept"] .inst .im{margin-top:4px;font:400 9px/1 var(--mono);color:var(--faint);display:flex;justify-content:space-between;gap:6px;}
+[data-view="two-kept"] .inst.fail{border-color:rgba(248,81,73,.4);}
+[data-view="two-kept"] .inst.fail .im{color:var(--red);}
+[data-view="two-kept"] .inst.run{border-color:rgba(91,157,255,.4);}
+
+/* ── footer legend ── */
+[data-view="two-kept"] .tk-foot{display:flex;gap:18px;align-items:center;padding:10px 16px 14px;border-top:1px solid var(--line);color:var(--faint);font:400 11px/1 var(--mono);flex-wrap:wrap;}
+[data-view="two-kept"] .tk-foot .k{display:inline-flex;align-items:center;gap:7px;}
+[data-view="two-kept"] .tk-foot .sw{width:24px;height:13px;border-radius:4px;display:inline-block;}
+[data-view="two-kept"] .tk-foot .sw.solid{background:var(--panel);border:1px solid var(--line);}
+[data-view="two-kept"] .tk-foot .sw.dash{border:1px dashed var(--line-2);}
+[data-view="two-kept"] .pulse{animation:tk-pulse 1.6s ease-in-out infinite;}
+@keyframes tk-pulse{0%,100%{opacity:1}50%{opacity:.4}}
+</style>
+
+<h3>Run — one view, density-controlled (two-views-kept)</h3>
+<p class="cap"><em>best for: collapsing Progress + Execution into one Run view without inventing a third tab.</em> The 1-vs-2 stance: keep exactly TWO views — <b>Plan</b> (the run-free template) and <b>Run</b> — but make Run a single canvas with an internal density segment (<b>Shape ↔ Mid ↔ Instances</b>) instead of separate Progress/Execution tabs; Progress was just Run at min density, Execution was Run at max density. <b>Loop &amp; tournament:</b> a loop-until-done back-edge is a dashed accent line off the verify diamond that re-enters the prior phase band — it draws once and survives every density level (density changes card detail, not topology); a tournament's bracket elimination is the same fan group with losing instances dimmed/struck and only the winner's merge edge feeding forward. <b>Verdict (argued below):</b> one Run + a density control beats a single fixed Run view — but it does <b>not</b> justify a third top-level tab, which is exactly why Progress/Execution should die.</p>
+
+<div class="canvas">
+
+  <!-- the only two top-level views kept -->
+  <div class="tk-tabs">
+    <div class="tk-tab">Plan <span class="sub">template</span></div>
+    <div class="tk-tab on">Run <span class="sub">this execution</span></div>
+  </div>
+
+  <!-- run header + the density control that REPLACES the Progress/Execution split -->
+  <div class="tk-head">
+    <span class="tk-runname">modal-rust-plan-research</span>
+    <span class="tk-runmeta">10 agents · 4 phases · <span class="live pulse">◌ running 03:58</span> · 1 failed</span>
+    <div class="tk-density">
+      <span class="dl">Density</span>
+      <div class="tk-seg">
+        <button><span class="ic">◻</span>Shape</button>
+        <button class="on"><span class="ic">▦</span>Mid</button>
+        <button><span class="ic">▤</span>Instances</button>
+      </div>
+    </div>
+    <div class="tk-densnote"><b>Shape</b> = old Progress (aggregate-per-step) &nbsp;·&nbsp; <b>Instances</b> = old Execution (every agent). Showing <b>Mid</b>: fan-outs reveal their instance grid inline, single steps stay as chips.</div>
+  </div>
+
+  <div class="tk-stage">
+
+    <!-- phase bands -->
+    <div class="tk-bands">
+      <div class="tk-band"><div class="ph">Research</div><div class="ph-t">00:00 – 02:10 · ●done</div></div>
+      <div class="tk-band"><div class="ph">Design</div><div class="ph-t">02:10 – 03:40 · ●done</div></div>
+      <div class="tk-band"><div class="ph">Review</div><div class="ph-t">03:40 – … · ◌running</div></div>
+      <div class="tk-band"><div class="ph">Synthesize</div><div class="ph-t">upcoming · pending</div></div>
+    </div>
+
+    <!-- spine edges -->
+    <svg class="tk-svg" viewBox="0 0 1060 486" preserveAspectRatio="none">
+      <defs>
+        <marker id="tk-arr" markerWidth="7" markerHeight="7" refX="5.5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#30363d"/></marker>
+        <marker id="tk-arr-a" markerWidth="7" markerHeight="7" refX="5.5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="rgba(91,157,255,.6)"/></marker>
+        <marker id="tk-arr-g" markerWidth="7" markerHeight="7" refX="5.5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#30363d"/></marker>
+      </defs>
+
+      <!-- RESEARCH fan group (done) -> fan-in marker -> DESIGN -->
+      <path d="M388,176 H410 V214 H424" stroke="#30363d" stroke-width="1.5" fill="none" marker-end="url(#tk-arr)"/>
+      <!-- DESIGN -> review fan-out marker (running) -->
+      <path d="M598,214 H626" stroke="#30363d" stroke-width="1.5" fill="none"/>
+      <path d="M626,214 V214" stroke="#30363d" stroke-width="1.5" fill="none"/>
+
+      <!-- review fan-out marker -> 3 reviewers -->
+      <path d="M639,214 V96 H660" stroke="rgba(91,157,255,.55)" stroke-width="1.5" fill="none" marker-end="url(#tk-arr-a)"/>
+      <path d="M639,214 H660" stroke="rgba(91,157,255,.55)" stroke-width="1.5" fill="none" marker-end="url(#tk-arr-a)"/>
+      <path d="M639,214 V332 H660" stroke="rgba(248,81,73,.45)" stroke-width="1.5" stroke-dasharray="4 3" fill="none" marker-end="url(#tk-arr)"/>
+
+      <!-- VERIFY GATE diamond is downstream of reviewers; only correctness+security feed it (both still running) -->
+      <!-- reviewers -> verify diamond (gate at ~x=890,y=214) -->
+      <path d="M832,96 H862 V196" stroke="rgba(91,157,255,.4)" stroke-width="1.5" stroke-dasharray="4 3" fill="none"/>
+      <path d="M832,214 H854" stroke="rgba(91,157,255,.4)" stroke-width="1.5" stroke-dasharray="4 3" fill="none"/>
+      <!-- failed reviewer dead-ends (no feed-forward) -->
+      <path d="M832,332 H856" stroke="rgba(248,81,73,.45)" stroke-width="1.5" stroke-dasharray="4 3" fill="none"/>
+
+      <!-- verify gate -> SYNTHESIZE (pending, dashed) -->
+      <path d="M926,214 H958" stroke="#30363d" stroke-width="1.5" stroke-dasharray="4 3" fill="none" marker-end="url(#tk-arr-g)"/>
+
+      <!-- loop-until-done back-edge: dashed accent leaves the gate and re-enters REVIEW band -->
+      <path d="M890,238 V452 H660 V366" stroke="var(--accent)" stroke-width="1.4" stroke-dasharray="2 4" fill="none" opacity=".8" marker-end="url(#tk-arr-a)"/>
+    </svg>
+
+    <div class="tk-nodes">
+
+      <!-- ===== RESEARCH: a REALIZED fan-out, shown as instance grid at Mid density ===== -->
+      <div class="fan" style="left:14px;top:54px;width:374px;">
+        <div class="fan-head">
+          <span class="g-run" style="display:none">◌</span>
+          <span class="ttl">research:*</span>
+          <span class="cnt">×5</span>
+          <span class="agg"><b class="ok">5</b>/5 done</span>
+        </div>
+        <div class="fan-grid">
+          <div class="inst"><div class="il"><span class="g g-done">●</span>client-availability</div><div class="im"><span>1m48s</span><span>8.3k</span></div></div>
+          <div class="inst"><div class="il"><span class="g g-done">●</span>connection-strategy</div><div class="im"><span>2m05s</span><span>9.1k</span></div></div>
+          <div class="inst"><div class="il"><span class="g g-done">●</span>data-contract</div><div class="im"><span>1m32s</span><span>6.0k</span></div></div>
+          <div class="inst"><div class="il"><span class="g g-done">●</span>graph-viz</div><div class="im"><span>2m10s</span><span>6.8k</span></div></div>
+          <div class="inst"><div class="il"><span class="g g-done">●</span>ts-stack</div><div class="im"><span>1m20s</span><span>5.5k</span></div></div>
+        </div>
+      </div>
+
+      <!-- research fan-in marker -->
+      <div class="marker" style="left:404px;top:208px;" title="fan-in (5 done)"></div>
+
+      <!-- ===== DESIGN: single step, stays a CHIP at Mid density ===== -->
+      <div class="node" style="left:424px;top:190px;width:174px;">
+        <div class="nm"><span class="g g-done">●</span>synthesize-approach</div>
+        <div class="meta"><span>02:10→03:40</span><span class="dur">1m30s</span></div>
+      </div>
+
+      <!-- review fan-out marker (running) -->
+      <div class="marker run" style="left:632px;top:208px;" title="fan-out ×3"></div>
+
+      <!-- ===== REVIEW: a fan-out IN PROGRESS — mix of running + failed instances ===== -->
+      <div class="fan" style="left:660px;top:60px;width:172px;">
+        <div class="fan-head">
+          <span class="ttl">review:*</span>
+          <span class="cnt">×3</span>
+          <span class="agg"><span class="g-run pulse">◌</span> <b class="bad">1</b> failed</span>
+        </div>
+        <div class="fan-grid" style="grid-template-columns:1fr;">
+          <div class="inst run"><div class="il"><span class="g g-run pulse">◌</span>correctness</div><div class="im"><span>running 0:18</span><span>—</span></div></div>
+          <div class="inst run"><div class="il"><span class="g g-run pulse">◌</span>security</div><div class="im"><span>running 0:18</span><span>—</span></div></div>
+          <div class="inst fail"><div class="il"><span class="g g-fail">✕</span>feasibility</div><div class="im"><span>failed · 0:11</span><span>2t</span></div></div>
+        </div>
+      </div>
+
+      <!-- ===== VERIFY GATE: accent diamond downstream of reviewers ===== -->
+      <div class="marker run" style="left:884px;top:208px;width:28px;height:28px;border-radius:5px;transform:rotate(45deg);background:var(--bg);border:2px solid var(--accent);box-shadow:0 0 0 4px rgba(91,157,255,.10);" title="verify gate"></div>
+      <div style="position:absolute;left:864px;top:240px;width:70px;text-align:center;font:600 9px/1.3 var(--mono);letter-spacing:.06em;color:var(--accent);">VERIFY<br><span style="color:var(--faint);font-weight:400;">2/3 in · loop ↺</span></div>
+
+      <!-- ===== SYNTHESIZE: a PENDING step — DASHED GHOST (not yet run) ===== -->
+      <div class="ghost" style="left:958px;top:190px;width:88px;">
+        <div class="nm"><span class="g">◌</span>lock-<br>decisions</div>
+        <div class="meta">upcoming</div>
+      </div>
+
+      <!-- loop-back annotation -->
+      <div style="position:absolute;left:700px;top:438px;font:400 9px/1 var(--mono);color:var(--accent);opacity:.85;">↺ loop-until-done: gate may re-spawn review</div>
+
+      <!-- dimension bracket annotation on the research fan-out (×5 spec-sheet metaphor) -->
+      <div style="position:absolute;left:14px;top:38px;width:374px;height:10px;border:1px solid var(--line-2);border-bottom:none;"></div>
+      <div style="position:absolute;left:170px;top:30px;font:400 9px/1 var(--mono);color:var(--faint);">×5 parallel</div>
+
+    </div>
+  </div>
+
+  <div class="tk-foot">
+    <span class="k"><span class="sw solid"></span> realized step / instance</span>
+    <span class="k"><span class="sw dash"></span> pending ghost (not yet run)</span>
+    <span class="k"><span class="g-done">●</span>done <span class="g-run">◌</span>running <span class="g-fail">✕</span>failed</span>
+    <span class="k" style="margin-left:auto;color:var(--dim);">drag <b style="color:var(--accent);font-weight:600;">Density →</b> to fold instances back into shape, or click any instance for its DetailPanel</span>
+  </div>
+
+</div>
+</section>
+</div></body></html>
