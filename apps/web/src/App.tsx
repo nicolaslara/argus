@@ -213,6 +213,58 @@ function FailureBanner({ info }: { info: FailureInfo }) {
   );
 }
 
+/** A compact, readable summary of a run's `args` (what data it was called on). Object →
+ * key: value rows; array → "N items: …"; string → the string; null/empty → null. */
+function formatArgs(args: unknown): string | null {
+  if (args == null) return null;
+  if (typeof args === 'string') return args.length > 160 ? `${args.slice(0, 160)}…` : args;
+  if (typeof args === 'number' || typeof args === 'boolean') return String(args);
+  if (Array.isArray(args)) {
+    if (args.length === 0) return null;
+    const head = args.slice(0, 4).map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join(', ');
+    return `${args.length} item${args.length === 1 ? '' : 's'}: ${head}${args.length > 4 ? ', …' : ''}`;
+  }
+  if (typeof args === 'object') {
+    const entries = Object.entries(args as Record<string, unknown>);
+    if (entries.length === 0) return null;
+    return entries
+      .slice(0, 5)
+      .map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`)
+      .join(' · ');
+  }
+  return null;
+}
+
+/** The Run-view OBJECTIVE band: the workflow's purpose + a readable "called on <args>" line
+ * (with a raw-JSON toggle). Surfaced as text in the MAIN view (not the sidebar). Renders
+ * nothing when there is neither an objective nor args. */
+function RunObjective({ objective, args }: { objective: string | null; args: unknown }) {
+  const [raw, setRaw] = useState(false);
+  const argsText = formatArgs(args);
+  const hasStructuredArgs = args != null && typeof args === 'object';
+  if (!objective && !argsText) return null;
+  return (
+    <div className="run-objective">
+      {objective ? <div className="run-objective-purpose">{objective}</div> : null}
+      {argsText ? (
+        <div className="run-objective-args">
+          <span className="run-objective-k">called on</span>
+          {raw && hasStructuredArgs ? (
+            <pre className="run-objective-raw">{JSON.stringify(args, null, 2)}</pre>
+          ) : (
+            <span className="run-objective-v">{argsText}</span>
+          )}
+          {hasStructuredArgs ? (
+            <button type="button" className="run-objective-toggle" onClick={() => setRaw((r) => !r)}>
+              {raw ? 'readable' : '{ } raw'}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function App() {
   const [view, setView] = useState<ViewMode>('run');
 
@@ -636,6 +688,13 @@ export function App() {
   // STEP 3: the failure banner content (null unless the selected run failed). Drives both the
   // Run-view banner and the per-instance failure-point ring (the dead agentIds).
   const failureInfo = useMemo(() => (view === 'run' ? deriveFailureInfo(run) : null), [view, run]);
+  // Canvas-views chrome: the project-wide "what's alive" count (NOW strip) + the selected run's
+  // human-readable objective (the workflow's stated purpose) for the objective band.
+  const nowRunning = useMemo(() => runs.filter((r) => r.status === 'running').length, [runs]);
+  const runObjective = useMemo(
+    () => (run ? workflows.find((w) => w.name === run.workflowName)?.description ?? null : null),
+    [run, workflows],
+  );
 
   return (
     <div className="argus-app">
@@ -802,12 +861,29 @@ export function App() {
               partial failure
             </span>
           ) : null}
+          {/* NOW strip: the project-wide "what's alive" signal (chrome, not a mode). */}
+          {nowRunning > 0 ? (
+            <span className="run-now" title={`${nowRunning} run${nowRunning === 1 ? '' : 's'} in progress in this project`}>
+              <span className="run-now-dot" aria-hidden="true" />
+              {nowRunning} running
+            </span>
+          ) : null}
+          {formatElapsed(run.durationMs) ? (
+            <span className="run-header-elapsed" title="run duration">
+              {formatElapsed(run.durationMs)}
+            </span>
+          ) : null}
         </div>
       ) : null}
 
-      {/* STEP 3: the failure banner — calm, dark, red-tinted, collapsible. Sits in the Run-view
-          chrome below the run-header; renders nothing unless the selected run failed. */}
-      {view === 'run' && failureInfo ? <FailureBanner info={failureInfo} /> : null}
+      {/* Run-view chrome below the run-header (stacks via flex): the run's human-readable
+          OBJECTIVE + what data it ran on (run.args), then the failure banner when it failed. */}
+      {view === 'run' && run ? (
+        <div className="run-chrome">
+          <RunObjective objective={runObjective} args={run.args} />
+          {failureInfo ? <FailureBanner info={failureInfo} /> : null}
+        </div>
+      ) : null}
 
       {/* P2: unplanned agents (label matched no plan node) surfaced honestly. */}
       {view === 'run' && overlayUnplanned > 0 ? (
