@@ -705,6 +705,7 @@ body {
   margin-top: auto; /* pin settings to the bottom of the strip */
 }
 .rail-icon {
+  position: relative;
   appearance: none;
   display: inline-flex;
   align-items: center;
@@ -928,6 +929,130 @@ body {
 }
 .rail-run-dot {
   opacity: 0.5;
+}
+
+/* ===== sidebar TREE (project ▸ workflow ▸ runs) ======================== */
+.rail-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.rail-treenode {
+  display: flex;
+  flex-direction: column;
+}
+.rail-tree-head {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: 6px;
+}
+.rail-tree-head.is-active {
+  background: rgba(91, 157, 255, 0.1);
+}
+.rail-twisty {
+  appearance: none;
+  background: transparent;
+  border: none;
+  color: var(--argus-dim);
+  width: 18px;
+  font-size: 10px;
+  cursor: pointer;
+  padding: 4px 0;
+  flex: none;
+}
+.rail-twisty:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.rail-tree-label {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  appearance: none;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 5px 6px 5px 0;
+  text-align: left;
+}
+.rail-tree-label:disabled {
+  cursor: default;
+}
+.rail-tree-kind {
+  color: #a371f7;
+  font-size: 11px;
+  flex: none;
+}
+.rail-tree-name {
+  flex: 1;
+  min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--argus-fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rail-tree-count {
+  flex: none;
+  font-size: 10px;
+  color: var(--argus-dim);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+/* a finished run row nested under its workflow: status glyph + inline meta (no name). */
+.rail-run-meta-inline {
+  padding-left: 0;
+  flex: 1;
+}
+
+/* ===== pinned-top LIVE region (one pulse for N running runs) =========== */
+.rail-live {
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed #2d333b;
+}
+.rail-live-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+}
+.rail-live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--argus-accent);
+  flex: none;
+  animation: argus-pulse 1.4s ease-in-out infinite; /* the ONE pulse for the whole region */
+}
+.rail-live-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--argus-accent);
+}
+.rail-live-count {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--argus-dim);
+}
+.rail-live-child-dot {
+  color: var(--argus-accent); /* static accent — children never pulse */
+}
+/* collapsed icon-strip live indicator (only when the panel is hidden). */
+.rail-strip-live {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--argus-accent);
+  animation: argus-pulse 1.4s ease-in-out infinite;
 }
 
 .rail-muted {

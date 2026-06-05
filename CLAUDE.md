@@ -47,3 +47,7 @@ argus visualizes exactly the kind of run these workflows produce. The journals
 this project's own workflow runs write under
 `~/.claude/projects/-Users-nicolas-devel-argus/<session>/workflows/` are argus's
 first real dataset — use them as fixtures.
+
+## Execution
+
+Always prefer running medium- to long-running tasks in background workflows or agents over running them directly. That keeps the main chat interactive. 
