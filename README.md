@@ -16,7 +16,7 @@ fullscreen graph of phases, agents, tokens, tools, and results.
 ![argus — the Run view: a workflow's plan painted with a run; fanned steps expand in place into their agent instances](docs/screenshots/argus-run-view.png)
 
 <p align="center">
-  <img src="docs/screenshots/argus-plan-view.png" width="49%" alt="Plan view — the workflow's intended DAG, parsed from its .js (fan-out, decision diamonds, phases)" />
+  <img src="docs/screenshots/feature-plan-blueprint.png" width="49%" alt="Plan view — the workflow's design as a dashed blueprint: fan-out, a decision diamond, phases" />
   <img src="docs/screenshots/argus-loop-decision.png" width="49%" alt="a loop-until-done container with a decision diamond and a ×4 fan-out" />
 </p>
 
@@ -55,6 +55,29 @@ use the left rail to pick any project / run.
 See [`project.md`](./project.md) for the product vision and the four design stances,
 [`TASKS.md`](./TASKS.md) for the active phase, and [`workpads/`](./workpads/) for the
 per-phase work.
+
+## A look around
+
+Real runs from this project and its sibling `modal-rust` (argus dogfoods on the very
+workflows it visualizes).
+
+**A multi-phase run, fan-outs expanded.** Each planned step is painted with the run's
+status; a `×N` fan-out expands in place to show every subagent, and a band reads the run's
+objective + what data it was called on.
+
+![merged Run view — modal-rust-materialize-workpads, fan-out expanded with an objective band](docs/screenshots/feature-run-materialize.png)
+
+**A failed run says why, where, and when.** A failure banner names the failing step, the
+error, and the elapsed-to-failure; the failing step is ringed red instead of reading as a
+clean "done".
+
+![failure banner — run failed at a named step, with the reason and elapsed](docs/screenshots/feature-failure.png)
+
+**Drill into any agent.** Clicking a subagent opens its actual prompt, result, tool
+timeline, tokens, and last activity — here, the API socket-close that actually killed the
+run (the root cause behind a generic "didn't finalize" error).
+
+![agent drill — the prompt, tool timeline, tokens, and the root-cause last activity](docs/screenshots/feature-drill.png)
 
 ## How it works
 
