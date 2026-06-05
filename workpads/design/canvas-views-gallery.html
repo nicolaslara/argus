@@ -1,0 +1,1325 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>argus · main-canvas view gallery</title>
+<style>
+:root{--bg:#0d1117;--panel:#11161c;--panel-2:#0b0f14;--fg:#e6edf3;--dim:#8b949e;--faint:#6e7681;--line:#21262d;--line-2:#30363d;--accent:#5b9dff;--green:#3fb950;--amber:#d29922;--red:#f85149;--purple:#a371f7;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,system-ui,sans-serif}
+*{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans)}body{padding:40px 40px 80px;line-height:1.5}
+.page-head{max-width:1080px;margin:0 auto 30px}.page-head h1{font-size:26px;margin:0 0 6px}.page-head .sub{color:var(--dim);font-size:15px}
+.gallery{display:grid;grid-template-columns:1fr;gap:24px;max-width:1180px;margin:0 auto}
+.card{background:var(--panel-2);border:1px solid var(--line);border-radius:12px;padding:18px 20px 22px}
+.card h3{margin:0 0 2px;font-size:16px}.card .cap{margin:4px 0 16px;font-size:13px;color:var(--dim)}.card .cap em{color:var(--fg);font-style:normal;font-weight:600}
+.canvas{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;font-family:var(--mono);font-size:12px;overflow:auto}
+.g-done{color:var(--green)}.g-part{color:var(--amber)}.g-fail{color:var(--red)}.g-kill{color:var(--amber)}.g-run{color:var(--accent)}
+.pulse{animation:pulse 1.8s ease-in-out infinite}@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.matrix-wrap{max-width:1080px;margin:48px auto 0}.matrix-wrap h2{font-size:19px;margin:0 0 14px}table.matrix{width:100%;border-collapse:collapse;font-size:13px}
+table.matrix th,table.matrix td{padding:9px 10px;border-bottom:1px solid var(--line);text-align:center}
+table.matrix th{color:var(--dim);font-size:11px;text-transform:uppercase}table.matrix td.name,table.matrix th.name{text-align:left;white-space:nowrap}table.matrix td.verdict{text-align:left;color:var(--dim);font-size:12px}
+.sc{display:inline-block;width:22px;height:22px;line-height:22px;border-radius:6px;font-weight:700}
+.s5{background:rgba(63,185,80,.2);color:#6ee787}.s4{background:rgba(63,185,80,.12);color:#56d364}.s3{background:rgba(210,153,34,.16);color:#e3b341}.s2{background:rgba(248,81,73,.14);color:#ff7b72}.s1{background:rgba(248,81,73,.22);color:#ffa198}
+.tag{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:2px 7px;border-radius:999px;margin-left:8px;vertical-align:middle}
+.t-ship{background:rgba(63,185,80,.16);color:#56d364}.t-later{background:rgba(210,153,34,.16);color:#e3b341}.t-never{background:rgba(248,81,73,.16);color:#ff7b72}
+.reco{max-width:1080px;margin:36px auto 0;background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:10px;padding:20px 24px}
+.reco h2{margin:0 0 10px;font-size:18px}.reco p{margin:0 0 12px;font-size:14px}.reco p:last-child{margin-bottom:0}.reco .win{color:var(--accent);font-weight:600}
+</style>
+</head>
+<body>
+<div class="page-head">
+<h1>argus · main-canvas view gallery</h1>
+<p class="sub">Six ways to render <b>one run</b> (modal-rust-plan-research · 10 agents · 6m02s · 1 failed). The question: does the canvas need view <i>types</i> beyond the shipped DAG to answer "what ran when" and "what happened"? The matrix + recommendation below are the answer (spoiler: mostly no — and that's the point).</p>
+</div>
+<div class="gallery">
+<section class="card" data-view="dag">
+<style>
+[data-view="dag"]{--bg:#0d1117;--panel:#11161c;--fg:#e6edf3;--dim:#8b949e;--faint:#6e7681;--line:#21262d;--accent:#5b9dff;--green:#3fb950;--amber:#d29922;--red:#f85149;--purple:#a371f7;--mono:ui-monospace,"SF Mono",Menlo,monospace;}
+[data-view="dag"] .canvas{background:var(--bg);border:1px solid var(--line);border-radius:8px;overflow:auto;position:relative;}
+[data-view="dag"] .dag-stage{position:relative;width:1080px;height:430px;}
+[data-view="dag"] .dag-svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1;}
+[data-view="dag"] .dag-bands{position:absolute;inset:0;z-index:0;display:grid;grid-template-columns:230px 220px 250px 200px 180px;}
+[data-view="dag"] .dag-band{border-right:1px solid var(--line);padding:14px 0 0 0;}
+[data-view="dag"] .dag-band:last-child{border-right:none;}
+[data-view="dag"] .dag-band .ph{font:600 10px/1 var(--mono);letter-spacing:.14em;color:var(--faint);text-transform:uppercase;padding-left:18px;}
+[data-view="dag"] .dag-band .ph-t{font:400 10px/1.4 var(--mono);color:#4a525c;padding-left:18px;margin-top:5px;}
+[data-view="dag"] .dag-nodes{position:absolute;inset:0;z-index:2;}
+[data-view="dag"] .node{position:absolute;width:182px;background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:9px 11px;box-shadow:0 1px 2px rgba(0,0,0,.4);}
+[data-view="dag"] .node .nm{display:flex;align-items:center;gap:7px;font:500 12px/1.2 var(--mono);color:var(--fg);}
+[data-view="dag"] .node .nm .g{font-size:12px;line-height:1;flex:none;}
+[data-view="dag"] .node .meta{display:flex;justify-content:space-between;margin-top:7px;font:400 10px/1 var(--mono);color:var(--dim);}
+[data-view="dag"] .node .meta .dur{color:var(--faint);}
+[data-view="dag"] .node.fail{border-color:rgba(248,81,73,.4);}
+[data-view="dag"] .node.fail .meta .dur{color:var(--red);}
+[data-view="dag"] .g-done{color:var(--green);}
+[data-view="dag"] .g-part{color:var(--amber);}
+[data-view="dag"] .g-fail{color:var(--red);}
+[data-view="dag"] .g-run{color:var(--accent);}
+[data-view="dag"] .marker{position:absolute;z-index:2;width:13px;height:13px;border-radius:50%;background:var(--bg);border:2px solid var(--green);box-shadow:0 0 0 4px rgba(63,185,80,.10);}
+[data-view="dag"] .marker.amber{border-color:var(--amber);box-shadow:0 0 0 4px rgba(210,153,34,.10);}
+</style>
+
+<h3>Flow DAG</h3>
+<p class="cap"><em>best for: structure &amp; dependencies</em> — shows the fan-out/fan-in shape and what feeds what, but flattens real timing (parallel siblings look identical even when their durations differ).</p>
+
+<div class="canvas">
+<div class="dag-stage">
+
+<div class="dag-bands">
+<div class="dag-band"><div class="ph">Research</div><div class="ph-t">00:00 – 02:10</div></div>
+<div class="dag-band"><div class="ph">Design</div><div class="ph-t">02:10 – 03:40</div></div>
+<div class="dag-band"><div class="ph">Review</div><div class="ph-t">03:40 – 05:10</div></div>
+<div class="dag-band"><div class="ph">Synthesize</div><div class="ph-t">05:10 – 06:02</div></div>
+<div class="dag-band"></div>
+</div>
+
+<svg class="dag-svg" viewBox="0 0 1080 430" preserveAspectRatio="none">
+<defs>
+<marker id="dag-arr" markerWidth="7" markerHeight="7" refX="5.5" refY="3" orient="auto">
+<path d="M0,0 L6,3 L0,6 Z" fill="#30363d"/>
+</marker>
+<marker id="dag-arr-f" markerWidth="7" markerHeight="7" refX="5.5" refY="3" orient="auto">
+<path d="M0,0 L6,3 L0,6 Z" fill="rgba(248,81,73,.55)"/>
+</marker>
+</defs>
+
+<!-- research fan-out dot -> 5 research cards -->
+<path d="M30,200 H56" stroke="#30363d" stroke-width="1.5" fill="none"/>
+<path d="M56,200 V70 H88" stroke="#30363d" stroke-width="1.5" fill="none" marker-end="url(#dag-arr)"/>
+<path d="M56,200 V135 H88" stroke="#30363d" stroke-width="1.5" fill="none" marker-end="url(#dag-arr)"/>
+<path d="M56,200 H88" stroke="#30363d" stroke-width="1.5" fill="none" marker-end="url(#dag-arr)"/>
+<path d="M56,200 V265 H88" stroke="#30363d" stroke-width="1.5" fill="none" marker-end="url(#dag-arr)"/>
+<path d="M56,200 V330 H88" stroke="#30363d" stroke-width="1.5" fill="none" marker-end="url(#dag-arr)"/>
+
+<!-- research cards (right edge x=270) fan-in to DESIGN (left edge x=308, mid y=200) -->
+<path d="M270,70 H290 V200 H308" stroke="#30363d" stroke-width="1.5" fill="none" marker-end="url(#dag-arr)"/>
+<path d="M270,135 H290 V200" stroke="#30363d" stroke-width="1.5" fill="none"/>
+<path d="M270,200 H308" stroke="#30363d" stroke-width="1.5" fill="none" marker-end="url(#dag-arr)"/>
+<path d="M270,265 H290 V200" stroke="#30363d" stroke-width="1.5" fill="none"/>
+<path d="M270,330 H290 V200 H308" stroke="#30363d" stroke-width="1.5" fill="none" marker-end="url(#dag-arr)"/>
+
+<!-- DESIGN (right x=490) -> review fan-out dot (x=520) -->
+<path d="M490,200 H520" stroke="#30363d" stroke-width="1.5" fill="none"/>
+<!-- review dot -> 3 review cards (left x=560) -->
+<path d="M533,200 V120 H560" stroke="#30363d" stroke-width="1.5" fill="none" marker-end="url(#dag-arr)"/>
+<path d="M533,200 H560" stroke="#30363d" stroke-width="1.5" fill="none" marker-end="url(#dag-arr)"/>
+<path d="M533,200 V285 H560" stroke="rgba(248,81,73,.45)" stroke-width="1.5" stroke-dasharray="4 3" fill="none" marker-end="url(#dag-arr-f)"/>
+
+<!-- review cards (right x=742) fan-in to SYNTHESIZE (left x=792, mid y=200) -->
+<path d="M742,120 H770 V200 H792" stroke="#30363d" stroke-width="1.5" fill="none" marker-end="url(#dag-arr)"/>
+<path d="M742,200 H792" stroke="#30363d" stroke-width="1.5" fill="none" marker-end="url(#dag-arr)"/>
+<!-- failed reviewer: dashed, does not feed forward (dead-ends) -->
+<path d="M742,285 H760" stroke="rgba(248,81,73,.45)" stroke-width="1.5" stroke-dasharray="4 3" fill="none"/>
+</svg>
+
+<div class="dag-nodes">
+
+<!-- research fan-out marker -->
+<div class="marker" style="left:24px;top:194px;" title="fan-out"></div>
+
+<!-- RESEARCH column (5 cards), x=88, right edge 270 -->
+<div class="node" style="left:88px;top:46px;">
+  <div class="nm"><span class="g g-done">●</span>client-availability</div>
+  <div class="meta"><span>00:00→01:48</span><span class="dur">1m48s</span></div>
+</div>
+<div class="node" style="left:88px;top:111px;">
+  <div class="nm"><span class="g g-done">●</span>connection-strategy</div>
+  <div class="meta"><span>00:00→02:05</span><span class="dur">2m05s</span></div>
+</div>
+<div class="node" style="left:88px;top:176px;">
+  <div class="nm"><span class="g g-done">●</span>data-contract</div>
+  <div class="meta"><span>00:00→01:32</span><span class="dur">1m32s</span></div>
+</div>
+<div class="node" style="left:88px;top:241px;">
+  <div class="nm"><span class="g g-done">●</span>graph-viz</div>
+  <div class="meta"><span>00:00→02:10</span><span class="dur">2m10s</span></div>
+</div>
+<div class="node" style="left:88px;top:306px;">
+  <div class="nm"><span class="g g-done">●</span>ts-stack</div>
+  <div class="meta"><span>00:00→01:20</span><span class="dur">1m20s</span></div>
+</div>
+
+<!-- DESIGN, x=308, right edge 490 -->
+<div class="node" style="left:308px;top:176px;">
+  <div class="nm"><span class="g g-done">●</span>synthesize-approach</div>
+  <div class="meta"><span>02:10→03:40</span><span class="dur">1m30s</span></div>
+</div>
+
+<!-- review fan-out marker -->
+<div class="marker" style="left:514px;top:194px;" title="fan-out"></div>
+
+<!-- REVIEW column (3 cards), x=560, right edge 742 -->
+<div class="node" style="left:560px;top:96px;">
+  <div class="nm"><span class="g g-done">●</span>review:correctness</div>
+  <div class="meta"><span>03:40→05:02</span><span class="dur">1m22s</span></div>
+</div>
+<div class="node" style="left:560px;top:176px;">
+  <div class="nm"><span class="g g-done">●</span>review:security</div>
+  <div class="meta"><span>03:40→04:55</span><span class="dur">1m15s</span></div>
+</div>
+<div class="node fail" style="left:560px;top:261px;">
+  <div class="nm"><span class="g g-fail">✕</span>review:feasibility</div>
+  <div class="meta"><span>03:40→04:01</span><span class="dur">error · 21s</span></div>
+</div>
+
+<!-- SYNTHESIZE, x=792 -->
+<div class="node" style="left:792px;top:176px;">
+  <div class="nm"><span class="g g-done">●</span>lock-decisions</div>
+  <div class="meta"><span>05:10→06:02</span><span class="dur">52s</span></div>
+</div>
+
+</div>
+</div>
+</div>
+</section>
+
+<section class="card" data-view="timeline">
+  <h3>Timeline / Gantt</h3>
+  <p class="cap"><em>best for: seeing what ran when</em> — exposes parallelism, duration, and idle gaps at a glance; tradeoff: dependency edges between agents are not shown (use the DAG for causality).</p>
+
+  <style>
+    [data-view="timeline"] .canvas { padding: 0; overflow-x: auto; }
+    [data-view="timeline"] .tl {
+      min-width: 1080px; font: 12px/1.4 var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+      color: var(--fg, #e6edf3); position: relative;
+    }
+    /* layout: fixed label gutter + flexible track area */
+    [data-view="timeline"] .tl-row { display: grid; grid-template-columns: 220px 1fr; align-items: stretch; }
+    [data-view="timeline"] .tl-axis { position: sticky; top: 0; z-index: 4; background: var(--panel, #11161c); border-bottom: 1px solid var(--line, #21262d); }
+    [data-view="timeline"] .tl-axis .tl-gutter { display: flex; align-items: center; padding: 0 12px; color: var(--faint, #6e7681); font-size: 11px; letter-spacing: .04em; }
+    [data-view="timeline"] .tl-track { position: relative; }
+    /* time ticks */
+    [data-view="timeline"] .tl-ticks { position: relative; height: 30px; }
+    [data-view="timeline"] .tl-tick { position: absolute; top: 0; bottom: 0; transform: translateX(-50%); }
+    [data-view="timeline"] .tl-tick span { position: absolute; top: 7px; left: 50%; transform: translateX(-50%); color: var(--dim, #8b949e); font-size: 11px; white-space: nowrap; }
+    [data-view="timeline"] .tl-tick.t0 { transform: none; } [data-view="timeline"] .tl-tick.t0 span { left: 0; transform: none; }
+    [data-view="timeline"] .tl-tick.tEnd { transform: translateX(-100%); } [data-view="timeline"] .tl-tick.tEnd span { left: auto; right: 0; transform: none; }
+    /* vertical gridlines spanning the whole chart body */
+    [data-view="timeline"] .tl-grid { position: absolute; left: 220px; right: 0; top: 30px; bottom: 0; pointer-events: none; z-index: 0; }
+    [data-view="timeline"] .tl-grid i { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--line, #21262d); }
+    [data-view="timeline"] .tl-body { position: relative; z-index: 1; }
+    /* phase group header */
+    [data-view="timeline"] .tl-phase { display: grid; grid-template-columns: 220px 1fr; background: rgba(255,255,255,.012); border-top: 1px solid var(--line, #21262d); }
+    [data-view="timeline"] .tl-phase:first-child { border-top: none; }
+    [data-view="timeline"] .tl-phase-name { padding: 7px 12px 5px; font-size: 10px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--faint, #6e7681); }
+    [data-view="timeline"] .tl-phase-span { position: relative; }
+    [data-view="timeline"] .tl-phase-span::after { content: ""; position: absolute; top: 8px; height: 2px; border-radius: 2px; background: rgba(91,157,255,.18); }
+    /* agent rows */
+    [data-view="timeline"] .tl-lane { position: relative; height: 30px; }
+    [data-view="timeline"] .tl-lane .lbl { position: absolute; left: 0; width: 220px; height: 100%; display: flex; align-items: center; gap: 7px; padding-left: 24px; color: var(--dim, #8b949e); overflow: hidden; }
+    [data-view="timeline"] .tl-lane .lbl .gly { width: 12px; text-align: center; flex: none; }
+    [data-view="timeline"] .tl-lane .lbl .nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    [data-view="timeline"] .tl-lane:hover { background: rgba(91,157,255,.05); }
+    /* track region per lane */
+    [data-view="timeline"] .tl-lane .track { position: absolute; left: 220px; right: 0; top: 0; bottom: 0; }
+    [data-view="timeline"] .tl-bar {
+      position: absolute; top: 6px; height: 18px; border-radius: 4px;
+      display: flex; align-items: center; padding: 0 8px; font-size: 11px; line-height: 1;
+      white-space: nowrap; overflow: hidden; border: 1px solid transparent;
+      box-shadow: 0 1px 0 rgba(0,0,0,.25);
+    }
+    [data-view="timeline"] .tl-bar .dur { margin-left: auto; padding-left: 10px; opacity: .65; font-size: 10px; }
+    [data-view="timeline"] .b-done { background: rgba(63,185,80,.16); border-color: rgba(63,185,80,.45); color: #7ee787; }
+    [data-view="timeline"] .b-fail { background: rgba(248,81,73,.18); border-color: rgba(248,81,73,.55); color: #ffa198; }
+    [data-view="timeline"] .b-fail .dur { color: #ffa198; opacity: .8; }
+    /* short bars hide inner text */
+    [data-view="timeline"] .tl-bar.short { padding: 0; justify-content: center; }
+    [data-view="timeline"] .tl-bar.short .nm, [data-view="timeline"] .tl-bar.short .dur { display: none; }
+    [data-view="timeline"] .tl-foot { display: flex; gap: 18px; align-items: center; padding: 9px 12px; border-top: 1px solid var(--line, #21262d); color: var(--faint, #6e7681); font-size: 11px; }
+    [data-view="timeline"] .tl-foot .k { display: inline-flex; align-items: center; gap: 6px; }
+    [data-view="timeline"] .tl-foot .sw { width: 22px; height: 9px; border-radius: 3px; border: 1px solid; display: inline-block; }
+    [data-view="timeline"] .tl-foot .sw.done { background: rgba(63,185,80,.16); border-color: rgba(63,185,80,.45); }
+    [data-view="timeline"] .tl-foot .sw.fail { background: rgba(248,81,73,.18); border-color: rgba(248,81,73,.55); }
+  </style>
+
+  <div class="canvas">
+    <div class="tl">
+      <!-- gridlines behind everything -->
+      <div class="tl-grid">
+        <i style="left:0"></i>
+        <i style="left:16.57%"></i>
+        <i style="left:33.15%"></i>
+        <i style="left:49.72%"></i>
+        <i style="left:66.30%"></i>
+        <i style="left:82.87%"></i>
+        <i style="left:100%"></i>
+      </div>
+
+      <!-- axis header -->
+      <div class="tl-row tl-axis">
+        <div class="tl-gutter">AGENT · 10 · total 6m02s</div>
+        <div class="tl-track">
+          <div class="tl-ticks">
+            <div class="tl-tick t0" style="left:0"><span>0:00</span></div>
+            <div class="tl-tick" style="left:16.57%"><span>1:00</span></div>
+            <div class="tl-tick" style="left:33.15%"><span>2:00</span></div>
+            <div class="tl-tick" style="left:49.72%"><span>3:00</span></div>
+            <div class="tl-tick" style="left:66.30%"><span>4:00</span></div>
+            <div class="tl-tick" style="left:82.87%"><span>5:00</span></div>
+            <div class="tl-tick tEnd" style="left:100%"><span>6:00</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tl-body">
+        <!-- RESEARCH -->
+        <div class="tl-phase">
+          <div class="tl-phase-name">Research</div>
+          <div class="tl-phase-span"><span style="--x:0"></span></div>
+        </div>
+        <div class="tl-lane">
+          <div class="lbl"><span class="gly g-done">●</span><span class="nm">client-availability</span></div>
+          <div class="track"><div class="tl-bar b-done" style="left:0%; width:29.83%"><span class="nm">client-availability</span><span class="dur">1:48</span></div></div>
+        </div>
+        <div class="tl-lane">
+          <div class="lbl"><span class="gly g-done">●</span><span class="nm">connection-strategy</span></div>
+          <div class="track"><div class="tl-bar b-done" style="left:0%; width:34.53%"><span class="nm">connection-strategy</span><span class="dur">2:05</span></div></div>
+        </div>
+        <div class="tl-lane">
+          <div class="lbl"><span class="gly g-done">●</span><span class="nm">data-contract</span></div>
+          <div class="track"><div class="tl-bar b-done" style="left:0%; width:25.41%"><span class="nm">data-contract</span><span class="dur">1:32</span></div></div>
+        </div>
+        <div class="tl-lane">
+          <div class="lbl"><span class="gly g-done">●</span><span class="nm">graph-viz</span></div>
+          <div class="track"><div class="tl-bar b-done" style="left:0%; width:35.91%"><span class="nm">graph-viz</span><span class="dur">2:10</span></div></div>
+        </div>
+        <div class="tl-lane">
+          <div class="lbl"><span class="gly g-done">●</span><span class="nm">ts-stack</span></div>
+          <div class="track"><div class="tl-bar b-done" style="left:0%; width:22.10%"><span class="nm">ts-stack</span><span class="dur">1:20</span></div></div>
+        </div>
+
+        <!-- DESIGN -->
+        <div class="tl-phase">
+          <div class="tl-phase-name">Design</div>
+          <div class="tl-phase-span"><span></span></div>
+        </div>
+        <div class="tl-lane">
+          <div class="lbl"><span class="gly g-done">●</span><span class="nm">synthesize-approach</span></div>
+          <div class="track"><div class="tl-bar b-done" style="left:35.91%; width:24.86%"><span class="nm">synthesize-approach</span><span class="dur">1:30</span></div></div>
+        </div>
+
+        <!-- REVIEW -->
+        <div class="tl-phase">
+          <div class="tl-phase-name">Review</div>
+          <div class="tl-phase-span"><span></span></div>
+        </div>
+        <div class="tl-lane">
+          <div class="lbl"><span class="gly g-done">●</span><span class="nm">review:correctness</span></div>
+          <div class="track"><div class="tl-bar b-done" style="left:60.77%; width:22.65%"><span class="nm">review:correctness</span><span class="dur">1:22</span></div></div>
+        </div>
+        <div class="tl-lane">
+          <div class="lbl"><span class="gly g-done">●</span><span class="nm">review:security</span></div>
+          <div class="track"><div class="tl-bar b-done" style="left:60.77%; width:20.72%"><span class="nm">review:security</span><span class="dur">1:15</span></div></div>
+        </div>
+        <div class="tl-lane">
+          <div class="lbl"><span class="gly g-fail">✕</span><span class="nm">review:feasibility</span></div>
+          <div class="track"><div class="tl-bar b-fail short" style="left:60.77%; width:5.80%" title="review:feasibility — FAILED (error) · 0:21"><span class="nm">review:feasibility</span><span class="dur">0:21</span></div></div>
+        </div>
+
+        <!-- SYNTHESIZE -->
+        <div class="tl-phase">
+          <div class="tl-phase-name">Synthesize</div>
+          <div class="tl-phase-span"><span></span></div>
+        </div>
+        <div class="tl-lane">
+          <div class="lbl"><span class="gly g-done">●</span><span class="nm">lock-decisions</span></div>
+          <div class="track"><div class="tl-bar b-done" style="left:85.64%; width:14.36%"><span class="nm">lock-decisions</span><span class="dur">0:52</span></div></div>
+        </div>
+      </div>
+
+      <div class="tl-foot">
+        <span class="k"><span class="sw done"></span> done</span>
+        <span class="k"><span class="sw fail"></span> failed</span>
+        <span class="k">parallel agents share a column · sequential phases step rightward</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<section class="card" data-view="activity">
+  <style>
+    [data-view="activity"] .canvas {
+      position: relative;
+      padding: 0;
+      overflow: auto;
+    }
+    [data-view="activity"] .act-wrap {
+      min-width: 1040px;
+      padding: 20px 22px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    /* run header */
+    [data-view="activity"] .act-head {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    [data-view="activity"] .act-head .run-name {
+      font-family: var(--mono);
+      font-size: 14px;
+      color: var(--fg);
+      letter-spacing: .2px;
+    }
+    [data-view="activity"] .act-head .run-live {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--accent);
+      padding: 2px 8px;
+      border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--accent) 10%, transparent);
+    }
+    [data-view="activity"] .act-head .run-meta {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--dim);
+      margin-left: auto;
+    }
+
+    /* phase stepper */
+    [data-view="activity"] .stepper {
+      display: flex;
+      align-items: stretch;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    [data-view="activity"] .step {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 11px 16px;
+      position: relative;
+      min-width: 0;
+    }
+    [data-view="activity"] .step + .step::before {
+      content: "";
+      position: absolute;
+      left: 0; top: 50%;
+      transform: translate(-50%, -50%) rotate(45deg);
+      width: 9px; height: 9px;
+      border-top: 1px solid var(--line);
+      border-right: 1px solid var(--line);
+      background: var(--panel);
+    }
+    [data-view="activity"] .step .s-dot {
+      font-size: 12px;
+      line-height: 1;
+      flex: none;
+    }
+    [data-view="activity"] .step .s-name {
+      font-size: 12.5px;
+      color: var(--dim);
+      letter-spacing: .2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    [data-view="activity"] .step .s-sub {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--faint);
+      margin-left: auto;
+      flex: none;
+    }
+    [data-view="activity"] .step.done .s-dot { color: var(--green); }
+    [data-view="activity"] .step.done .s-name { color: var(--fg); }
+    [data-view="activity"] .step.now {
+      background: color-mix(in srgb, var(--accent) 9%, transparent);
+    }
+    [data-view="activity"] .step.now .s-dot { color: var(--accent); }
+    [data-view="activity"] .step.now .s-name { color: var(--fg); font-weight: 600; }
+    [data-view="activity"] .step.now .s-sub { color: var(--accent); }
+    [data-view="activity"] .step.upcoming .s-dot { color: var(--faint); }
+
+    /* counts strip */
+    [data-view="activity"] .counts {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      font-family: var(--mono);
+      font-size: 12px;
+    }
+    [data-view="activity"] .counts .ct {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 0 18px;
+    }
+    [data-view="activity"] .counts .ct:first-child { padding-left: 0; }
+    [data-view="activity"] .counts .ct + .ct { border-left: 1px solid var(--line); }
+    [data-view="activity"] .counts .ct .n { font-size: 15px; color: var(--fg); font-weight: 600; }
+    [data-view="activity"] .counts .ct .lbl { color: var(--dim); }
+    [data-view="activity"] .counts .ct.done .n { color: var(--green); }
+    [data-view="activity"] .counts .ct.run .n { color: var(--accent); }
+    [data-view="activity"] .counts .ct.fail .n { color: var(--red); }
+
+    /* running-now panel */
+    [data-view="activity"] .running {
+      border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line));
+      border-radius: 10px;
+      background:
+        linear-gradient(180deg, color-mix(in srgb, var(--accent) 7%, transparent), transparent 70%),
+        var(--panel);
+      padding: 14px 16px 16px;
+    }
+    [data-view="activity"] .running .r-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 13px;
+    }
+    [data-view="activity"] .running .r-head .r-title {
+      font-size: 11px;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      color: var(--accent);
+      font-weight: 600;
+    }
+    [data-view="activity"] .running .r-head .r-dot { color: var(--accent); font-size: 11px; }
+    [data-view="activity"] .running .r-head .r-phase {
+      margin-left: auto;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--dim);
+    }
+    [data-view="activity"] .run-cards {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    [data-view="activity"] .acard {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--bg);
+      padding: 13px 14px 14px;
+    }
+    [data-view="activity"] .acard .a-top {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      margin-bottom: 4px;
+    }
+    [data-view="activity"] .acard .a-glyph { color: var(--accent); font-size: 12px; flex: none; }
+    [data-view="activity"] .acard .a-label {
+      font-family: var(--mono);
+      font-size: 13px;
+      color: var(--fg);
+    }
+    [data-view="activity"] .acard .a-elapsed {
+      margin-left: auto;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--accent);
+      flex: none;
+    }
+    [data-view="activity"] .acard .a-meta {
+      font-family: var(--mono);
+      font-size: 10.5px;
+      color: var(--faint);
+      margin-bottom: 11px;
+    }
+    [data-view="activity"] .bar {
+      height: 4px;
+      border-radius: 3px;
+      background: var(--line);
+      overflow: hidden;
+      position: relative;
+    }
+    [data-view="activity"] .bar > i {
+      position: absolute;
+      top: 0; left: 0; bottom: 0;
+      border-radius: 3px;
+      background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 55%, transparent), var(--accent));
+    }
+    [data-view="activity"] .bar::after {
+      content: "";
+      position: absolute;
+      top: 0; bottom: 0;
+      width: 36px;
+      background: linear-gradient(90deg, transparent, color-mix(in srgb, #fff 22%, transparent), transparent);
+      animation: act-shimmer 1.8s linear infinite;
+    }
+    @keyframes act-shimmer {
+      0%   { left: -40px; }
+      100% { left: 100%; }
+    }
+
+    /* done list */
+    [data-view="activity"] .done-block .d-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 9px;
+    }
+    [data-view="activity"] .done-block .d-title {
+      font-size: 11px;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      color: var(--dim);
+    }
+    [data-view="activity"] .done-block .d-rule {
+      flex: 1;
+      height: 1px;
+      background: var(--line);
+    }
+    [data-view="activity"] .done-list {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2px 26px;
+    }
+    [data-view="activity"] .drow {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 5px 4px;
+      border-radius: 5px;
+    }
+    [data-view="activity"] .drow:hover { background: var(--panel); }
+    [data-view="activity"] .drow .d-glyph { font-size: 11px; flex: none; }
+    [data-view="activity"] .drow .d-glyph.g-done { color: var(--green); }
+    [data-view="activity"] .drow .d-glyph.g-fail { color: var(--red); }
+    [data-view="activity"] .drow .d-label {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--dim);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    [data-view="activity"] .drow.fail .d-label { color: color-mix(in srgb, var(--red) 70%, var(--fg)); }
+    [data-view="activity"] .drow .d-phase {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--faint);
+      flex: none;
+    }
+    [data-view="activity"] .drow .d-time {
+      margin-left: auto;
+      font-family: var(--mono);
+      font-size: 10.5px;
+      color: var(--faint);
+      flex: none;
+    }
+    [data-view="activity"] .drow .d-err {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--red);
+      flex: none;
+    }
+
+    [data-view="activity"] .pulse { animation: act-pulse 1.4s ease-in-out infinite; }
+    @keyframes act-pulse {
+      0%, 100% { opacity: 1; }
+      50%      { opacity: .35; }
+    }
+  </style>
+
+  <h3>Activity dashboard</h3>
+  <p class="cap"><em>best for: "what are my agents doing right now"</em> — live-first, phase-aware. Tradeoff: collapses the DAG's dependency shape into a flat now/done split, so it is weak for post-hoc structural analysis.</p>
+
+  <div class="canvas">
+    <div class="act-wrap">
+
+      <div class="act-head">
+        <span class="run-name">modal-rust-plan-research</span>
+        <span class="run-live"><span class="g-run pulse">◌</span> running</span>
+        <span class="run-meta">10 agents · 4 phases · 03:41 elapsed</span>
+      </div>
+
+      <!-- phase stepper -->
+      <div class="stepper">
+        <div class="step done">
+          <span class="s-dot">●</span>
+          <span class="s-name">Research</span>
+          <span class="s-sub">5/5</span>
+        </div>
+        <div class="step done">
+          <span class="s-dot">●</span>
+          <span class="s-name">Design</span>
+          <span class="s-sub">1/1</span>
+        </div>
+        <div class="step now">
+          <span class="s-dot g-run pulse">◌</span>
+          <span class="s-name">Review</span>
+          <span class="s-sub">now</span>
+        </div>
+        <div class="step upcoming">
+          <span class="s-dot">◌</span>
+          <span class="s-name">Synthesize</span>
+          <span class="s-sub">queued</span>
+        </div>
+      </div>
+
+      <!-- counts strip -->
+      <div class="counts">
+        <span class="ct done"><span class="n">8</span><span class="lbl">done</span></span>
+        <span class="ct run"><span class="n">2</span><span class="lbl">running</span></span>
+        <span class="ct fail"><span class="n">1</span><span class="lbl">failed</span></span>
+      </div>
+
+      <!-- running now -->
+      <div class="running">
+        <div class="r-head">
+          <span class="r-dot g-run pulse">◌</span>
+          <span class="r-title">Running now</span>
+          <span class="r-phase">phase: Review · 2 adversarial reviewers</span>
+        </div>
+        <div class="run-cards">
+          <div class="acard">
+            <div class="a-top">
+              <span class="a-glyph g-run pulse">◌</span>
+              <span class="a-label">review:correctness</span>
+              <span class="a-elapsed">~1m20s</span>
+            </div>
+            <div class="a-meta">started 03:40 · no end yet</div>
+            <div class="bar"><i style="width:58%"></i></div>
+          </div>
+          <div class="acard">
+            <div class="a-top">
+              <span class="a-glyph g-run pulse">◌</span>
+              <span class="a-label">review:security</span>
+              <span class="a-elapsed">~1m20s</span>
+            </div>
+            <div class="a-meta">started 03:40 · no end yet</div>
+            <div class="bar"><i style="width:62%"></i></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- done list -->
+      <div class="done-block">
+        <div class="d-head">
+          <span class="d-title">Completed</span>
+          <span class="d-rule"></span>
+        </div>
+        <div class="done-list">
+          <div class="drow"><span class="d-glyph g-done">●</span><span class="d-label">client-availability</span><span class="d-phase">research</span><span class="d-time">00:00→01:48</span></div>
+          <div class="drow"><span class="d-glyph g-done">●</span><span class="d-label">connection-strategy</span><span class="d-phase">research</span><span class="d-time">00:00→02:05</span></div>
+          <div class="drow"><span class="d-glyph g-done">●</span><span class="d-label">data-contract</span><span class="d-phase">research</span><span class="d-time">00:00→01:32</span></div>
+          <div class="drow"><span class="d-glyph g-done">●</span><span class="d-label">graph-viz</span><span class="d-phase">research</span><span class="d-time">00:00→02:10</span></div>
+          <div class="drow"><span class="d-glyph g-done">●</span><span class="d-label">ts-stack</span><span class="d-phase">research</span><span class="d-time">00:00→01:20</span></div>
+          <div class="drow"><span class="d-glyph g-done">●</span><span class="d-label">synthesize-approach</span><span class="d-phase">design</span><span class="d-time">02:10→03:40</span></div>
+          <div class="drow fail"><span class="d-glyph g-fail">✕</span><span class="d-label">review:feasibility</span><span class="d-phase">review</span><span class="d-err">error</span><span class="d-time">03:40→04:01</span></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<section class="card" data-view="swimlane">
+<h3>Phase Swimlanes</h3>
+<p class="cap"><em>best for: seeing phase structure &amp; fan-out at a glance</em> — flattens the DAG into stacked phase bands, so you trade exact dependency edges for a denser, scan-friendly layout.</p>
+
+<style>
+[data-view="swimlane"] .canvas{
+  background:var(--bg);
+  padding:18px 20px 22px;
+  overflow:auto;
+  font-family:var(--mono,ui-monospace,"SF Mono",Menlo,monospace);
+}
+[data-view="swimlane"] .sw-runhead{
+  display:flex;align-items:baseline;gap:12px;
+  padding:0 0 14px;margin-bottom:6px;
+  border-bottom:1px solid var(--line);
+}
+[data-view="swimlane"] .sw-runhead .sw-title{
+  color:var(--fg);font-size:13px;font-weight:600;letter-spacing:.2px;
+}
+[data-view="swimlane"] .sw-runhead .sw-meta{
+  color:var(--dim);font-size:11px;
+}
+[data-view="swimlane"] .sw-runhead .sw-stat{
+  margin-left:auto;color:var(--green);font-size:11px;
+}
+
+[data-view="swimlane"] .sw-lanes{
+  display:flex;flex-direction:column;gap:10px;margin-top:14px;
+}
+[data-view="swimlane"] .sw-lane{
+  position:relative;
+  display:grid;
+  grid-template-columns:132px 1fr;
+  align-items:stretch;
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:8px;
+  overflow:hidden;
+}
+/* thin colored phase spine on the left edge of each lane */
+[data-view="swimlane"] .sw-lane::before{
+  content:"";position:absolute;left:0;top:0;bottom:0;width:3px;
+  background:var(--faint);opacity:.7;
+}
+[data-view="swimlane"] .sw-lane.done::before{background:var(--green);}
+[data-view="swimlane"] .sw-lane.fail::before{background:var(--red);}
+
+[data-view="swimlane"] .sw-label{
+  padding:12px 12px 12px 16px;
+  border-right:1px solid var(--line);
+  display:flex;flex-direction:column;gap:3px;justify-content:center;
+  background:rgba(255,255,255,.012);
+}
+[data-view="swimlane"] .sw-label .sw-name{
+  color:var(--fg);font-size:11.5px;font-weight:600;
+  letter-spacing:.6px;text-transform:uppercase;
+}
+[data-view="swimlane"] .sw-label .sw-sub{
+  color:var(--faint);font-size:10px;
+}
+[data-view="swimlane"] .sw-label .sw-span{
+  color:var(--dim);font-size:10px;font-variant-numeric:tabular-nums;
+}
+
+[data-view="swimlane"] .sw-track{
+  display:flex;flex-wrap:wrap;gap:8px;
+  padding:11px 14px;align-content:center;
+}
+
+[data-view="swimlane"] .sw-chip{
+  display:flex;align-items:center;gap:8px;
+  min-width:188px;
+  padding:7px 11px;
+  background:var(--bg);
+  border:1px solid var(--line);
+  border-radius:6px;
+  transition:border-color .15s ease;
+}
+[data-view="swimlane"] .sw-chip:hover{border-color:#30363d;}
+[data-view="swimlane"] .sw-chip .g{font-size:11px;line-height:1;flex:none;}
+[data-view="swimlane"] .sw-chip .sw-cn{
+  color:var(--fg);font-size:11.5px;flex:1;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;
+}
+[data-view="swimlane"] .sw-chip .sw-ct{
+  color:var(--faint);font-size:10px;font-variant-numeric:tabular-nums;flex:none;
+}
+[data-view="swimlane"] .sw-chip.fail{
+  border-color:rgba(248,81,73,.45);
+  background:rgba(248,81,73,.06);
+}
+[data-view="swimlane"] .sw-chip.fail .sw-cn{color:#ffb4ae;}
+[data-view="swimlane"] .sw-chip.fail .sw-err{
+  color:var(--red);font-size:10px;flex:none;
+}
+
+/* reuse shared glyph colors via local classes too */
+[data-view="swimlane"] .g-done{color:var(--green);}
+[data-view="swimlane"] .g-fail{color:var(--red);}
+
+[data-view="swimlane"] .sw-fanout{
+  margin-left:auto;color:var(--faint);font-size:9.5px;
+  letter-spacing:.4px;text-transform:uppercase;align-self:center;
+}
+</style>
+
+<div class="canvas">
+  <div class="sw-runhead">
+    <span class="sw-title">modal-rust-plan-research</span>
+    <span class="sw-meta">10 agents · 4 phases · 6m02s</span>
+    <span class="sw-stat">● completed</span>
+  </div>
+
+  <div class="sw-lanes">
+
+    <!-- RESEARCH -->
+    <div class="sw-lane done">
+      <div class="sw-label">
+        <span class="sw-name">Research</span>
+        <span class="sw-sub">fan-out · 5</span>
+        <span class="sw-span">00:00–02:10</span>
+      </div>
+      <div class="sw-track">
+        <div class="sw-chip"><span class="g g-done">●</span><span class="sw-cn">client-availability</span><span class="sw-ct">1m48s</span></div>
+        <div class="sw-chip"><span class="g g-done">●</span><span class="sw-cn">connection-strategy</span><span class="sw-ct">2m05s</span></div>
+        <div class="sw-chip"><span class="g g-done">●</span><span class="sw-cn">data-contract</span><span class="sw-ct">1m32s</span></div>
+        <div class="sw-chip"><span class="g g-done">●</span><span class="sw-cn">graph-viz</span><span class="sw-ct">2m10s</span></div>
+        <div class="sw-chip"><span class="g g-done">●</span><span class="sw-cn">ts-stack</span><span class="sw-ct">1m20s</span></div>
+        <span class="sw-fanout">5 parallel</span>
+      </div>
+    </div>
+
+    <!-- DESIGN -->
+    <div class="sw-lane done">
+      <div class="sw-label">
+        <span class="sw-name">Design</span>
+        <span class="sw-sub">single</span>
+        <span class="sw-span">02:10–03:40</span>
+      </div>
+      <div class="sw-track">
+        <div class="sw-chip"><span class="g g-done">●</span><span class="sw-cn">synthesize-approach</span><span class="sw-ct">1m30s</span></div>
+      </div>
+    </div>
+
+    <!-- REVIEW -->
+    <div class="sw-lane fail">
+      <div class="sw-label">
+        <span class="sw-name">Review</span>
+        <span class="sw-sub">fan-out · 3</span>
+        <span class="sw-span">03:40–05:10</span>
+      </div>
+      <div class="sw-track">
+        <div class="sw-chip"><span class="g g-done">●</span><span class="sw-cn">review:correctness</span><span class="sw-ct">1m22s</span></div>
+        <div class="sw-chip"><span class="g g-done">●</span><span class="sw-cn">review:security</span><span class="sw-ct">1m15s</span></div>
+        <div class="sw-chip fail"><span class="g g-fail">✕</span><span class="sw-cn">review:feasibility</span><span class="sw-err">error</span><span class="sw-ct">0m21s</span></div>
+        <span class="sw-fanout">3 parallel · 1 failed</span>
+      </div>
+    </div>
+
+    <!-- SYNTHESIZE -->
+    <div class="sw-lane done">
+      <div class="sw-label">
+        <span class="sw-name">Synthesize</span>
+        <span class="sw-sub">single</span>
+        <span class="sw-span">05:10–06:02</span>
+      </div>
+      <div class="sw-track">
+        <div class="sw-chip"><span class="g g-done">●</span><span class="sw-cn">lock-decisions</span><span class="sw-ct">0m52s</span></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</section>
+
+<section class="card" data-view="table">
+<style>
+[data-view="table"] .canvas{padding:0;overflow:auto;background:var(--bg);}
+[data-view="table"] .tbl{width:100%;border-collapse:separate;border-spacing:0;font-family:var(--mono,ui-monospace,SFMono-Regular,Menlo,monospace);font-size:12.5px;color:var(--fg);min-width:1040px;}
+[data-view="table"] thead th{position:sticky;top:0;z-index:2;background:var(--panel);text-align:left;font-weight:600;color:var(--dim);letter-spacing:.02em;padding:9px 14px;border-bottom:1px solid var(--line);white-space:nowrap;user-select:none;cursor:pointer;font-size:11px;text-transform:uppercase;}
+[data-view="table"] thead th:hover{color:var(--fg);}
+[data-view="table"] thead th .sort{color:var(--faint);font-size:9px;margin-left:5px;}
+[data-view="table"] thead th.active .sort{color:var(--accent);}
+[data-view="table"] th.c-st{width:34px;text-align:center;}
+[data-view="table"] th.c-dur,[data-view="table"] th.c-start{text-align:right;width:78px;}
+[data-view="table"] td{padding:7px 14px;border-bottom:1px solid var(--line);vertical-align:middle;white-space:nowrap;}
+[data-view="table"] tbody tr:hover{background:rgba(91,157,255,.05);}
+[data-view="table"] td.c-st{text-align:center;font-size:13px;}
+[data-view="table"] td.c-start,[data-view="table"] td.c-dur{text-align:right;color:var(--dim);font-variant-numeric:tabular-nums;}
+[data-view="table"] td.agent{color:var(--fg);}
+[data-view="table"] td.phase{color:var(--dim);}
+[data-view="table"] td.result{color:var(--faint);max-width:340px;overflow:hidden;text-overflow:ellipsis;}
+[data-view="table"] tr.phase-head td{background:var(--bg);border-bottom:1px solid var(--line);padding:6px 14px;color:var(--faint);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;}
+[data-view="table"] tr.phase-head .ct{color:var(--faint);}
+[data-view="table"] tr.failed td{background:rgba(248,81,73,.07);}
+[data-view="table"] tr.failed td.agent{color:var(--red);}
+[data-view="table"] tr.failed td.result{color:var(--red);opacity:.85;}
+[data-view="table"] .g-done{color:var(--green);}
+[data-view="table"] .g-part{color:var(--amber);}
+[data-view="table"] .g-fail{color:var(--red);}
+[data-view="table"] .g-run{color:var(--accent);}
+[data-view="table"] tfoot td{position:sticky;bottom:0;background:var(--panel);border-top:1px solid var(--line);padding:10px 14px;color:var(--dim);font-size:11.5px;letter-spacing:.02em;}
+[data-view="table"] tfoot .fail{color:var(--red);}
+[data-view="table"] tfoot .ok{color:var(--green);}
+</style>
+<h3>List / Table</h3>
+<p class="cap"><em>best for: many-agent runs &amp; precise scanning</em> — every agent on one sortable line; loses the visual shape of fan-out/parallelism.</p>
+<div class="canvas">
+<table class="tbl">
+<thead>
+<tr>
+<th class="c-st">St</th>
+<th class="active">Agent <span class="sort">▾</span></th>
+<th>Phase <span class="sort">▾</span></th>
+<th class="c-start">Start <span class="sort">▾</span></th>
+<th class="c-dur">Duration <span class="sort">▾</span></th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr class="phase-head"><td colspan="6">RESEARCH <span class="ct">· 00:00–02:10 · 5 agents · parallel</span></td></tr>
+<tr><td class="c-st"><span class="g-done">●</span></td><td class="agent">ts-stack</td><td class="phase">research</td><td class="c-start">00:00</td><td class="c-dur">1m20s</td><td class="result">Vite + React 19 + TS; pnpm workspace</td></tr>
+<tr><td class="c-st"><span class="g-done">●</span></td><td class="agent">data-contract</td><td class="phase">research</td><td class="c-start">00:00</td><td class="c-dur">1m32s</td><td class="result">on-disk JSONL schema confirmed, versioned</td></tr>
+<tr><td class="c-st"><span class="g-done">●</span></td><td class="agent">client-availability</td><td class="phase">research</td><td class="c-start">00:00</td><td class="c-dur">1m48s</td><td class="result">SDK + CLI both viable; CLI preferred</td></tr>
+<tr><td class="c-st"><span class="g-done">●</span></td><td class="agent">connection-strategy</td><td class="phase">research</td><td class="c-start">00:00</td><td class="c-dur">2m05s</td><td class="result">poll journal files; watch via fs.watch</td></tr>
+<tr><td class="c-st"><span class="g-done">●</span></td><td class="agent">graph-viz</td><td class="phase">research</td><td class="c-start">00:00</td><td class="c-dur">2m10s</td><td class="result">@xyflow/react + elkjs layered layout</td></tr>
+<tr class="phase-head"><td colspan="6">DESIGN <span class="ct">· 02:10–03:40 · 1 agent</span></td></tr>
+<tr><td class="c-st"><span class="g-done">●</span></td><td class="agent">synthesize-approach</td><td class="phase">design</td><td class="c-start">02:10</td><td class="c-dur">1m30s</td><td class="result">merged 5 research threads into 1 approach</td></tr>
+<tr class="phase-head"><td colspan="6">REVIEW <span class="ct">· 03:40–05:10 · 3 agents · parallel · 1 failed</span></td></tr>
+<tr><td class="c-st"><span class="g-done">●</span></td><td class="agent">review:security</td><td class="phase">review</td><td class="c-start">03:40</td><td class="c-dur">1m15s</td><td class="result">no secrets in journals; redaction OK</td></tr>
+<tr class="failed"><td class="c-st"><span class="g-fail">✕</span></td><td class="agent">review:feasibility</td><td class="phase">review</td><td class="c-start">03:40</td><td class="c-dur">0m21s</td><td class="result">error: elk worker timeout — aborted</td></tr>
+<tr><td class="c-st"><span class="g-done">●</span></td><td class="agent">review:correctness</td><td class="phase">review</td><td class="c-start">03:40</td><td class="c-dur">1m22s</td><td class="result">data-contract maps cleanly to render</td></tr>
+<tr class="phase-head"><td colspan="6">SYNTHESIZE <span class="ct">· 05:10–06:02 · 1 agent</span></td></tr>
+<tr><td class="c-st"><span class="g-done">●</span></td><td class="agent">lock-decisions</td><td class="phase">synthesize</td><td class="c-start">05:10</td><td class="c-dur">0m52s</td><td class="result">4 decisions locked; milestones drafted</td></tr>
+</tbody>
+<tfoot>
+<tr><td colspan="6"><span class="ok">10 agents</span> · 6m02s total · <span class="ok">9 done</span> · <span class="fail">1 failed</span></td></tr>
+</tfoot>
+</table>
+</div>
+</section>
+
+<section class="card" data-view="digest">
+  <style>
+    [data-view="digest"] .canvas {
+      background: var(--bg);
+      overflow: auto;
+      padding: 0;
+    }
+    [data-view="digest"] .dg-doc {
+      width: 1080px;
+      margin: 0 auto;
+      padding: 40px 56px 56px;
+      font-size: 13px;
+      line-height: 1.6;
+      color: var(--fg);
+      box-sizing: border-box;
+    }
+    [data-view="digest"] .dg-kicker {
+      font: 600 10.5px/1 var(--mono, ui-monospace, monospace);
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      color: var(--accent);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+    [data-view="digest"] .dg-kicker .dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 22%, transparent);
+    }
+    [data-view="digest"] h1.dg-title {
+      font-size: 27px;
+      font-weight: 650;
+      line-height: 1.22;
+      letter-spacing: -.01em;
+      margin: 0 0 14px;
+      color: var(--fg);
+      max-width: 760px;
+    }
+    [data-view="digest"] .dg-objective {
+      font-size: 15px;
+      line-height: 1.55;
+      color: var(--dim);
+      margin: 0 0 22px;
+      max-width: 820px;
+      border-left: 2px solid var(--line);
+      padding-left: 16px;
+    }
+    [data-view="digest"] .dg-objective b { color: var(--fg); font-weight: 600; }
+    [data-view="digest"] .dg-calledon {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      font-family: var(--mono, ui-monospace, monospace);
+      font-size: 12px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 11px 14px;
+      margin-bottom: 24px;
+      color: var(--dim);
+      overflow-x: auto;
+      white-space: nowrap;
+    }
+    [data-view="digest"] .dg-calledon .lbl {
+      color: var(--faint);
+      text-transform: uppercase;
+      letter-spacing: .1em;
+      font-size: 10px;
+      flex: none;
+    }
+    [data-view="digest"] .dg-calledon .arg { color: var(--fg); }
+    [data-view="digest"] .dg-calledon .flag { color: var(--accent); }
+    [data-view="digest"] .dg-calledon .val { color: var(--purple); }
+
+    [data-view="digest"] .dg-metrics {
+      display: flex;
+      gap: 0;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      overflow: hidden;
+      margin-bottom: 30px;
+      background: var(--panel);
+    }
+    [data-view="digest"] .dg-metric {
+      flex: 1;
+      padding: 14px 18px;
+      border-right: 1px solid var(--line);
+    }
+    [data-view="digest"] .dg-metric:last-child { border-right: 0; }
+    [data-view="digest"] .dg-metric .m-val {
+      font-size: 22px;
+      font-weight: 650;
+      letter-spacing: -.02em;
+      color: var(--fg);
+      font-family: var(--mono, ui-monospace, monospace);
+      line-height: 1;
+    }
+    [data-view="digest"] .dg-metric .m-lbl {
+      font-size: 11px;
+      color: var(--faint);
+      margin-top: 7px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+    [data-view="digest"] .dg-metric.is-fail .m-val { color: var(--red); }
+    [data-view="digest"] .dg-metric.is-ok .m-val { color: var(--green); }
+
+    [data-view="digest"] .dg-section-h {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: var(--faint);
+      margin: 4px 0 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    [data-view="digest"] .dg-section-h::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: var(--line);
+    }
+
+    [data-view="digest"] .dg-callout {
+      display: grid;
+      grid-template-columns: 130px 1fr;
+      gap: 22px;
+      padding: 18px 0;
+      border-bottom: 1px solid var(--line);
+    }
+    [data-view="digest"] .dg-callout:last-of-type { border-bottom: 0; }
+    [data-view="digest"] .dg-co-meta { padding-top: 1px; }
+    [data-view="digest"] .dg-co-phase {
+      font-family: var(--mono, ui-monospace, monospace);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: .08em;
+      color: var(--fg);
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+    [data-view="digest"] .dg-co-phase .g {
+      font-size: 12px;
+      line-height: 1;
+    }
+    [data-view="digest"] .dg-co-time {
+      font-family: var(--mono, ui-monospace, monospace);
+      font-size: 11px;
+      color: var(--faint);
+      margin-top: 6px;
+      padding-left: 18px;
+    }
+    [data-view="digest"] .dg-co-body p {
+      margin: 0 0 8px;
+      color: var(--fg);
+      font-size: 13px;
+    }
+    [data-view="digest"] .dg-co-body p:last-child { margin-bottom: 0; }
+    [data-view="digest"] .dg-co-body .agent {
+      font-family: var(--mono, ui-monospace, monospace);
+      font-size: 12px;
+      color: var(--dim);
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      padding: 1px 5px;
+    }
+    [data-view="digest"] .dg-co-body .warn { color: var(--red); font-weight: 500; }
+    [data-view="digest"] .dg-co-tags {
+      margin-top: 10px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    [data-view="digest"] .dg-tag {
+      font-family: var(--mono, ui-monospace, monospace);
+      font-size: 10.5px;
+      color: var(--dim);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 2px 9px 2px 7px;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      background: color-mix(in srgb, var(--panel) 60%, transparent);
+    }
+    [data-view="digest"] .dg-tag .g { font-size: 10px; }
+
+    [data-view="digest"] .g-done { color: var(--green); }
+    [data-view="digest"] .g-part { color: var(--amber); }
+    [data-view="digest"] .g-fail { color: var(--red); }
+    [data-view="digest"] .g-run  { color: var(--accent); }
+
+    [data-view="digest"] .dg-decisions {
+      margin-top: 30px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 22px 26px;
+    }
+    [data-view="digest"] .dg-decisions .dg-section-h { margin-top: 0; }
+    [data-view="digest"] .dg-dec-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      counter-reset: dec;
+    }
+    [data-view="digest"] .dg-dec-list li {
+      counter-increment: dec;
+      position: relative;
+      padding: 10px 0 10px 40px;
+      border-bottom: 1px solid var(--line);
+      font-size: 13px;
+      color: var(--fg);
+    }
+    [data-view="digest"] .dg-dec-list li:last-child { border-bottom: 0; }
+    [data-view="digest"] .dg-dec-list li::before {
+      content: counter(dec, decimal-leading-zero);
+      position: absolute;
+      left: 0; top: 11px;
+      font-family: var(--mono, ui-monospace, monospace);
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--accent);
+    }
+    [data-view="digest"] .dg-dec-list li b { font-weight: 600; }
+    [data-view="digest"] .dg-dec-list li .src {
+      font-family: var(--mono, ui-monospace, monospace);
+      font-size: 11px;
+      color: var(--faint);
+    }
+  </style>
+
+  <h3>Story / Digest</h3>
+  <p class="cap"><em>best for: answering "what was this run even about" — a human-readable summary of what the run did and the data it ran on.</em> Tradeoff: reads top-to-bottom like a report, so it loses the timing and dependency structure a graph makes obvious.</p>
+
+  <div class="canvas">
+    <article class="dg-doc">
+
+      <div class="dg-kicker"><span class="dot"></span>Run digest · auto-generated</div>
+
+      <h1 class="dg-title">Plan-research: ground the argus plan in verified facts</h1>
+
+      <p class="dg-objective">
+        Before committing to an architecture, this run sent agents to independently
+        verify the open questions behind argus — <b>can we read Claude Code's runs at
+        all, how should we connect, what's the real on-disk shape, and which UI stack
+        wins</b> — then designed an approach, had it adversarially reviewed, and
+        <b>locked the decisions</b> a human still has to sign off on.
+      </p>
+
+      <div class="dg-calledon">
+        <span class="lbl">called&nbsp;on</span>
+        <span class="arg">workflow</span>
+        <span class="flag">plan-research.js</span>
+        <span>·</span>
+        <span class="flag">--workpad</span> <span class="val">research</span>
+        <span>·</span>
+        <span class="flag">--project</span> <span class="val">~/devel/argus</span>
+        <span>·</span>
+        <span class="flag">--dataset</span> <span class="val">../modal-rust (16 runs)</span>
+      </div>
+
+      <div class="dg-metrics">
+        <div class="dg-metric"><div class="m-val">10</div><div class="m-lbl">agents</div></div>
+        <div class="dg-metric"><div class="m-val">4</div><div class="m-lbl">phases</div></div>
+        <div class="dg-metric"><div class="m-val">6m02s</div><div class="m-lbl">wall time</div></div>
+        <div class="dg-metric is-fail"><div class="m-val">1</div><div class="m-lbl">failed</div></div>
+        <div class="dg-metric is-ok"><div class="m-val">completed</div><div class="m-lbl">status</div></div>
+      </div>
+
+      <div class="dg-section-h">What happened, phase by phase</div>
+
+      <div class="dg-callout">
+        <div class="dg-co-meta">
+          <div class="dg-co-phase"><span class="g g-done">●</span>Research</div>
+          <div class="dg-co-time">00:00 → 02:10</div>
+        </div>
+        <div class="dg-co-body">
+          <p>Fanned out <b>five agents in parallel</b>, one per open question, to gather evidence independently before any decision was made. All five finished cleanly within ~2 minutes.</p>
+          <p>They settled the load-bearing facts: a Claude Code client is <b>not required</b> for early phases, the connection strategy is <b>file-watch on the on-disk journals</b>, the data contract was inspected against real <span class="agent">modal-rust</span> runs, and the viz/stack lane converged on <b>@xyflow/react + elkjs</b>.</p>
+          <div class="dg-co-tags">
+            <span class="dg-tag"><span class="g g-done">●</span>client-availability</span>
+            <span class="dg-tag"><span class="g g-done">●</span>connection-strategy</span>
+            <span class="dg-tag"><span class="g g-done">●</span>data-contract</span>
+            <span class="dg-tag"><span class="g g-done">●</span>graph-viz</span>
+            <span class="dg-tag"><span class="g g-done">●</span>ts-stack</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="dg-callout">
+        <div class="dg-co-meta">
+          <div class="dg-co-phase"><span class="g g-done">●</span>Design</div>
+          <div class="dg-co-time">02:10 → 03:40</div>
+        </div>
+        <div class="dg-co-body">
+          <p>A single synthesis agent, <span class="agent">synthesize-approach</span>, folded the five research streams into one coherent proposal: the adapter boundary, the run model, and the file-first connection plan that the rest of the run would stress-test.</p>
+        </div>
+      </div>
+
+      <div class="dg-callout">
+        <div class="dg-co-meta">
+          <div class="dg-co-phase"><span class="g g-part">◐</span>Review</div>
+          <div class="dg-co-time">03:40 → 05:10</div>
+        </div>
+        <div class="dg-co-body">
+          <p>Three adversarial reviewers ran in parallel against the proposed approach. <span class="agent">review:correctness</span> and <span class="agent">review:security</span> passed.</p>
+          <p><span class="warn">✕ review:feasibility failed at 04:01 (error).</span> The phase completed partial — the synthesis below proceeded on the two passing reviews, and feasibility is flagged as an open risk for the human to resolve.</p>
+          <div class="dg-co-tags">
+            <span class="dg-tag"><span class="g g-done">●</span>review:correctness</span>
+            <span class="dg-tag"><span class="g g-done">●</span>review:security</span>
+            <span class="dg-tag"><span class="g g-fail">✕</span>review:feasibility</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="dg-callout">
+        <div class="dg-co-meta">
+          <div class="dg-co-phase"><span class="g g-done">●</span>Synthesize</div>
+          <div class="dg-co-time">05:10 → 06:02</div>
+        </div>
+        <div class="dg-co-body">
+          <p><span class="agent">lock-decisions</span> closed the run by committing the verified choices into locked decisions plus a milestone plan and the explicit questions left for the user — the phase gate for moving research → architecture.</p>
+        </div>
+      </div>
+
+      <div class="dg-decisions">
+        <div class="dg-section-h">Key decisions locked</div>
+        <ul class="dg-dec-list">
+          <li><b>File-first, read-only ingestion.</b> No Claude client, ACP, or remote control in early phases — argus reads the on-disk journals only. <span class="src">from connection-strategy + client-availability</span></li>
+          <li><b>Single adapter owns the raw format.</b> Everything downstream consumes a normalized run model; schema drift is a one-file fix. <span class="src">from data-contract</span></li>
+          <li><b>@xyflow/react + elkjs</b> for the layered left→right DAG canvas. <span class="src">from graph-viz + ts-stack</span></li>
+          <li><b>Feasibility unresolved.</b> The failed reviewer is carried forward as an open question for the user, not silently dropped. <span class="src">from review:feasibility ✕</span></li>
+        </ul>
+      </div>
+
+    </article>
+  </div>
+</section>
+</div>
+<div class="matrix-wrap"><h2>Comparison matrix</h2>
+<table class="matrix"><thead><tr>
+<th class="name">View</th><th>Structure / deps</th><th>Time / duration</th><th>Live / activity</th><th>Scan at scale</th><th>"What was this run?"</th><th>Impl</th><th class="name">Verdict</th>
+</tr></thead><tbody>
+<tr><td class="name">DAG (Progress) <span class="tag t-ship">ship · default</span></td><td><span class="sc s5">5</span></td><td><span class="sc s2">2</span></td><td><span class="sc s4">4</span></td><td><span class="sc s3">3</span></td><td><span class="sc s3">3</span></td><td><span class="sc s5">5</span></td><td class="verdict">The signature view: structure + live state in one read. Already paints running/upcoming. Stays the default for every run.</td></tr>
+<tr><td class="name">Timeline / Gantt <span class="tag t-later">later</span></td><td><span class="sc s3">3</span></td><td><span class="sc s5">5</span></td><td><span class="sc s3">3</span></td><td><span class="sc s4">4</span></td><td><span class="sc s3">3</span></td><td><span class="sc s2">2</span></td><td class="verdict">The one question the DAG can't answer (duration / critical-path). Worth adding — but as a 2nd renderer over the same RunModel, evidence-gated. Non-default while live.</td></tr>
+<tr><td class="name">Activity dashboard <span class="tag t-never">not a mode</span></td><td><span class="sc s2">2</span></td><td><span class="sc s3">3</span></td><td><span class="sc s5">5</span></td><td><span class="sc s3">3</span></td><td><span class="sc s3">3</span></td><td><span class="sc s3">3</span></td><td class="verdict">Redundant as a view — Progress already IS the live DAG. Its one unique bit (a live counts line) becomes a thin NOW chrome strip, not a 4th mode.</td></tr>
+<tr><td class="name">Phase swimlanes <span class="tag t-never">not a mode</span></td><td><span class="sc s4">4</span></td><td><span class="sc s3">3</span></td><td><span class="sc s3">3</span></td><td><span class="sc s4">4</span></td><td><span class="sc s2">2</span></td><td><span class="sc s3">3</span></td><td class="verdict">This is the row-grouping AXIS of the DAG (already shipped as phaseLane) and of a future Timeline — not its own canvas.</td></tr>
+<tr><td class="name">List / table <span class="tag t-later">later · panel</span></td><td><span class="sc s2">2</span></td><td><span class="sc s3">3</span></td><td><span class="sc s2">2</span></td><td><span class="sc s5">5</span></td><td><span class="sc s3">3</span></td><td><span class="sc s4">4</span></td><td class="verdict">Best at-scale scanning + fan-out roll-ups. A bottom data-grid PANEL, not a canvas mode. Cheap, but not MVP.</td></tr>
+<tr><td class="name">Story / digest <span class="tag t-never">not a mode</span></td><td><span class="sc s1">1</span></td><td><span class="sc s2">2</span></td><td><span class="sc s2">2</span></td><td><span class="sc s3">3</span></td><td><span class="sc s5">5</span></td><td><span class="sc s3">3</span></td><td class="verdict">Best at "what was this run even about" (+ what data it ran on). But it's PX/summary OUTPUT — a header line / RunOverviewPanel, never a layout mode.</td></tr>
+</tbody></table></div>
+<div class="reco"><h2>Recommendation</h2>
+<p>The gallery's real finding is <span class="win">restraint</span>: five of the six "views" are not separate canvas modes. <b>argus needs one signature canvas — the DAG (Progress)</b> — which already answers structure <i>and</i> liveness in a single read, plus a small amount of <b>chrome</b> and, later, <b>one</b> genuinely additive renderer.</p>
+<p><b>Ship:</b> keep the <span class="win">DAG / Progress</span> as the default for every run (running runs already route here and paint live state); add a thin always-present <span class="win">NOW status strip</span> (<code>N running · M failed · elapsed</code>) — that's the entire useful payload of "Activity" without a 4th mode. <b>Later (gated):</b> a <span class="win">Timeline/Gantt</span> as a 2nd renderer over the same RunModel for the duration/critical-path question; a <span class="win">Table panel</span> for at-scale scanning. <b>Never as modes:</b> Activity (→ chrome strip), Swimlane (→ the DAG/Timeline row axis), Digest (→ a summary line in RunOverviewPanel — which also answers the open "human-readable objective + what data it ran on" request).</p>
+<p>Net: <b>3 shipped canvas views unchanged · 1 NOW strip · +1 Timeline later</b> — zero combinatorial mode-state. The full reasoning + phased plan is in <code>workpads/design/navigation-and-views-plan.md</code>.</p>
+</div>
+</body>
+</html>
