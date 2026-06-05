@@ -1,0 +1,1808 @@
+<!doctype html><html><head><meta charset="utf-8"><title>argus · run-view drill gallery</title><style>
+:root{--bg:#0d1117;--panel:#11161c;--panel-2:#0b0f14;--fg:#e6edf3;--dim:#8b949e;--faint:#6e7681;--line:#21262d;--line-2:#30363d;--accent:#5b9dff;--green:#3fb950;--amber:#d29922;--red:#f85149;--purple:#a371f7;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,system-ui,sans-serif}
+*{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans)}body{padding:40px 40px 80px;line-height:1.5}
+.page-head{max-width:1080px;margin:0 auto 30px}.page-head h1{font-size:26px;margin:0 0 6px}.page-head .sub{color:var(--dim);font-size:15px}
+.gallery{display:grid;grid-template-columns:1fr;gap:24px;max-width:1180px;margin:0 auto}
+.card{background:var(--panel-2);border:1px solid var(--line);border-radius:12px;padding:18px 20px 22px}
+.card h3{margin:0 0 2px;font-size:16px}.card .cap{margin:4px 0 16px;font-size:13px;color:var(--dim)}.card .cap em{color:var(--fg);font-style:normal;font-weight:600}
+.canvas{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;font-family:var(--mono);font-size:12px;overflow:auto}
+.g-done{color:var(--green)}.g-fail{color:var(--red)}.g-run{color:var(--accent)}
+.pulse{animation:pulse 1.8s ease-in-out infinite}@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+</style></head><body><div class="page-head"><h1>argus · run-view drill gallery</h1><p class="sub">Five ways to expand to a more detailed view of a subagent (its actual PROMPT + RESULT + activity), plus a run-selector. One sample agent: research:client-availability · done · 1m48s · 14,997 tok. See workpads/design/run-detail-plan.md for the recommendation.</p></div><div class="gallery">
+<section class="card" data-view="inline-expand">
+  <h3>Inline-expand instances</h3>
+  <p class="cap">
+    <em>best for: scanning every subagent at once, then opening any one in place — no panel, no tab, never leave the lane.</em>
+    The fan-out drawer renders all its instance cards EXPANDED by default in a grid: each card carries label · status dot · dur · tokens · a one-line result/prompt preview. A small <code>open ▸</code> on any card expands THAT card inline to reveal the full verbatim prompt (monospace, collapsible) and the readable StructuredOutput result (with a raw-JSON toggle) right beneath it, pushing the grid down — so you compare siblings at a glance and dive into one without losing the others. Tradeoff: rich in-lane cards cost vertical space, so a wide fan (×8+) wants the lane scrollable; the right-side DetailPanel is still one click away for the full timeline.
+  </p>
+
+  <style>
+    [data-view="inline-expand"]{
+      --bg:#0d1117;--panel:#11161c;--panel-2:#0b0f14;--fg:#e6edf3;--dim:#8b949e;--faint:#6e7681;
+      --line:#21262d;--line-2:#30363d;--accent:#5b9dff;--green:#3fb950;--amber:#d29922;--red:#f85149;--purple:#a371f7;
+      --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+      --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,system-ui,sans-serif;
+    }
+    [data-view="inline-expand"] .canvas{ background:var(--bg); padding:16px 18px 18px; overflow:auto; font-family:var(--mono); }
+
+    /* the parent fan-out step the drawer hangs off (compact, just for context) */
+    [data-view="inline-expand"] .ie-step{
+      position:relative; width:264px; background:var(--panel); border:1px solid var(--line-2);
+      border-radius:9px; padding:11px 12px 12px; box-shadow:0 1px 0 rgba(0,0,0,.35), 0 6px 16px -10px rgba(0,0,0,.6);
+      margin-bottom:13px;
+    }
+    [data-view="inline-expand"] .ie-step .ie-dot{ position:absolute; top:10px; right:11px; font-size:11px; line-height:1; }
+    [data-view="inline-expand"] .ie-step .ie-title{ font-size:12px; color:var(--fg); padding-right:16px; }
+    [data-view="inline-expand"] .ie-step .ie-sub{ font-size:10.5px; color:var(--dim); margin-top:5px; }
+
+    /* the inline drawer that holds every instance card, expanded */
+    [data-view="inline-expand"] .ie-drawer{
+      border:1px dashed var(--line-2); border-radius:10px; padding:11px 11px 12px;
+      background:color-mix(in srgb, var(--panel-2) 70%, transparent);
+    }
+    [data-view="inline-expand"] .ie-dhdr{
+      display:flex; align-items:center; gap:9px; font-size:9.5px; letter-spacing:.06em;
+      color:var(--faint); margin:0 0 10px 1px;
+    }
+    [data-view="inline-expand"] .ie-dhdr .ie-rest{ margin-left:auto; color:var(--accent); cursor:pointer; }
+
+    /* grid of expanded instance cards; an opened card spans full width so its body has room */
+    [data-view="inline-expand"] .ie-grid{ display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:9px; }
+    [data-view="inline-expand"] .ie-card{
+      position:relative; border:1px solid var(--line); border-radius:8px; background:var(--bg);
+      padding:10px 11px 11px; box-shadow:0 1px 2px rgba(0,0,0,.35); min-width:0;
+    }
+    [data-view="inline-expand"] .ie-card.open{ grid-column:1 / -1; border-color:color-mix(in srgb, var(--accent) 40%, var(--line)); background:linear-gradient(180deg, color-mix(in srgb, var(--accent) 5%, transparent), transparent 90px), var(--bg); }
+    [data-view="inline-expand"] .ie-card.run{ border-color:color-mix(in srgb, var(--accent) 36%, var(--line)); background:linear-gradient(180deg, color-mix(in srgb, var(--accent) 6%, transparent), transparent 60%), var(--bg); }
+    [data-view="inline-expand"] .ie-card.fail{ border-color:color-mix(in srgb, var(--red) 46%, var(--line)); background:color-mix(in srgb, var(--red) 6%, var(--bg)); }
+
+    /* card top row: dot · label · open toggle */
+    [data-view="inline-expand"] .ie-top{ display:flex; align-items:center; gap:8px; }
+    [data-view="inline-expand"] .ie-top .ie-cdot{ font-size:11px; line-height:1; flex:none; }
+    [data-view="inline-expand"] .ie-top .ie-name{ font-size:11.5px; color:var(--fg); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+    [data-view="inline-expand"] .ie-card.fail .ie-name{ color:#ffb4ae; }
+    [data-view="inline-expand"] .ie-open{
+      margin-left:auto; flex:none; font-size:9.5px; color:var(--accent); cursor:pointer; user-select:none;
+      border:1px solid color-mix(in srgb, var(--accent) 30%, var(--line-2)); border-radius:5px; padding:2px 7px;
+      background:color-mix(in srgb, var(--accent) 7%, transparent);
+    }
+    [data-view="inline-expand"] .ie-open:hover{ border-color:color-mix(in srgb, var(--accent) 55%, var(--line-2)); }
+    [data-view="inline-expand"] .ie-open.disabled{ color:var(--faint); border-color:var(--line-2); background:none; cursor:default; }
+
+    /* meta row: dur · tokens · tools */
+    [data-view="inline-expand"] .ie-meta{ display:flex; flex-wrap:wrap; gap:4px 11px; font-size:9.5px; color:var(--dim); margin-top:8px; font-variant-numeric:tabular-nums; }
+    [data-view="inline-expand"] .ie-meta .mk{ color:var(--faint); }
+    [data-view="inline-expand"] .ie-card.run .ie-meta .live{ color:var(--accent); }
+    [data-view="inline-expand"] .ie-card.fail .ie-meta .err{ color:var(--red); }
+
+    /* one-line preview (collapsed state) */
+    [data-view="inline-expand"] .ie-prev{
+      margin-top:9px; font-size:10px; line-height:1.45; color:var(--dim);
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+      border-top:1px solid var(--line); padding-top:8px;
+    }
+    [data-view="inline-expand"] .ie-prev .pk{ color:var(--faint); margin-right:6px; }
+    [data-view="inline-expand"] .ie-prev.err{ color:#ffb4ae; white-space:normal; }
+
+    /* the expanded body, revealed only on .open cards */
+    [data-view="inline-expand"] .ie-body{ margin-top:11px; display:flex; flex-direction:column; gap:11px; }
+    [data-view="inline-expand"] .ie-card:not(.open) .ie-body{ display:none; }
+    [data-view="inline-expand"] .ie-card.open .ie-prev{ display:none; }
+
+    /* section block (PROMPT / RESULT) inside the open body */
+    [data-view="inline-expand"] .ie-sec{ border:1px solid var(--line); border-radius:7px; background:var(--panel-2); overflow:hidden; }
+    [data-view="inline-expand"] .ie-sec .ie-sechdr{
+      display:flex; align-items:center; gap:8px; padding:7px 10px; border-bottom:1px solid var(--line);
+      font-size:9px; letter-spacing:.1em; color:var(--faint); background:color-mix(in srgb, var(--panel) 70%, transparent);
+    }
+    [data-view="inline-expand"] .ie-sec .ie-sechdr .ie-secsub{ color:var(--dim); letter-spacing:0; }
+    [data-view="inline-expand"] .ie-sec .ie-tog{
+      margin-left:auto; display:inline-flex; border:1px solid var(--line-2); border-radius:5px; overflow:hidden;
+    }
+    [data-view="inline-expand"] .ie-sec .ie-tog span{ padding:1px 7px; font-size:9px; color:var(--faint); cursor:pointer; }
+    [data-view="inline-expand"] .ie-sec .ie-tog span.on{ color:var(--fg); background:color-mix(in srgb, var(--accent) 14%, transparent); }
+    [data-view="inline-expand"] .ie-sec .ie-collapse{ margin-left:auto; font-size:9px; color:var(--accent); cursor:pointer; }
+
+    /* verbatim prompt body */
+    [data-view="inline-expand"] .ie-prompt{ padding:10px 11px; font-size:10.5px; line-height:1.55; color:var(--fg); white-space:pre-wrap; word-break:break-word; }
+    [data-view="inline-expand"] .ie-prompt .q{ color:var(--faint); }
+
+    /* readable StructuredOutput result */
+    [data-view="inline-expand"] .ie-result{ padding:9px 11px 10px; font-size:10.5px; line-height:1.5; }
+    [data-view="inline-expand"] .ie-kv{ display:grid; grid-template-columns:max-content 1fr; gap:3px 12px; }
+    [data-view="inline-expand"] .ie-kv .k{ color:var(--accent); white-space:nowrap; }
+    [data-view="inline-expand"] .ie-kv .v{ color:var(--fg); min-width:0; }
+    [data-view="inline-expand"] .ie-kv .v.bool-t{ color:var(--green); }
+    [data-view="inline-expand"] .ie-kv ul{ margin:2px 0 0; padding:0; list-style:none; }
+    [data-view="inline-expand"] .ie-kv ul li{ position:relative; padding-left:14px; color:var(--dim); margin:2px 0; }
+    [data-view="inline-expand"] .ie-kv ul li::before{ content:"–"; position:absolute; left:2px; color:var(--faint); }
+    [data-view="inline-expand"] .ie-kv ul.risk li::before{ content:"!"; color:var(--amber); }
+    /* raw json (hidden under the toggle in this static mock) */
+    [data-view="inline-expand"] .ie-raw{ display:none; padding:10px 11px; font-size:10px; line-height:1.55; color:var(--dim); white-space:pre-wrap; word-break:break-word; }
+    [data-view="inline-expand"] .ie-raw .jk{ color:var(--accent); }
+    [data-view="inline-expand"] .ie-raw .js{ color:#a5d6a7; }
+    [data-view="inline-expand"] .ie-raw .jb{ color:var(--amber); }
+
+    /* timeline strip in the open body */
+    [data-view="inline-expand"] .ie-tl{ display:flex; align-items:center; flex-wrap:wrap; gap:6px; padding:9px 2px 1px; }
+    [data-view="inline-expand"] .ie-tl .tk{ font-size:9px; color:var(--dim); border:1px solid var(--line-2); border-radius:4px; padding:1px 6px; background:var(--panel-2); }
+    [data-view="inline-expand"] .ie-tl .tk.final{ color:var(--accent); border-color:color-mix(in srgb, var(--accent) 32%, var(--line-2)); }
+    [data-view="inline-expand"] .ie-tl .arr{ color:#3a4049; font-size:9px; }
+    [data-view="inline-expand"] .ie-tl .tllab{ font-size:9px; letter-spacing:.1em; color:var(--faint); margin-right:4px; }
+
+    /* footer of an open card: jump to full DetailPanel */
+    [data-view="inline-expand"] .ie-deep{
+      display:flex; align-items:center; gap:7px; font-size:9.5px; color:var(--dim); margin-top:1px;
+    }
+    [data-view="inline-expand"] .ie-deep .lnk{ color:var(--accent); cursor:pointer; }
+
+    [data-view="inline-expand"] .g-done{ color:var(--green); }
+    [data-view="inline-expand"] .g-fail{ color:var(--red); }
+    [data-view="inline-expand"] .g-run{ color:var(--accent); }
+    [data-view="inline-expand"] .pulse{ animation:ie-pulse 1.7s ease-in-out infinite; }
+    @keyframes ie-pulse{ 0%,100%{opacity:1} 50%{opacity:.4} }
+  </style>
+
+  <div class="canvas">
+
+    <!-- the parent fan-out step the drawer is anchored to -->
+    <div class="ie-step">
+      <span class="ie-dot g-run pulse">◌</span>
+      <div class="ie-title">research · review</div>
+      <div class="ie-sub">fan-out ×5 · parallel · 3 done · 1 running · 1 failed</div>
+    </div>
+
+    <!-- the drawer: all instance cards expanded by default -->
+    <div class="ie-drawer">
+      <div class="ie-dhdr">
+        <span>┄ INSTANCES · ×5 · expanded ┄ open ▸ any card for its prompt + result</span>
+        <span class="ie-rest">collapse all ▴</span>
+      </div>
+
+      <div class="ie-grid">
+
+        <!-- CARD 1 — the SHARED sample agent, shown OPEN in place (full prompt + result) -->
+        <div class="ie-card open">
+          <div class="ie-top">
+            <span class="ie-cdot g-done">●</span>
+            <span class="ie-name">research:client-availability</span>
+            <span class="ie-open">close ▾</span>
+          </div>
+          <div class="ie-meta">
+            <span><span class="mk">done</span> claude-opus-4-8[1m]</span>
+            <span><span class="mk">dur</span> 1m48s</span>
+            <span><span class="mk">tok</span> 14,997 in / 4,486 out</span>
+            <span><span class="mk">tools</span> Read×8 · Bash×3 · WebFetch×2</span>
+            <span><span class="mk">attempt</span> 1</span>
+          </div>
+
+          <div class="ie-body">
+
+            <!-- PROMPT: the actual task string, verbatim, monospace, collapsible -->
+            <div class="ie-sec">
+              <div class="ie-sechdr">
+                PROMPT <span class="ie-secsub">· task string passed to the agent</span>
+                <span class="ie-collapse">collapse ▴</span>
+              </div>
+              <div class="ie-prompt"><span class="q">"</span>Research whether Modal exposes a client / control-plane API usable from Rust for the local, remote, and deploy/call paths. Verify claims against the real Modal docs + the modal-rs surface; do not speculate. Return { available, strategy, evidence[], risks[] }.<span class="q">"</span></div>
+            </div>
+
+            <!-- RESULT: StructuredOutput, readable, with a raw-JSON toggle -->
+            <div class="ie-sec">
+              <div class="ie-sechdr">
+                RESULT <span class="ie-secsub">· StructuredOutput</span>
+                <span class="ie-tog"><span class="on">readable</span><span>raw json</span></span>
+              </div>
+              <div class="ie-result">
+                <div class="ie-kv">
+                  <span class="k">available</span><span class="v bool-t">true</span>
+                  <span class="k">strategy</span><span class="v">file-first journals for the READ path (no client needed); control-plane gRPC only for a later DRIVE path</span>
+                  <span class="k">evidence</span><span class="v"><ul>
+                    <li>the journals under ~/.claude/projects are the documented-by-observation read surface</li>
+                    <li>modal-rs exposes a typed client but it is unversioned</li>
+                  </ul></span>
+                  <span class="k">risks</span><span class="v"><ul class="risk">
+                    <li>on-disk format is undocumented + unversioned</li>
+                  </ul></span>
+                </div>
+              </div>
+              <!-- raw json variant, surfaced by the toggle -->
+              <div class="ie-raw">{
+  <span class="jk">"available"</span>: <span class="jb">true</span>,
+  <span class="jk">"strategy"</span>: <span class="js">"file-first journals for the READ path (no client needed); control-plane gRPC only for a later DRIVE path"</span>,
+  <span class="jk">"evidence"</span>: [
+    <span class="js">"the journals under ~/.claude/projects are the documented-by-observation read surface"</span>,
+    <span class="js">"modal-rs exposes a typed client but it is unversioned"</span>
+  ],
+  <span class="jk">"risks"</span>: [ <span class="js">"on-disk format is undocumented + unversioned"</span> ]
+}</div>
+            </div>
+
+            <!-- TIMELINE: the tool calls in order -->
+            <div class="ie-tl">
+              <span class="tllab">TIMELINE</span>
+              <span class="tk">Read</span><span class="arr">›</span>
+              <span class="tk">Read</span><span class="arr">›</span>
+              <span class="tk">WebFetch</span><span class="arr">›</span>
+              <span class="tk">Read</span><span class="arr">›</span>
+              <span class="tk">Bash</span><span class="arr">›</span>
+              <span class="tk">Read</span><span class="arr">›</span>
+              <span class="tk">WebFetch</span><span class="arr">›</span>
+              <span class="tk">Bash</span><span class="arr">›</span>
+              <span class="tk final">StructuredOutput</span>
+            </div>
+
+            <div class="ie-deep">full activity log, raw events &amp; retries → <span class="lnk">open in DetailPanel ▸</span></div>
+          </div>
+        </div>
+
+        <!-- CARD 2 — done sibling, collapsed (preview only) -->
+        <div class="ie-card">
+          <div class="ie-top">
+            <span class="ie-cdot g-done">●</span>
+            <span class="ie-name">research:connection-strategy</span>
+            <span class="ie-open">open ▸</span>
+          </div>
+          <div class="ie-meta">
+            <span><span class="mk">done</span> opus-4-8</span>
+            <span><span class="mk">dur</span> 2m05s</span>
+            <span><span class="mk">tok</span> 16.2k / 5.1k</span>
+            <span><span class="mk">tools</span> 14</span>
+          </div>
+          <div class="ie-prev"><span class="pk">result</span>strategy: gRPC control-plane is reachable but DRIVE-only; READ never needs it</div>
+        </div>
+
+        <!-- CARD 3 — done sibling, collapsed (preview only) -->
+        <div class="ie-card">
+          <div class="ie-top">
+            <span class="ie-cdot g-done">●</span>
+            <span class="ie-name">research:data-contract</span>
+            <span class="ie-open">open ▸</span>
+          </div>
+          <div class="ie-meta">
+            <span><span class="mk">done</span> opus-4-8</span>
+            <span><span class="mk">dur</span> 1m32s</span>
+            <span><span class="mk">tok</span> 11.8k / 3.9k</span>
+            <span><span class="mk">tools</span> 9</span>
+          </div>
+          <div class="ie-prev"><span class="pk">result</span>contract: one journal.jsonl per session; events are append-only + monotonic</div>
+        </div>
+
+        <!-- CARD 4 — the FAILED variant: no result, last activity = the API error -->
+        <div class="ie-card fail">
+          <div class="ie-top">
+            <span class="ie-cdot g-fail">✕</span>
+            <span class="ie-name">review:feasibility</span>
+            <span class="ie-open disabled">no result</span>
+          </div>
+          <div class="ie-meta">
+            <span><span class="err">failed</span> opus-4-8</span>
+            <span><span class="mk">dur</span> 0m21s</span>
+            <span><span class="mk">tok</span> 2.1k / —</span>
+            <span><span class="mk">attempt</span> 1</span>
+          </div>
+          <div class="ie-prev err"><span class="pk">last</span>API Error: The socket connection was closed unexpectedly</div>
+        </div>
+
+        <!-- CARD 5 — the RUNNING variant: no result yet, live-tailing its latest tool -->
+        <div class="ie-card run">
+          <div class="ie-top">
+            <span class="ie-cdot g-run pulse">◌</span>
+            <span class="ie-name">review:correctness</span>
+            <span class="ie-open disabled">running…</span>
+          </div>
+          <div class="ie-meta">
+            <span><span class="live">running</span> opus-4-8</span>
+            <span><span class="mk">dur</span> <span class="live">~0m34s</span></span>
+            <span><span class="mk">tok</span> 4.1k / …</span>
+            <span><span class="mk">tools</span> 6 so far</span>
+          </div>
+          <div class="ie-prev"><span class="pk">now</span><span class="g-run">◌</span> Read · packages/core/src/journal.ts (tool 7)…</div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<section class="card" data-view="panel-rich">
+  <h3>panel-rich · the evolved right-panel drill</h3>
+  <p class="cap"><em>best for: low-friction inspection of one selected agent without leaving the canvas.</em> Tradeoff: it shows a single agent at a time, so it never reveals the fan-out side by side — you scan one card deeply, then click the next.</p>
+
+  <div class="canvas">
+    <style>
+      [data-view="panel-rich"] .canvas {
+        position: relative;
+        display: flex;
+        justify-content: flex-end;
+        min-height: 660px;
+        background:
+          radial-gradient(circle at 22% 30%, rgba(91,157,255,0.05), transparent 60%),
+          var(--bg, #0d1117);
+        background-image:
+          radial-gradient(circle at 22% 30%, rgba(91,157,255,0.05), transparent 60%),
+          linear-gradient(rgba(255,255,255,0.018) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255,255,255,0.018) 1px, transparent 1px);
+        background-size: auto, 26px 26px, 26px 26px;
+        border-radius: 10px;
+        overflow: hidden;
+        font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+      }
+      /* a faint canvas hint behind the panel so it reads as a real overlay */
+      [data-view="panel-rich"] .pr-canvas-hint {
+        position: absolute;
+        top: 24px;
+        left: 26px;
+        max-width: 280px;
+        color: var(--faint, #6e7681);
+        font-size: 12px;
+        line-height: 1.5;
+        user-select: none;
+      }
+      [data-view="panel-rich"] .pr-ghost-card {
+        margin-top: 16px;
+        width: 232px;
+        padding: 9px 11px;
+        border: 1px solid var(--line, #21262d);
+        border-left: 3px solid var(--green, #3fb950);
+        border-radius: 9px;
+        background: rgba(17,22,28,0.55);
+        opacity: 0.55;
+      }
+      [data-view="panel-rich"] .pr-ghost-card.is-sel {
+        opacity: 1;
+        border-color: var(--line-2, #30363d);
+        box-shadow: 0 0 0 1px rgba(91,157,255,0.35);
+      }
+      [data-view="panel-rich"] .pr-ghost-label {
+        font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--fg, #e6edf3);
+      }
+      [data-view="panel-rich"] .pr-ghost-meta {
+        margin-top: 5px;
+        font-size: 10px;
+        color: var(--dim, #8b949e);
+        font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+      }
+
+      /* ===== the panel (evolves .detail-panel) ===== */
+      [data-view="panel-rich"] .pr-panel {
+        position: relative;
+        flex: none;
+        width: 360px;
+        align-self: stretch;
+        display: flex;
+        flex-direction: column;
+        background: rgba(13,17,23,0.94);
+        border-left: 1px solid #232a31;
+        backdrop-filter: blur(8px);
+        overflow-y: auto;
+        font-size: 13px;
+        color: var(--fg, #e6edf3);
+      }
+      [data-view="panel-rich"] .pr-panel::-webkit-scrollbar { width: 9px; }
+      [data-view="panel-rich"] .pr-panel::-webkit-scrollbar-thumb {
+        background: #21262d; border-radius: 9px;
+      }
+
+      /* sticky header — identity stays in view while you scroll the sections */
+      [data-view="panel-rich"] .pr-head {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        padding: 14px 16px 12px;
+        background: linear-gradient(180deg, rgba(13,17,23,0.98), rgba(13,17,23,0.9));
+        border-bottom: 1px solid var(--line, #21262d);
+        backdrop-filter: blur(8px);
+      }
+      [data-view="panel-rich"] .pr-head-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      [data-view="panel-rich"] .pr-kind {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.09em;
+        color: var(--faint, #6e7681);
+      }
+      [data-view="panel-rich"] .pr-close {
+        appearance: none; border: none; background: transparent;
+        color: var(--dim, #8b949e); font-size: 20px; line-height: 1;
+        cursor: pointer; padding: 0 2px;
+      }
+      [data-view="panel-rich"] .pr-close:hover { color: var(--fg, #e6edf3); }
+      [data-view="panel-rich"] .pr-title {
+        margin-top: 7px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+        font-size: 15px;
+        font-weight: 600;
+        word-break: break-word;
+      }
+      [data-view="panel-rich"] .pr-dot { flex: none; font-size: 12px; line-height: 1; }
+      [data-view="panel-rich"] .pr-dot-done { color: var(--green, #3fb950); }
+      [data-view="panel-rich"] .pr-dot-fail { color: var(--red, #f85149); }
+      [data-view="panel-rich"] .pr-dot-run {
+        color: var(--accent, #5b9dff);
+        animation: pr-pulse 1.4s ease-in-out infinite;
+      }
+      @keyframes pr-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }
+
+      /* the at-a-glance metric strip under the title */
+      [data-view="panel-rich"] .pr-stat-strip {
+        margin-top: 10px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      [data-view="panel-rich"] .pr-stat {
+        display: inline-flex;
+        align-items: baseline;
+        gap: 4px;
+        padding: 2px 7px;
+        border-radius: 6px;
+        background: #1b2128;
+        font-size: 11px;
+      }
+      [data-view="panel-rich"] .pr-stat-k { color: var(--dim, #8b949e); font-size: 10px; }
+      [data-view="panel-rich"] .pr-stat-v {
+        font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+        font-weight: 600;
+        color: var(--fg, #e6edf3);
+      }
+      [data-view="panel-rich"] .pr-state-word {
+        font-size: 11px; font-weight: 600; text-transform: lowercase;
+      }
+      [data-view="panel-rich"] .pr-state-done { color: var(--green, #3fb950); }
+      [data-view="panel-rich"] .pr-state-fail { color: var(--red, #f85149); }
+      [data-view="panel-rich"] .pr-state-run  { color: var(--accent, #5b9dff); }
+
+      /* ===== collapsible section (the heart of the drill) ===== */
+      [data-view="panel-rich"] .pr-sec { border-bottom: 1px solid var(--line, #21262d); }
+      [data-view="panel-rich"] .pr-sec > summary {
+        list-style: none;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 11px 16px;
+        user-select: none;
+        transition: background 140ms ease;
+      }
+      [data-view="panel-rich"] .pr-sec > summary::-webkit-details-marker { display: none; }
+      [data-view="panel-rich"] .pr-sec > summary:hover { background: rgba(255,255,255,0.022); }
+      [data-view="panel-rich"] .pr-caret {
+        flex: none;
+        color: var(--faint, #6e7681);
+        font-size: 10px;
+        transition: transform 160ms ease;
+      }
+      [data-view="panel-rich"] .pr-sec[open] > summary .pr-caret { transform: rotate(90deg); }
+      [data-view="panel-rich"] .pr-sec-label {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        color: var(--dim, #8b949e);
+      }
+      [data-view="panel-rich"] .pr-sec-hint {
+        margin-left: auto;
+        font-size: 10px;
+        color: var(--faint, #6e7681);
+        font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+      }
+      [data-view="panel-rich"] .pr-sec-body { padding: 0 16px 14px; }
+
+      /* PROMPT — verbatim task, monospace, show-more clamp */
+      [data-view="panel-rich"] .pr-prompt {
+        margin: 0;
+        font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+        font-size: 11px;
+        line-height: 1.55;
+        color: var(--fg, #e6edf3);
+        background: var(--panel-2, #0b0f14);
+        border: 1px solid var(--line, #21262d);
+        border-radius: 8px;
+        padding: 10px 12px;
+        white-space: pre-wrap;
+        word-break: break-word;
+        max-height: 78px;
+        overflow: hidden;
+        position: relative;
+        transition: max-height 200ms ease;
+      }
+      [data-view="panel-rich"] .pr-prompt.is-open { max-height: 460px; overflow: auto; }
+      [data-view="panel-rich"] .pr-prompt:not(.is-open)::after {
+        content: '';
+        position: absolute; left: 0; right: 0; bottom: 0; height: 30px;
+        background: linear-gradient(transparent, var(--panel-2, #0b0f14));
+        pointer-events: none;
+      }
+      [data-view="panel-rich"] .pr-showmore {
+        margin-top: 6px;
+        appearance: none;
+        background: transparent;
+        border: none;
+        color: var(--accent, #5b9dff);
+        font-size: 11px;
+        cursor: pointer;
+        padding: 0;
+        font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+      }
+      [data-view="panel-rich"] .pr-showmore:hover { text-decoration: underline; }
+
+      /* the readable/raw toggle, reused in RESULT */
+      [data-view="panel-rich"] .pr-toggle {
+        margin-left: auto;
+        appearance: none;
+        background: transparent;
+        border: 1px solid var(--line-2, #30363d);
+        color: var(--dim, #8b949e);
+        font-size: 10px;
+        border-radius: 6px;
+        padding: 1px 7px;
+        cursor: pointer;
+        font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+      }
+      [data-view="panel-rich"] .pr-toggle:hover { color: var(--fg, #e6edf3); border-color: #484f58; }
+      [data-view="panel-rich"] .pr-sec-body .pr-sec-sublabel {
+        display: flex; align-items: center;
+        font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em;
+        color: var(--faint, #6e7681); margin: 2px 0 6px;
+      }
+
+      /* RESULT — readable key/value (the StructuredOutput), raw JSON behind a toggle */
+      [data-view="panel-rich"] .pr-kv {
+        display: flex; flex-direction: column; gap: 8px;
+        background: var(--panel-2, #0b0f14);
+        border: 1px solid var(--line, #21262d);
+        border-radius: 8px;
+        padding: 11px 12px;
+      }
+      [data-view="panel-rich"] .pr-kv-row {
+        display: grid;
+        grid-template-columns: minmax(72px, 30%) 1fr;
+        gap: 10px;
+      }
+      [data-view="panel-rich"] .pr-kv-key {
+        color: #79c0ff;
+        font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+        font-size: 12px;
+      }
+      [data-view="panel-rich"] .pr-kv-val {
+        color: var(--fg, #e6edf3);
+        font-size: 12px; line-height: 1.5;
+        word-break: break-word;
+      }
+      [data-view="panel-rich"] .pr-kv-val.is-bool { color: var(--green, #3fb950); font-weight: 600; }
+      [data-view="panel-rich"] .pr-bullets {
+        margin: 3px 0 0; padding-left: 16px;
+        display: flex; flex-direction: column; gap: 4px;
+      }
+      [data-view="panel-rich"] .pr-bullets.is-risk { color: var(--amber, #d29922); }
+      [data-view="panel-rich"] .pr-raw {
+        margin: 0;
+        font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+        font-size: 11px; line-height: 1.5;
+        color: var(--fg, #e6edf3);
+        background: var(--panel-2, #0b0f14);
+        border: 1px solid var(--line, #21262d);
+        border-radius: 8px;
+        padding: 11px 12px;
+        white-space: pre-wrap; word-break: break-word;
+        max-height: 300px; overflow: auto;
+      }
+      [data-view="panel-rich"] .pr-raw .j-key { color: #79c0ff; }
+      [data-view="panel-rich"] .pr-raw .j-str { color: #a5d6ff; }
+      [data-view="panel-rich"] .pr-raw .j-bool { color: var(--green, #3fb950); }
+      /* raw block hidden until the toggle is :checked */
+      [data-view="panel-rich"] .pr-rawtoggle { display: none; }
+      [data-view="panel-rich"] .pr-rawtoggle ~ .pr-raw { display: none; }
+      [data-view="panel-rich"] .pr-rawtoggle:checked ~ .pr-raw { display: block; }
+      [data-view="panel-rich"] .pr-rawtoggle:checked ~ .pr-kv { display: none; }
+      [data-view="panel-rich"] .pr-rawtoggle:checked ~ .pr-sec-sublabel .pr-toggle-on { display: inline; }
+      [data-view="panel-rich"] .pr-rawtoggle:not(:checked) ~ .pr-sec-sublabel .pr-toggle-on { display: none; }
+      [data-view="panel-rich"] .pr-rawtoggle:checked ~ .pr-sec-sublabel .pr-toggle-off { display: none; }
+
+      /* ACTIVITY — tool chips, token kv, timeline */
+      [data-view="panel-rich"] .pr-tools {
+        display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px;
+      }
+      [data-view="panel-rich"] .pr-tool {
+        display: inline-flex; align-items: center; gap: 4px;
+        font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+        font-size: 11px; color: var(--fg, #e6edf3);
+        background: #11151b; border: 1px solid var(--line, #21262d);
+        border-radius: 999px; padding: 1px 8px;
+      }
+      [data-view="panel-rich"] .pr-tool b { color: var(--dim, #8b949e); font-weight: 400; }
+      [data-view="panel-rich"] .pr-timeline {
+        list-style: none; margin: 0; padding: 10px 0 0;
+        border-top: 1px solid var(--line, #21262d);
+        display: flex; flex-direction: column;
+      }
+      [data-view="panel-rich"] .pr-tl-row {
+        display: grid; grid-template-columns: 16px 1fr auto;
+        gap: 9px; align-items: center;
+        padding: 3px 0;
+        font-size: 11px;
+      }
+      [data-view="panel-rich"] .pr-tl-rail {
+        position: relative;
+        justify-self: center;
+        width: 7px; height: 7px; border-radius: 50%;
+        background: #1b2128; border: 1px solid var(--line-2, #30363d);
+      }
+      [data-view="panel-rich"] .pr-tl-row:not(:last-child) .pr-tl-rail::after {
+        content: ''; position: absolute; left: 50%; top: 7px;
+        transform: translateX(-50%);
+        width: 1px; height: 13px; background: var(--line, #21262d);
+      }
+      [data-view="panel-rich"] .pr-tl-rail.is-final { background: var(--green, #3fb950); border-color: var(--green, #3fb950); }
+      [data-view="panel-rich"] .pr-tl-name {
+        font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+        color: #79c0ff;
+      }
+      [data-view="panel-rich"] .pr-tl-name.is-out { color: var(--green, #3fb950); }
+      [data-view="panel-rich"] .pr-tl-n {
+        color: var(--faint, #6e7681);
+        font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+        font-variant-numeric: tabular-nums;
+      }
+
+      /* the failed-agent last-activity / error line */
+      [data-view="panel-rich"] .pr-errline {
+        font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+        font-size: 11px; line-height: 1.45;
+        color: var(--red, #f85149);
+        background: rgba(248,81,73,0.08);
+        border: 1px solid rgba(248,81,73,0.3);
+        border-radius: 6px; padding: 8px 10px;
+      }
+      [data-view="panel-rich"] .pr-empty {
+        font-size: 11px; line-height: 1.45;
+        color: var(--dim, #8b949e); font-style: italic;
+        border: 1px dashed var(--line-2, #30363d);
+        border-radius: 6px; padding: 9px 10px;
+      }
+      [data-view="panel-rich"] .pr-live {
+        display: inline-flex; align-items: center; gap: 6px;
+        font-size: 11px; color: var(--accent, #5b9dff);
+        font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+      }
+      [data-view="panel-rich"] .pr-live::before {
+        content: ''; width: 6px; height: 6px; border-radius: 50%;
+        background: currentColor; animation: pr-pulse 1.2s ease-in-out infinite;
+      }
+
+      /* the small variant rail at the bottom — shows the failed/running forms inline */
+      [data-view="panel-rich"] .pr-variants {
+        margin-top: auto;
+        border-top: 1px solid var(--line, #21262d);
+        padding: 12px 16px 16px;
+        background: rgba(11,15,20,0.6);
+      }
+      [data-view="panel-rich"] .pr-variants h4 {
+        margin: 0 0 8px;
+        font-size: 10px; font-weight: 700; letter-spacing: 0.07em;
+        text-transform: uppercase; color: var(--faint, #6e7681);
+      }
+      [data-view="panel-rich"] .pr-variant {
+        display: flex; align-items: flex-start; gap: 8px;
+        padding: 7px 0;
+      }
+      [data-view="panel-rich"] .pr-variant + .pr-variant { border-top: 1px solid var(--line, #21262d); }
+      [data-view="panel-rich"] .pr-variant-label {
+        font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+        font-size: 11px; font-weight: 600; color: var(--fg, #e6edf3);
+      }
+      [data-view="panel-rich"] .pr-variant-note {
+        font-size: 11px; line-height: 1.4; color: var(--dim, #8b949e); margin-top: 2px;
+      }
+      [data-view="panel-rich"] .pr-variant-note .pr-errline {
+        margin-top: 4px; display: block;
+      }
+    </style>
+
+    <!-- faint canvas behind the panel: the deselected sibling fan-out cards -->
+    <div class="pr-canvas-hint">
+      <div>run · modal-rust-plan-research</div>
+      <div style="margin-top:4px;font-size:11px;">step <em>research</em> — fanned ×3</div>
+      <div class="pr-ghost-card is-sel">
+        <div class="pr-ghost-label"><span style="color:var(--green,#3fb950)">●</span> research:client-availability</div>
+        <div class="pr-ghost-meta">1m48s · 14,997 tok</div>
+      </div>
+      <div class="pr-ghost-card">
+        <div class="pr-ghost-label"><span style="color:var(--green,#3fb950)">●</span> research:modal-rs-surface</div>
+        <div class="pr-ghost-meta">2m05s · 18,210 tok</div>
+      </div>
+      <div class="pr-ghost-card">
+        <div class="pr-ghost-label"><span style="color:var(--green,#3fb950)">●</span> research:data-contract</div>
+        <div class="pr-ghost-meta">1m31s · 12,440 tok</div>
+      </div>
+    </div>
+
+    <!-- ===== the rich right panel for the selected agent ===== -->
+    <aside class="pr-panel" role="complementary" aria-label="agent detail">
+      <div class="pr-head">
+        <div class="pr-head-top">
+          <span class="pr-kind">agent · instance</span>
+          <button type="button" class="pr-close" aria-label="close">×</button>
+        </div>
+        <div class="pr-title">
+          <span class="pr-dot pr-dot-done">●</span>
+          research:client-availability
+        </div>
+        <div class="pr-stat-strip">
+          <span class="pr-state-word pr-state-done" style="align-self:center">● done</span>
+          <span class="pr-stat"><span class="pr-stat-k">model</span><span class="pr-stat-v">claude-opus-4-8[1m]</span></span>
+          <span class="pr-stat"><span class="pr-stat-k">took</span><span class="pr-stat-v">1m48s</span></span>
+          <span class="pr-stat"><span class="pr-stat-k">tok</span><span class="pr-stat-v">14,997 ↓ / 4,486 ↑</span></span>
+          <span class="pr-stat"><span class="pr-stat-k">tools</span><span class="pr-stat-v">13</span></span>
+          <span class="pr-stat"><span class="pr-stat-k">attempt</span><span class="pr-stat-v">1</span></span>
+        </div>
+      </div>
+
+      <!-- PROMPT -->
+      <details class="pr-sec" open>
+        <summary>
+          <span class="pr-caret">▶</span>
+          <span class="pr-sec-label">prompt</span>
+          <span class="pr-sec-hint">the verbatim task</span>
+        </summary>
+        <div class="pr-sec-body">
+          <pre class="pr-prompt" id="pr-prompt">Research whether Modal exposes a client / control-plane API usable from Rust for the local, remote, and deploy/call paths. Verify claims against the real Modal docs + the modal-rs surface; do not speculate. Return { available, strategy, evidence[], risks[] }.</pre>
+          <button type="button" class="pr-showmore"
+            onclick="var p=this.previousElementSibling;var o=p.classList.toggle('is-open');this.textContent=o?'show less':'show more';">show more</button>
+        </div>
+      </details>
+
+      <!-- RESULT -->
+      <details class="pr-sec" open>
+        <summary>
+          <span class="pr-caret">▶</span>
+          <span class="pr-sec-label">result</span>
+          <span class="pr-sec-hint">StructuredOutput</span>
+        </summary>
+        <div class="pr-sec-body">
+          <input type="checkbox" class="pr-rawtoggle" id="pr-raw" />
+          <div class="pr-sec-sublabel">
+            rendered from the schema
+            <label class="pr-toggle" for="pr-raw">
+              <span class="pr-toggle-off">{ } raw</span>
+              <span class="pr-toggle-on">◧ readable</span>
+            </label>
+          </div>
+
+          <div class="pr-kv">
+            <div class="pr-kv-row">
+              <span class="pr-kv-key">available</span>
+              <span class="pr-kv-val is-bool">true</span>
+            </div>
+            <div class="pr-kv-row">
+              <span class="pr-kv-key">strategy</span>
+              <span class="pr-kv-val">file-first journals for the READ path (no client needed); control-plane gRPC only for a later DRIVE path</span>
+            </div>
+            <div class="pr-kv-row">
+              <span class="pr-kv-key">evidence</span>
+              <span class="pr-kv-val">
+                <ul class="pr-bullets">
+                  <li>the journals under ~/.claude/projects are the documented-by-observation read surface</li>
+                  <li>modal-rs exposes a typed client but it is unversioned</li>
+                </ul>
+              </span>
+            </div>
+            <div class="pr-kv-row">
+              <span class="pr-kv-key">risks</span>
+              <span class="pr-kv-val">
+                <ul class="pr-bullets is-risk">
+                  <li>on-disk format is undocumented + unversioned</li>
+                </ul>
+              </span>
+            </div>
+          </div>
+
+          <pre class="pr-raw"><span class="j-key">{</span>
+  <span class="j-key">"available"</span>: <span class="j-bool">true</span>,
+  <span class="j-key">"strategy"</span>: <span class="j-str">"file-first journals for the READ path (no client needed); control-plane gRPC only for a later DRIVE path"</span>,
+  <span class="j-key">"evidence"</span>: [
+    <span class="j-str">"the journals under ~/.claude/projects are the documented-by-observation read surface"</span>,
+    <span class="j-str">"modal-rs exposes a typed client but it is unversioned"</span>
+  ],
+  <span class="j-key">"risks"</span>: [
+    <span class="j-str">"on-disk format is undocumented + unversioned"</span>
+  ]
+<span class="j-key">}</span></pre>
+        </div>
+      </details>
+
+      <!-- ACTIVITY -->
+      <details class="pr-sec" open>
+        <summary>
+          <span class="pr-caret">▶</span>
+          <span class="pr-sec-label">activity</span>
+          <span class="pr-sec-hint">9 events</span>
+        </summary>
+        <div class="pr-sec-body">
+          <div class="pr-tools">
+            <span class="pr-tool">Read <b>×8</b></span>
+            <span class="pr-tool">Bash <b>×3</b></span>
+            <span class="pr-tool">WebFetch <b>×2</b></span>
+          </div>
+          <ol class="pr-timeline">
+            <li class="pr-tl-row"><span class="pr-tl-rail"></span><span class="pr-tl-name">Read</span><span class="pr-tl-n">01</span></li>
+            <li class="pr-tl-row"><span class="pr-tl-rail"></span><span class="pr-tl-name">Read</span><span class="pr-tl-n">02</span></li>
+            <li class="pr-tl-row"><span class="pr-tl-rail"></span><span class="pr-tl-name">WebFetch</span><span class="pr-tl-n">03</span></li>
+            <li class="pr-tl-row"><span class="pr-tl-rail"></span><span class="pr-tl-name">Read</span><span class="pr-tl-n">04</span></li>
+            <li class="pr-tl-row"><span class="pr-tl-rail"></span><span class="pr-tl-name">Bash</span><span class="pr-tl-n">05</span></li>
+            <li class="pr-tl-row"><span class="pr-tl-rail"></span><span class="pr-tl-name">Read</span><span class="pr-tl-n">06</span></li>
+            <li class="pr-tl-row"><span class="pr-tl-rail"></span><span class="pr-tl-name">WebFetch</span><span class="pr-tl-n">07</span></li>
+            <li class="pr-tl-row"><span class="pr-tl-rail"></span><span class="pr-tl-name">Bash</span><span class="pr-tl-n">08</span></li>
+            <li class="pr-tl-row"><span class="pr-tl-rail is-final"></span><span class="pr-tl-name is-out">StructuredOutput</span><span class="pr-tl-n">09</span></li>
+          </ol>
+        </div>
+      </details>
+
+      <!-- the two other states, shown compactly so the drill's failure + live forms are legible -->
+      <div class="pr-variants">
+        <h4>other states this panel renders</h4>
+        <div class="pr-variant">
+          <span class="pr-dot pr-dot-fail" style="margin-top:2px">✕</span>
+          <div>
+            <div class="pr-variant-label">review:feasibility · fail</div>
+            <div class="pr-variant-note">
+              no result captured — ACTIVITY surfaces the final line as the root cause:
+              <span class="pr-errline">API Error: The socket connection was closed unexpectedly</span>
+            </div>
+          </div>
+        </div>
+        <div class="pr-variant">
+          <span class="pr-dot pr-dot-run" style="margin-top:2px">◌</span>
+          <div>
+            <div class="pr-variant-label">design:approach · running</div>
+            <div class="pr-variant-note">
+              no result yet · RESULT shows <em>pending</em> while ACTIVITY live-tails:
+              <span class="pr-live" style="margin-top:4px">Read · contract.ts (live)</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </div>
+</section>
+
+<section class="card" data-view="transcript-reader">
+  <h3>Transcript Reader</h3>
+  <p class="cap"><em>best for: deep reading of what one subagent actually did, top-to-bottom like a session.</em> Tradeoff: a focused single-agent view — it pulls you out of the fan-out, so it's poor for comparing instances side by side.</p>
+  <div class="canvas">
+    <div class="tr-scrim">
+      <div class="tr-modal" role="dialog" aria-label="Agent transcript">
+
+        <header class="tr-head">
+          <div class="tr-head-main">
+            <span class="tr-status tr-status--done" aria-hidden="true">●</span>
+            <span class="tr-label">research<span class="tr-sep">:</span>client-availability</span>
+          </div>
+          <div class="tr-head-meta">
+            <span class="tr-model">claude-opus-4-8[1m]</span>
+            <span class="tr-dot">·</span>
+            <span>14,997 in / 4,486 out</span>
+            <span class="tr-dot">·</span>
+            <span>1m48s</span>
+            <button class="tr-close" type="button" aria-label="Close transcript">✕</button>
+          </div>
+        </header>
+
+        <div class="tr-scroll">
+          <div class="tr-page">
+
+            <div class="tr-stream-meta">
+              <span class="tr-pill">attempt 1</span>
+              <span class="tr-pill">9 tool calls</span>
+              <span class="tr-pill tr-pill--ok">completed · StructuredOutput</span>
+            </div>
+
+            <!-- PROMPT: opening task block -->
+            <section class="tr-block tr-prompt">
+              <div class="tr-block-head">
+                <span class="tr-kicker">PROMPT</span>
+                <span class="tr-kicker-sub">task passed to the agent</span>
+              </div>
+              <div class="tr-prompt-body">Research whether Modal exposes a client / control-plane API usable from Rust for the local, remote, and deploy/call paths. Verify claims against the real Modal docs + the modal-rs surface; do not speculate. Return { available, strategy, evidence[], risks[] }.</div>
+            </section>
+
+            <!-- TIMELINE: tool calls in sequence -->
+            <section class="tr-timeline">
+              <div class="tr-rail-label">ACTIVITY</div>
+
+              <div class="tr-step">
+                <span class="tr-tool tr-tool--read">Read</span>
+                <span class="tr-target">AGENTS.md — locate documented read surface</span>
+              </div>
+              <div class="tr-step">
+                <span class="tr-tool tr-tool--read">Read</span>
+                <span class="tr-target">~/.claude/projects/&hellip;/&lt;session&gt;.jsonl</span>
+              </div>
+              <div class="tr-step">
+                <span class="tr-tool tr-tool--web">WebFetch</span>
+                <span class="tr-target">modal.com/docs — client &amp; deploy/call paths</span>
+              </div>
+              <div class="tr-step">
+                <span class="tr-tool tr-tool--read">Read</span>
+                <span class="tr-target">modal-rs/src/client.rs — typed client surface</span>
+              </div>
+              <div class="tr-step">
+                <span class="tr-tool tr-tool--bash">Bash</span>
+                <span class="tr-target">cargo doc -p modal --no-deps</span>
+              </div>
+              <div class="tr-step">
+                <span class="tr-tool tr-tool--read">Read</span>
+                <span class="tr-target">modal-rs/Cargo.toml — version pin</span>
+              </div>
+              <div class="tr-step">
+                <span class="tr-tool tr-tool--web">WebFetch</span>
+                <span class="tr-target">modal.com/docs/reference — gRPC control plane</span>
+              </div>
+              <div class="tr-step">
+                <span class="tr-tool tr-tool--bash">Bash</span>
+                <span class="tr-target">grep -r " control-plane" docs/</span>
+              </div>
+              <div class="tr-step tr-step--final">
+                <span class="tr-tool tr-tool--out">StructuredOutput</span>
+                <span class="tr-target">emit { available, strategy, evidence[], risks[] }</span>
+              </div>
+            </section>
+
+            <!-- RESULT: closing block -->
+            <section class="tr-block tr-result">
+              <div class="tr-block-head">
+                <span class="tr-kicker tr-kicker--ok">RESULT</span>
+                <span class="tr-kicker-sub">StructuredOutput</span>
+                <span class="tr-toggle" role="group" aria-label="Result format">
+                  <button type="button" class="tr-toggle-btn is-active">Readable</button>
+                  <button type="button" class="tr-toggle-btn">Raw JSON</button>
+                </span>
+              </div>
+
+              <div class="tr-result-body">
+                <div class="tr-field">
+                  <span class="tr-key">available</span>
+                  <span class="tr-val tr-val--bool">true</span>
+                </div>
+                <div class="tr-field">
+                  <span class="tr-key">strategy</span>
+                  <span class="tr-val">file-first journals for the READ path (no client needed); control-plane gRPC only for a later DRIVE path</span>
+                </div>
+                <div class="tr-field tr-field--list">
+                  <span class="tr-key">evidence</span>
+                  <ul class="tr-list">
+                    <li>the journals under ~/.claude/projects are the documented-by-observation read surface</li>
+                    <li>modal-rs exposes a typed client but it is unversioned</li>
+                  </ul>
+                </div>
+                <div class="tr-field tr-field--list">
+                  <span class="tr-key">risks</span>
+                  <ul class="tr-list tr-list--warn">
+                    <li>on-disk format is undocumented + unversioned</li>
+                  </ul>
+                </div>
+              </div>
+            </section>
+
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <style>
+    [data-view="transcript-reader"] .canvas{
+      position:relative;
+      padding:0;
+      min-height:560px;
+      background:
+        radial-gradient(120% 90% at 50% -10%, rgba(91,157,255,.05), transparent 60%),
+        var(--bg);
+      overflow:hidden;
+      display:flex;
+    }
+
+    /* dim scrim behind the reading view */
+    [data-view="transcript-reader"] .tr-scrim{
+      position:absolute; inset:0;
+      background:rgba(3,6,10,.62);
+      display:flex; align-items:flex-start; justify-content:center;
+      padding:26px 16px 40px;
+      overflow:auto;
+    }
+
+    [data-view="transcript-reader"] .tr-modal{
+      width:760px; max-width:100%;
+      background:var(--panel);
+      border:1px solid var(--line-2);
+      border-radius:12px;
+      box-shadow:0 24px 70px -18px rgba(0,0,0,.7), 0 0 0 1px rgba(0,0,0,.4);
+      display:flex; flex-direction:column;
+      max-height:512px;
+      overflow:hidden;
+      color:var(--fg);
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    }
+
+    /* sticky header */
+    [data-view="transcript-reader"] .tr-head{
+      flex:0 0 auto;
+      display:flex; align-items:center; justify-content:space-between;
+      gap:16px;
+      padding:13px 16px;
+      border-bottom:1px solid var(--line);
+      background:linear-gradient(var(--panel),var(--panel)) padding-box,
+                 var(--panel);
+      background-color:rgba(17,22,28,.96);
+      backdrop-filter:blur(4px);
+    }
+    [data-view="transcript-reader"] .tr-head-main{
+      display:flex; align-items:center; gap:9px; min-width:0;
+    }
+    [data-view="transcript-reader"] .tr-status{ font-size:12px; line-height:1; }
+    [data-view="transcript-reader"] .tr-status--done{ color:var(--green); }
+    [data-view="transcript-reader"] .tr-label{
+      font-size:14px; font-weight:600; letter-spacing:.1px;
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    }
+    [data-view="transcript-reader"] .tr-sep{ color:var(--faint); margin:0 1px; font-weight:400; }
+    [data-view="transcript-reader"] .tr-head-meta{
+      display:flex; align-items:center; gap:8px;
+      font-size:11.5px; color:var(--dim);
+      font-family:var(--mono,ui-monospace,SFMono-Regular,Menlo,monospace);
+      white-space:nowrap;
+    }
+    [data-view="transcript-reader"] .tr-model{ color:var(--faint); }
+    [data-view="transcript-reader"] .tr-dot{ color:var(--line-2); }
+    [data-view="transcript-reader"] .tr-close{
+      margin-left:6px;
+      width:24px; height:24px;
+      display:inline-flex; align-items:center; justify-content:center;
+      border:1px solid var(--line-2); border-radius:6px;
+      background:var(--panel-2); color:var(--dim);
+      font-size:11px; cursor:pointer;
+      transition:.12s ease;
+    }
+    [data-view="transcript-reader"] .tr-close:hover{ color:var(--fg); border-color:var(--faint); background:var(--line); }
+
+    /* scroll body */
+    [data-view="transcript-reader"] .tr-scroll{
+      flex:1 1 auto; overflow-y:auto;
+      background:
+        linear-gradient(var(--panel) 30%, rgba(17,22,28,0)) top / 100% 24px no-repeat,
+        var(--panel);
+    }
+    [data-view="transcript-reader"] .tr-scroll::-webkit-scrollbar{ width:10px; }
+    [data-view="transcript-reader"] .tr-scroll::-webkit-scrollbar-thumb{
+      background:var(--line-2); border-radius:6px; border:3px solid var(--panel);
+    }
+    [data-view="transcript-reader"] .tr-page{
+      padding:20px 30px 30px;
+      display:flex; flex-direction:column; gap:16px;
+    }
+
+    [data-view="transcript-reader"] .tr-stream-meta{
+      display:flex; flex-wrap:wrap; gap:6px;
+      margin-bottom:2px;
+    }
+    [data-view="transcript-reader"] .tr-pill{
+      font-size:10.5px; color:var(--dim);
+      font-family:var(--mono,ui-monospace,Menlo,monospace);
+      padding:2px 8px; border:1px solid var(--line); border-radius:999px;
+      background:var(--panel-2);
+    }
+    [data-view="transcript-reader"] .tr-pill--ok{ color:var(--green); border-color:rgba(63,185,80,.28); }
+
+    /* generic kicker label */
+    [data-view="transcript-reader"] .tr-block-head{
+      display:flex; align-items:center; gap:10px;
+      margin-bottom:9px;
+    }
+    [data-view="transcript-reader"] .tr-kicker{
+      font-size:10.5px; font-weight:700; letter-spacing:1.2px;
+      color:var(--dim);
+    }
+    [data-view="transcript-reader"] .tr-kicker--ok{ color:var(--green); }
+    [data-view="transcript-reader"] .tr-kicker-sub{
+      font-size:10.5px; color:var(--faint);
+      font-family:var(--mono,ui-monospace,Menlo,monospace);
+    }
+
+    /* PROMPT block */
+    [data-view="transcript-reader"] .tr-prompt-body{
+      font-family:var(--mono,ui-monospace,SFMono-Regular,Menlo,monospace);
+      font-size:12.5px; line-height:1.65;
+      color:var(--fg);
+      background:var(--panel-2);
+      border:1px solid var(--line);
+      border-left:2px solid var(--accent);
+      border-radius:8px;
+      padding:13px 15px;
+      white-space:pre-wrap;
+    }
+
+    /* TIMELINE */
+    [data-view="transcript-reader"] .tr-timeline{
+      position:relative;
+      padding-left:14px;
+      margin:2px 0;
+    }
+    [data-view="transcript-reader"] .tr-timeline::before{
+      content:""; position:absolute; left:3px; top:24px; bottom:14px;
+      width:1px; background:var(--line-2);
+    }
+    [data-view="transcript-reader"] .tr-rail-label{
+      font-size:10.5px; font-weight:700; letter-spacing:1.2px;
+      color:var(--dim); margin:0 0 10px 0;
+    }
+    [data-view="transcript-reader"] .tr-step{
+      position:relative;
+      display:flex; align-items:center; gap:10px;
+      padding:4px 0;
+    }
+    [data-view="transcript-reader"] .tr-step::before{
+      content:""; position:absolute; left:-11px; top:50%;
+      width:6px; height:6px; margin-top:-3px;
+      border-radius:50%;
+      background:var(--faint);
+      box-shadow:0 0 0 3px var(--panel);
+    }
+    [data-view="transcript-reader"] .tr-step--final::before{
+      background:var(--green);
+      box-shadow:0 0 0 3px var(--panel), 0 0 6px rgba(63,185,80,.5);
+    }
+    [data-view="transcript-reader"] .tr-tool{
+      flex:0 0 auto;
+      font-family:var(--mono,ui-monospace,Menlo,monospace);
+      font-size:11px; font-weight:600;
+      padding:2px 7px; border-radius:5px;
+      border:1px solid var(--line-2);
+      background:var(--panel-2);
+      color:var(--dim);
+      min-width:88px; text-align:center;
+    }
+    /* tools stay calm/grey — no saturated color, that's reserved for status */
+    [data-view="transcript-reader"] .tr-tool--out{
+      color:var(--fg); border-color:var(--line-2);
+      background:var(--line);
+    }
+    [data-view="transcript-reader"] .tr-target{
+      font-size:12px; color:var(--dim);
+      font-family:var(--mono,ui-monospace,Menlo,monospace);
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    }
+    [data-view="transcript-reader"] .tr-step--final .tr-target{ color:var(--fg); }
+
+    /* RESULT block */
+    [data-view="transcript-reader"] .tr-result{
+      border:1px solid var(--line);
+      border-top:2px solid var(--green);
+      border-radius:8px;
+      background:var(--panel-2);
+      padding:13px 15px 15px;
+    }
+    [data-view="transcript-reader"] .tr-toggle{
+      margin-left:auto;
+      display:inline-flex;
+      border:1px solid var(--line-2); border-radius:6px;
+      overflow:hidden;
+    }
+    [data-view="transcript-reader"] .tr-toggle-btn{
+      font-size:10.5px; color:var(--dim);
+      font-family:var(--mono,ui-monospace,Menlo,monospace);
+      padding:3px 9px; background:transparent; border:0; cursor:pointer;
+    }
+    [data-view="transcript-reader"] .tr-toggle-btn.is-active{
+      background:var(--line); color:var(--fg);
+    }
+    [data-view="transcript-reader"] .tr-result-body{
+      display:flex; flex-direction:column; gap:11px;
+    }
+    [data-view="transcript-reader"] .tr-field{
+      display:grid; grid-template-columns:84px 1fr; gap:12px;
+      align-items:baseline;
+    }
+    [data-view="transcript-reader"] .tr-field--list{ align-items:start; }
+    [data-view="transcript-reader"] .tr-key{
+      font-family:var(--mono,ui-monospace,Menlo,monospace);
+      font-size:11.5px; color:var(--faint);
+      text-align:right;
+    }
+    [data-view="transcript-reader"] .tr-val{
+      font-size:12.5px; line-height:1.55; color:var(--fg);
+    }
+    [data-view="transcript-reader"] .tr-val--bool{
+      font-family:var(--mono,ui-monospace,Menlo,monospace);
+      color:var(--green); font-weight:600;
+    }
+    [data-view="transcript-reader"] .tr-list{
+      margin:0; padding:0; list-style:none;
+      display:flex; flex-direction:column; gap:6px;
+    }
+    [data-view="transcript-reader"] .tr-list li{
+      position:relative; padding-left:15px;
+      font-size:12.5px; line-height:1.5; color:var(--fg);
+    }
+    [data-view="transcript-reader"] .tr-list li::before{
+      content:"–"; position:absolute; left:0; color:var(--faint);
+    }
+    [data-view="transcript-reader"] .tr-list--warn li::before{ content:"!"; color:var(--amber); font-weight:700; }
+  </style>
+</section>
+
+<section class="card" data-view="bottom-dock">
+  <h3>Bottom Dock</h3>
+  <p class="cap"><em>best for: keeping the graph and one agent's detail on screen at once</em> — tabs keep the dock compact, but only one agent's detail shows at a time and vertical space is split.</p>
+  <div class="canvas">
+
+    <div class="bd-shell">
+      <!-- GRAPH stays visible on top -->
+      <div class="bd-graph">
+        <div class="bd-graph-head">
+          <span class="bd-run">modal-rust-plan-research</span>
+          <span class="bd-runsel">● 5m ago · 14ag · 6m02s <span class="bd-chev">▾</span></span>
+        </div>
+        <div class="bd-fan">
+          <div class="bd-step">
+            <div class="bd-step-label">research <span class="bd-x3">×3</span></div>
+            <div class="bd-inst bd-sel">
+              <span class="bd-st bd-done">●</span><span class="bd-iname">client-availability</span>
+            </div>
+            <div class="bd-inst">
+              <span class="bd-st bd-done">●</span><span class="bd-iname">connection-strategy</span>
+            </div>
+            <div class="bd-inst">
+              <span class="bd-st bd-run">◌</span><span class="bd-iname">data-contract</span>
+            </div>
+          </div>
+          <div class="bd-step">
+            <div class="bd-step-label">review <span class="bd-x3">×2</span></div>
+            <div class="bd-inst">
+              <span class="bd-st bd-fail">✕</span><span class="bd-iname">feasibility</span>
+            </div>
+            <div class="bd-inst">
+              <span class="bd-st bd-done">●</span><span class="bd-iname">ui-direction</span>
+            </div>
+          </div>
+          <div class="bd-step bd-step-dim">
+            <div class="bd-step-label">synthesize <span class="bd-x3">×1</span></div>
+            <div class="bd-inst">
+              <span class="bd-st bd-run">◌</span><span class="bd-iname">locked-decisions</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- resize handle -->
+      <div class="bd-resize"><span class="bd-grip"></span></div>
+
+      <!-- BOTTOM DOCK -->
+      <div class="bd-dock">
+        <div class="bd-agenthead">
+          <div class="bd-ah-main">
+            <span class="bd-st bd-done">●</span>
+            <span class="bd-ah-name">research:client-availability</span>
+            <span class="bd-ah-model">claude-opus-4-8[1m]</span>
+          </div>
+          <div class="bd-ah-meta">
+            <span>1m48s</span><span class="bd-dot">·</span>
+            <span>14,997 in / 4,486 out</span><span class="bd-dot">·</span>
+            <span class="bd-tools">Read×8 · Bash×3 · WebFetch×2</span><span class="bd-dot">·</span>
+            <span>attempt 1</span>
+          </div>
+        </div>
+
+        <div class="bd-tabs" role="tablist">
+          <button class="bd-tab" role="tab">Prompt</button>
+          <button class="bd-tab bd-tab-on" role="tab" aria-selected="true">Result</button>
+          <button class="bd-tab" role="tab">Activity</button>
+          <span class="bd-tabs-spacer"></span>
+          <button class="bd-raw">{ } raw</button>
+        </div>
+
+        <div class="bd-body" role="tabpanel">
+          <!-- Result tab (active): readable StructuredOutput -->
+          <div class="bd-so">
+            <div class="bd-field">
+              <span class="bd-key">available</span>
+              <span class="bd-bool">true</span>
+            </div>
+            <div class="bd-field">
+              <span class="bd-key">strategy</span>
+              <span class="bd-str">file-first journals for the READ path (no client needed); control-plane gRPC only for a later DRIVE path</span>
+            </div>
+            <div class="bd-field">
+              <span class="bd-key">evidence <span class="bd-count">2</span></span>
+              <ul class="bd-list">
+                <li>the journals under ~/.claude/projects are the documented-by-observation read surface</li>
+                <li>modal-rs exposes a typed client but it is unversioned</li>
+              </ul>
+            </div>
+            <div class="bd-field">
+              <span class="bd-key">risks <span class="bd-count">1</span></span>
+              <ul class="bd-list bd-list-risk">
+                <li>on-disk format is undocumented + unversioned</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <style>
+    [data-view="bottom-dock"] .canvas{
+      padding:0;
+      background:var(--panel-2);
+    }
+    [data-view="bottom-dock"] .bd-shell{
+      display:flex;
+      flex-direction:column;
+      height:540px;
+      font:13px/1.5 var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+      color:var(--fg);
+    }
+
+    /* ---- GRAPH ---- */
+    [data-view="bottom-dock"] .bd-graph{
+      flex:1 1 auto;
+      min-height:0;
+      overflow:auto;
+      padding:14px 16px;
+      background:
+        radial-gradient(circle at 1px 1px, var(--line) 1px, transparent 0) 0 0/22px 22px,
+        var(--bg);
+    }
+    [data-view="bottom-dock"] .bd-graph-head{
+      display:flex;align-items:center;justify-content:space-between;
+      margin-bottom:14px;
+    }
+    [data-view="bottom-dock"] .bd-run{
+      color:var(--dim);letter-spacing:.02em;
+    }
+    [data-view="bottom-dock"] .bd-runsel{
+      display:inline-flex;align-items:center;gap:8px;
+      padding:4px 10px;border:1px solid var(--line-2);border-radius:6px;
+      background:var(--panel);color:var(--fg);font-size:12px;cursor:pointer;
+    }
+    [data-view="bottom-dock"] .bd-runsel .bd-chev{color:var(--faint);}
+    [data-view="bottom-dock"] .bd-runsel::first-letter{color:var(--green);}
+
+    [data-view="bottom-dock"] .bd-fan{
+      display:flex;align-items:flex-start;gap:36px;position:relative;
+    }
+    [data-view="bottom-dock"] .bd-step{
+      display:flex;flex-direction:column;gap:8px;position:relative;
+    }
+    [data-view="bottom-dock"] .bd-step:not(:last-child)::after{
+      content:"";position:absolute;top:30px;right:-36px;width:36px;height:1px;
+      background:var(--line-2);
+    }
+    [data-view="bottom-dock"] .bd-step-dim{opacity:.55;}
+    [data-view="bottom-dock"] .bd-step-label{
+      color:var(--faint);font-size:11px;text-transform:uppercase;letter-spacing:.08em;
+      margin-bottom:2px;
+    }
+    [data-view="bottom-dock"] .bd-x3{color:var(--dim);}
+    [data-view="bottom-dock"] .bd-inst{
+      display:flex;align-items:center;gap:8px;
+      width:178px;padding:8px 10px;
+      border:1px solid var(--line);border-radius:7px;
+      background:var(--panel);
+    }
+    [data-view="bottom-dock"] .bd-inst.bd-sel{
+      border-color:var(--accent);
+      box-shadow:0 0 0 1px var(--accent), 0 2px 14px -6px var(--accent);
+      background:var(--panel-2);
+    }
+    [data-view="bottom-dock"] .bd-iname{
+      white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+    }
+    [data-view="bottom-dock"] .bd-st{font-size:12px;line-height:1;}
+    [data-view="bottom-dock"] .bd-done{color:var(--green);}
+    [data-view="bottom-dock"] .bd-fail{color:var(--red);}
+    [data-view="bottom-dock"] .bd-run{color:var(--accent);}
+    [data-view="bottom-dock"] .bd-st.bd-run{color:var(--accent);}
+
+    /* ---- RESIZE HANDLE ---- */
+    [data-view="bottom-dock"] .bd-resize{
+      height:11px;flex:0 0 auto;
+      display:flex;align-items:center;justify-content:center;
+      background:var(--panel-2);
+      border-top:1px solid var(--line-2);border-bottom:1px solid var(--line);
+      cursor:ns-resize;
+    }
+    [data-view="bottom-dock"] .bd-grip{
+      width:34px;height:3px;border-radius:2px;background:var(--line-2);
+    }
+    [data-view="bottom-dock"] .bd-resize:hover .bd-grip{background:var(--faint);}
+
+    /* ---- DOCK ---- */
+    [data-view="bottom-dock"] .bd-dock{
+      flex:0 0 246px;min-height:0;
+      display:flex;flex-direction:column;
+      background:var(--panel);
+    }
+    [data-view="bottom-dock"] .bd-agenthead{
+      padding:10px 16px 8px;border-bottom:1px solid var(--line);
+    }
+    [data-view="bottom-dock"] .bd-ah-main{
+      display:flex;align-items:center;gap:9px;margin-bottom:5px;
+    }
+    [data-view="bottom-dock"] .bd-ah-name{font-size:13px;color:var(--fg);}
+    [data-view="bottom-dock"] .bd-ah-model{
+      font-size:11px;color:var(--dim);padding:1px 7px;
+      border:1px solid var(--line-2);border-radius:10px;
+    }
+    [data-view="bottom-dock"] .bd-ah-meta{
+      display:flex;align-items:center;gap:7px;flex-wrap:wrap;
+      font-size:11px;color:var(--faint);
+    }
+    [data-view="bottom-dock"] .bd-ah-meta .bd-tools{color:var(--dim);}
+    [data-view="bottom-dock"] .bd-dot{color:var(--line-2);}
+
+    /* tabs */
+    [data-view="bottom-dock"] .bd-tabs{
+      display:flex;align-items:center;gap:2px;
+      padding:0 10px;border-bottom:1px solid var(--line);
+      background:var(--panel-2);
+    }
+    [data-view="bottom-dock"] .bd-tab{
+      appearance:none;background:none;border:none;cursor:pointer;
+      font:inherit;font-size:12px;color:var(--dim);
+      padding:9px 12px;position:relative;
+      border-bottom:2px solid transparent;margin-bottom:-1px;
+    }
+    [data-view="bottom-dock"] .bd-tab:hover{color:var(--fg);}
+    [data-view="bottom-dock"] .bd-tab-on{
+      color:var(--fg);border-bottom-color:var(--accent);
+    }
+    [data-view="bottom-dock"] .bd-tabs-spacer{flex:1;}
+    [data-view="bottom-dock"] .bd-raw{
+      appearance:none;cursor:pointer;font:inherit;font-size:11px;
+      color:var(--dim);background:var(--panel);
+      border:1px solid var(--line-2);border-radius:5px;padding:3px 9px;
+    }
+    [data-view="bottom-dock"] .bd-raw:hover{color:var(--fg);border-color:var(--faint);}
+
+    /* body / structured output */
+    [data-view="bottom-dock"] .bd-body{
+      flex:1;min-height:0;overflow:auto;padding:12px 16px 16px;
+    }
+    [data-view="bottom-dock"] .bd-so{display:flex;flex-direction:column;gap:13px;}
+    [data-view="bottom-dock"] .bd-field{display:flex;flex-direction:column;gap:4px;}
+    [data-view="bottom-dock"] .bd-key{
+      font-size:11px;color:var(--accent);letter-spacing:.02em;
+      display:flex;align-items:center;gap:6px;
+    }
+    [data-view="bottom-dock"] .bd-count{
+      color:var(--faint);background:var(--panel-2);
+      border:1px solid var(--line);border-radius:8px;
+      padding:0 6px;font-size:10px;
+    }
+    [data-view="bottom-dock"] .bd-bool{color:var(--green);}
+    [data-view="bottom-dock"] .bd-str{
+      color:var(--fg);background:var(--panel-2);
+      border:1px solid var(--line);border-left:2px solid var(--line-2);
+      border-radius:0 5px 5px 0;padding:7px 10px;
+    }
+    [data-view="bottom-dock"] .bd-list{
+      list-style:none;margin:0;padding:0;
+      display:flex;flex-direction:column;gap:5px;
+    }
+    [data-view="bottom-dock"] .bd-list li{
+      position:relative;padding:6px 10px 6px 22px;
+      background:var(--panel-2);border:1px solid var(--line);border-radius:5px;
+      color:var(--fg);
+    }
+    [data-view="bottom-dock"] .bd-list li::before{
+      content:"–";position:absolute;left:9px;color:var(--faint);
+    }
+    [data-view="bottom-dock"] .bd-list-risk li::before{content:"!";color:var(--amber);}
+    [data-view="bottom-dock"] .bd-list-risk li{border-left:2px solid var(--amber);}
+  </style>
+</section>
+
+<section class="card" data-view="run-selector">
+  <h3>Run-selector drawer</h3>
+  <p class="cap">
+    <em>best for: a Run view that defaults to the latest run but can move to any other — with success / fail / in-progress legible at a glance, without leaving the view.</em>
+    Tradeoff: a dropdown keeps the chrome compact and the history one click away, but unlike an always-on run rail it hides older runs until opened — so trend/cadence ("3 of the last 5 failed") isn't visible until you pull the drawer. Chosen because the Run view is about <strong>one</strong> run at a time; the picker is navigation, not a dashboard.
+  </p>
+
+  <style>
+    [data-view="run-selector"]{
+      --bg:#0d1117;--panel:#11161c;--panel-2:#0b0f14;--fg:#e6edf3;--dim:#8b949e;--faint:#6e7681;
+      --line:#21262d;--line-2:#30363d;--accent:#5b9dff;--green:#3fb950;--amber:#d29922;--red:#f85149;
+      --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+      --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,system-ui,sans-serif;
+    }
+    [data-view="run-selector"] .canvas{
+      background:var(--bg); padding:0; overflow:visible; font-family:var(--sans);
+    }
+
+    /* ---- Run-view chrome (the bar this control lives in) ---- */
+    [data-view="run-selector"] .rs-chrome{
+      display:flex; align-items:center; gap:14px;
+      height:48px; padding:0 14px;
+      border-bottom:1px solid var(--line);
+      background:linear-gradient(180deg, var(--panel), var(--panel-2));
+      border-top-left-radius:10px; border-top-right-radius:10px;
+    }
+    [data-view="run-selector"] .rs-wf{
+      display:flex; align-items:baseline; gap:8px; min-width:0;
+    }
+    [data-view="run-selector"] .rs-wf .rs-eyebrow{
+      font:600 9.5px/1 var(--mono); letter-spacing:.16em; text-transform:uppercase; color:var(--faint);
+    }
+    [data-view="run-selector"] .rs-wf .rs-name{
+      font:600 13px/1 var(--sans); color:var(--fg);
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    }
+    [data-view="run-selector"] .rs-spacer{ flex:1; }
+    [data-view="run-selector"] .rs-ghosttab{
+      font:500 11px/1 var(--mono); color:var(--faint);
+      padding:5px 9px; border-radius:6px;
+    }
+    [data-view="run-selector"] .rs-ghosttab.on{ color:var(--fg); background:rgba(255,255,255,.04); }
+
+    /* ---- the picker trigger (current run) ---- */
+    [data-view="run-selector"] .rs-picker{ position:relative; }
+    [data-view="run-selector"] .rs-trigger{
+      display:flex; align-items:center; gap:10px;
+      height:32px; padding:0 9px 0 11px;
+      background:var(--panel-2);
+      border:1px solid var(--line-2); border-radius:8px;
+      cursor:pointer; user-select:none;
+      box-shadow:0 1px 0 rgba(0,0,0,.3);
+    }
+    [data-view="run-selector"] .rs-trigger.open{
+      border-color:color-mix(in srgb, var(--accent) 42%, var(--line-2));
+      box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
+    }
+    [data-view="run-selector"] .rs-glyph{ font:12px/1 var(--mono); flex:none; }
+    [data-view="run-selector"] .rs-trigger .rs-tlabel{
+      display:flex; flex-direction:column; gap:2px; line-height:1;
+    }
+    [data-view="run-selector"] .rs-trigger .rs-tmain{
+      font:600 11.5px/1 var(--mono); color:var(--fg); display:flex; align-items:center; gap:7px;
+    }
+    [data-view="run-selector"] .rs-trigger .rs-latest{
+      font:600 8.5px/1 var(--mono); letter-spacing:.1em; text-transform:uppercase;
+      color:var(--accent);
+      border:1px solid color-mix(in srgb, var(--accent) 32%, transparent);
+      background:color-mix(in srgb, var(--accent) 10%, transparent);
+      border-radius:4px; padding:2px 5px;
+    }
+    [data-view="run-selector"] .rs-trigger .rs-tsub{
+      font:400 10px/1 var(--mono); color:var(--dim);
+    }
+    [data-view="run-selector"] .rs-caret{
+      font:10px/1 var(--mono); color:var(--dim); margin-left:2px; transition:transform .12s ease;
+    }
+    [data-view="run-selector"] .rs-trigger.open .rs-caret{ transform:rotate(180deg); color:var(--accent); }
+
+    /* ---- the drawer ---- */
+    [data-view="run-selector"] .rs-drawer{
+      position:absolute; top:calc(100% + 6px); right:0; z-index:20;
+      width:312px;
+      background:var(--panel); border:1px solid var(--line-2); border-radius:10px;
+      box-shadow:0 12px 34px -10px rgba(0,0,0,.7), 0 2px 0 rgba(0,0,0,.4);
+      overflow:hidden;
+    }
+    [data-view="run-selector"] .rs-drawer-head{
+      display:flex; align-items:center; justify-content:space-between;
+      padding:9px 12px 8px; border-bottom:1px solid var(--line);
+    }
+    [data-view="run-selector"] .rs-drawer-head .rs-dh-title{
+      font:600 9.5px/1 var(--mono); letter-spacing:.14em; text-transform:uppercase; color:var(--faint);
+    }
+    [data-view="run-selector"] .rs-drawer-head .rs-dh-count{
+      font:500 10px/1 var(--mono); color:var(--dim);
+    }
+
+    [data-view="run-selector"] .rs-list{ max-height:236px; overflow:auto; padding:5px; }
+    [data-view="run-selector"] .rs-row{
+      display:grid; grid-template-columns:16px 1fr auto; align-items:center; gap:10px;
+      padding:8px 9px; border-radius:7px; cursor:pointer;
+      border:1px solid transparent;
+    }
+    [data-view="run-selector"] .rs-row + .rs-row{ margin-top:1px; }
+    [data-view="run-selector"] .rs-row:hover{ background:rgba(255,255,255,.035); }
+    [data-view="run-selector"] .rs-row.sel{
+      background:color-mix(in srgb, var(--accent) 9%, transparent);
+      border-color:color-mix(in srgb, var(--accent) 30%, var(--line));
+    }
+    [data-view="run-selector"] .rs-row .rs-g{ font:12px/1 var(--mono); text-align:center; }
+    [data-view="run-selector"] .rs-rmid{ display:flex; flex-direction:column; gap:3px; min-width:0; }
+    [data-view="run-selector"] .rs-rwhen{
+      font:600 12px/1 var(--mono); color:var(--fg); display:flex; align-items:center; gap:8px;
+    }
+    [data-view="run-selector"] .rs-row.sel .rs-rwhen{ color:var(--fg); }
+    [data-view="run-selector"] .rs-rmeta{ font:400 10px/1 var(--mono); color:var(--dim); }
+    [data-view="run-selector"] .rs-rmeta .rs-dot{ color:var(--faint); padding:0 5px; }
+
+    /* status word, calm — saturated color reserved for the glyph */
+    [data-view="run-selector"] .rs-rtag{
+      justify-self:end; font:500 10px/1 var(--mono); color:var(--faint);
+      white-space:nowrap;
+    }
+    [data-view="run-selector"] .rs-row .rs-rcheck{
+      justify-self:end; font:11px/1 var(--mono); color:var(--accent);
+    }
+
+    /* the latest/selected gets a thin leading rail */
+    [data-view="run-selector"] .rs-row.sel{ position:relative; }
+    [data-view="run-selector"] .rs-row.sel::before{
+      content:""; position:absolute; left:-5px; top:8px; bottom:8px; width:2px;
+      border-radius:2px; background:var(--accent);
+    }
+
+    [data-view="run-selector"] .rs-drawer-foot{
+      border-top:1px solid var(--line); padding:7px 12px;
+      font:400 10px/1.3 var(--mono); color:var(--faint);
+      display:flex; align-items:center; justify-content:space-between;
+    }
+    [data-view="run-selector"] .rs-drawer-foot .rs-k{
+      color:var(--dim); border:1px solid var(--line-2); border-radius:4px; padding:1px 5px;
+    }
+
+    [data-view="run-selector"] .g-done{ color:var(--green); }
+    [data-view="run-selector"] .g-fail{ color:var(--red); }
+    [data-view="run-selector"] .g-run{ color:var(--accent); }
+    [data-view="run-selector"] .g-part{ color:var(--amber); }
+    [data-view="run-selector"] .pulse{ animation:rs-pulse 1.8s ease-in-out infinite; }
+    @keyframes rs-pulse{ 0%,100%{opacity:1} 50%{opacity:.35} }
+
+    /* body under the chrome, just enough to show the drawer overlays the canvas */
+    [data-view="run-selector"] .rs-stage{
+      position:relative; height:180px;
+      background:
+        radial-gradient(120% 100% at 80% 0%, rgba(91,157,255,.05), transparent 55%),
+        var(--bg);
+      border-bottom-left-radius:10px; border-bottom-right-radius:10px;
+    }
+    [data-view="run-selector"] .rs-stage .rs-stage-hint{
+      position:absolute; left:16px; top:14px;
+      font:400 10.5px/1.5 var(--mono); color:var(--faint); max-width:330px;
+    }
+    [data-view="run-selector"] .rs-stage .rs-stage-hint b{ color:var(--dim); font-weight:600; }
+    /* faint ghost of the run DAG behind, to read as "the run is rendered under here" */
+    [data-view="run-selector"] .rs-ghostdag{
+      position:absolute; inset:0; opacity:.5; pointer-events:none;
+      display:flex; align-items:center; gap:0; padding:0 18px;
+    }
+    [data-view="run-selector"] .rs-ghostdag .gd-node{
+      width:84px; height:34px; border:1px solid var(--line); border-radius:6px; background:var(--panel-2);
+    }
+    [data-view="run-selector"] .rs-ghostdag .gd-wire{ width:30px; height:1px; background:var(--line); }
+    [data-view="run-selector"] .rs-ghostdag .gd-fan{
+      display:flex; flex-direction:column; gap:5px;
+    }
+    [data-view="run-selector"] .rs-ghostdag .gd-fan .gd-node{ width:74px; height:22px; }
+  </style>
+
+  <div class="canvas">
+
+    <!-- Run-view top chrome -->
+    <div class="rs-chrome">
+      <div class="rs-wf">
+        <span class="rs-eyebrow">Workflow</span>
+        <span class="rs-name">modal-rust-plan-research</span>
+      </div>
+      <span class="rs-spacer"></span>
+      <span class="rs-ghosttab on">Run</span>
+      <span class="rs-ghosttab">Plan</span>
+
+      <!-- the run picker -->
+      <div class="rs-picker">
+        <div class="rs-trigger open">
+          <span class="rs-glyph g-done">●</span>
+          <span class="rs-tlabel">
+            <span class="rs-tmain">5m ago <span class="rs-latest">Latest</span></span>
+            <span class="rs-tsub">14 agents · 6m02s · done</span>
+          </span>
+          <span class="rs-caret">▾</span>
+        </div>
+
+        <!-- drawer (shown open) -->
+        <div class="rs-drawer" role="listbox" aria-label="Switch run">
+          <div class="rs-drawer-head">
+            <span class="rs-dh-title">Runs of this workflow</span>
+            <span class="rs-dh-count">5 runs</span>
+          </div>
+
+          <div class="rs-list">
+
+            <div class="rs-row sel" aria-selected="true">
+              <span class="rs-g g-done">●</span>
+              <span class="rs-rmid">
+                <span class="rs-rwhen">5m ago</span>
+                <span class="rs-rmeta">14 agents <span class="rs-dot">·</span> 6m02s</span>
+              </span>
+              <span class="rs-rcheck">✓</span>
+            </div>
+
+            <div class="rs-row">
+              <span class="rs-g g-run pulse">◌</span>
+              <span class="rs-rmid">
+                <span class="rs-rwhen">1h ago</span>
+                <span class="rs-rmeta">14 agents <span class="rs-dot">·</span> 5m48s</span>
+              </span>
+              <span class="rs-rtag g-run">running</span>
+            </div>
+
+            <div class="rs-row">
+              <span class="rs-g g-fail">✕</span>
+              <span class="rs-rmid">
+                <span class="rs-rwhen">3h ago</span>
+                <span class="rs-rmeta">4 agents <span class="rs-dot">·</span> 22s</span>
+              </span>
+              <span class="rs-rtag">failed</span>
+            </div>
+
+            <div class="rs-row">
+              <span class="rs-g g-done">●</span>
+              <span class="rs-rmid">
+                <span class="rs-rwhen">1d ago</span>
+                <span class="rs-rmeta">11 agents <span class="rs-dot">·</span> 4m11s</span>
+              </span>
+              <span class="rs-rtag">done</span>
+            </div>
+
+            <div class="rs-row">
+              <span class="rs-g g-fail">✕</span>
+              <span class="rs-rmid">
+                <span class="rs-rwhen">2d ago</span>
+                <span class="rs-rmeta">2 agents <span class="rs-dot">·</span> 22s</span>
+              </span>
+              <span class="rs-rtag">failed</span>
+            </div>
+
+          </div>
+
+          <div class="rs-drawer-foot">
+            <span>Showing latest 5</span>
+            <span><span class="rs-k">↑↓</span> move <span class="rs-k">↵</span> open</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- the run view body, faint, to show the drawer floats over the current run -->
+    <div class="rs-stage">
+      <div class="rs-ghostdag" aria-hidden="true">
+        <div class="gd-node"></div>
+        <div class="gd-wire"></div>
+        <div class="gd-fan">
+          <div class="gd-node"></div>
+          <div class="gd-node"></div>
+          <div class="gd-node"></div>
+        </div>
+        <div class="gd-wire"></div>
+        <div class="gd-node"></div>
+        <div class="gd-wire"></div>
+        <div class="gd-node"></div>
+      </div>
+      <div class="rs-stage-hint">
+        <b>↑ the latest run is painted here.</b><br>
+        Pick a row to repaint the Run view for that run — defaults to latest, moves to any.
+      </div>
+    </div>
+
+  </div>
+</section>
+</div></body></html>
