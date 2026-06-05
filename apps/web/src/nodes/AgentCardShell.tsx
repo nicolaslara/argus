@@ -23,7 +23,15 @@ export const CARD_SHELL_WIDTH = 248;
 // (margin-top:auto), so a caption-less card carried a dead gap between the label and the
 // pills. Tightened to 110 — the 4 content rows (label / caption / state-meta / pills) now
 // sit close together and the card reads at a glance. Plan stays a touch shorter (no pills).
-export const CARD_SHELL_HEIGHT_EXEC = 110;
+//
+// INLINE-EXPAND: the exec card now also carries a 1-line RESULT PREVIEW row (a calm caption
+// of WHAT the agent produced — first line of resultPreview, ellipsised) between the label
+// and the footer. That adds one ~15px text row + its 6px gap, so the shell grew 110→128.
+// 128 stays UNDER the layout engines' per-cell CARD_HEIGHT (132 in {horizontal,vertical}-
+// lanes.ts), so lane sizing is unaffected; the fan-out drawer in overlay-expand.ts sizes its
+// grid cells to THIS constant (CARD_H = CARD_SHELL_HEIGHT_EXEC), so it grows in lockstep and
+// every instance card still fits. Plan stays a touch shorter (no pills, no preview).
+export const CARD_SHELL_HEIGHT_EXEC = 128;
 export const CARD_SHELL_HEIGHT_PLAN = 88;
 
 export interface AgentCardShellProps {

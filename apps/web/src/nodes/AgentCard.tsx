@@ -99,6 +99,27 @@ function formatTools(toolCalls: number | null): string {
   return String(toolCalls);
 }
 
+/**
+ * INLINE-EXPAND: the at-a-glance RESULT PREVIEW — the first non-empty line of WHAT the agent
+ * produced, so you can read each subagent's output without opening the panel. Reuses the
+ * preview the DetailPanel already projects from card data (resultPreview); on a failed/dead
+ * card with no result it reads the last error/tool line instead. NO fetch — uses what mapping
+ * already carries. Returns null when there's genuinely nothing to show. Text-only (the source
+ * can echo secret-bearing content — boundaries.md §4).
+ */
+function resultPreviewLine(data: AgentCardData): string | null {
+  // Prefer the recorded RESULT (on a failed/dead agent that result IS the error line the
+  // journal captured); fall back to the last tool summary so a card that stopped before
+  // producing a result still shows WHERE it was rather than going blank.
+  const candidates = [data.resultPreview?.text, data.lastToolSummary];
+  for (const raw of candidates) {
+    if (typeof raw !== 'string') continue;
+    const firstLine = raw.split('\n').map((l) => l.trim()).find((l) => l.length > 0);
+    if (firstLine) return firstLine;
+  }
+  return null;
+}
+
 function Pill({ label, value, dim }: { label: string; value: string; dim: boolean }) {
   return (
     <span className="agent-pill" data-dim={dim ? 'true' : 'false'}>
@@ -113,10 +134,24 @@ export const AgentCardNode = memo(function AgentCardNode({ data }: { data: Agent
   const tokensText = formatTokens(data.tokens);
   const toolsText = formatTools(data.toolCalls);
   const durationText = formatDuration(data.durationMs);
+  // INLINE-EXPAND: the 1-line at-a-glance result preview (WHAT this subagent produced).
+  const preview = resultPreviewLine(data);
+  const failed = data.state === 'error' || data.failedInLogs || data.failurePoint;
 
-  // The EXECUTION footer: a state label + model/cached/failed flags + metric pills.
+  // The EXECUTION footer: an at-a-glance result line + state label + model/cached/failed
+  // flags + metric pills. The result line reads as a calm, muted, single-line caption
+  // (the error line on a failed card); ellipsised so it never widens or grows the card.
   const footer = (
     <>
+      {preview ? (
+        <div
+          className="agent-result-preview"
+          data-failed={failed ? 'true' : 'false'}
+          title={preview}
+        >
+          {preview}
+        </div>
+      ) : null}
       <div className="agent-shell-meta">
         <span className="agent-state" style={{ color }}>
           {STATE_LABEL[data.state] ?? 'unknown'}
