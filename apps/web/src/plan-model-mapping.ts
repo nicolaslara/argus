@@ -223,11 +223,20 @@ export async function planModelToGraph(plan: PlanModel, elkLayout: ElkPlanLayout
 
   // Build the elk input: every node, with parentId = its loop container (if any).
   const layoutNodes: PlanLayoutNodeInput[] = plan.nodes.map((n) => {
+    // R7: partition top-level nodes by phase so phases occupy disjoint horizontal bands.
+    const partition = n.phaseRef ?? null;
     if (n.kind === 'loop') {
-      return { id: n.id, width: LOOP_FALLBACK_W, height: LOOP_FALLBACK_H, parentId: null, isContainer: true };
+      return { id: n.id, width: LOOP_FALLBACK_W, height: LOOP_FALLBACK_H, parentId: null, isContainer: true, partition };
     }
     const g = geomFor(n);
-    return { id: n.id, width: g.width, height: g.height, parentId: loopOf.get(n.id) ?? null, isContainer: false };
+    return {
+      id: n.id,
+      width: g.width,
+      height: g.height,
+      parentId: loopOf.get(n.id) ?? null,
+      isContainer: false,
+      partition,
+    };
   });
 
   // Edges: elk needs only the topology. The loop-back edge IS routed (it closes the loop).

@@ -22,6 +22,12 @@ export interface PlanLayoutNodeInput {
   parentId: string | null;
   /** True for the loop container node (a compound node with children). */
   isContainer: boolean;
+  /**
+   * 1-based PHASE index. When EVERY top-level node has one, elk partitioning is activated
+   * so each phase occupies a disjoint horizontal band — phase lanes can never overlap
+   * (R7: the p4 "Live overlaps Review" bug). null on any top-level node → partitioning off.
+   */
+  partition?: number | null;
 }
 
 export interface PlanLayoutEdgeInput {
@@ -81,7 +87,20 @@ export async function planLayout(input: PlanLayoutInput): Promise<PlanLayoutResu
     return elkNode;
   };
 
-  const topLevel = (byParent.get(null) ?? []).map(toElk);
+  // Phase partitioning: only when EVERY top-level node has a phase (else off — never break
+  // a workflow whose nodes don't all map to a lane). Disjoint phase bands ⇒ no lane overlap.
+  const topInputs = byParent.get(null) ?? [];
+  const canPartition = topInputs.length > 0 && topInputs.every((n) => n.partition != null);
+  const topLevel = topInputs.map((n) => {
+    const elkNode = toElk(n);
+    if (canPartition && n.partition != null) {
+      elkNode.layoutOptions = {
+        ...(elkNode.layoutOptions ?? {}),
+        'elk.partitioning.partition': String(n.partition),
+      };
+    }
+    return elkNode;
+  });
 
   const edges: ElkExtendedEdge[] = input.edges.map((e) => ({
     id: e.id,
@@ -94,6 +113,7 @@ export async function planLayout(input: PlanLayoutInput): Promise<PlanLayoutResu
     layoutOptions: {
       'elk.algorithm': 'layered',
       'elk.direction': 'RIGHT',
+      ...(canPartition ? { 'elk.partitioning.activate': 'true' } : {}),
       // M5 empty-band fix: the Plan/Morph DAG is intrinsically WIDE (4 sequential phase
       // lanes laid out left→right) but SHORT, so fitView (which fits the limiting — width —
       // dimension) used to leave ~60% of the canvas as an empty vertical band. Counter it by
@@ -103,11 +123,23 @@ export async function planLayout(input: PlanLayoutInput): Promise<PlanLayoutResu
       // graph is much closer to 16:9, and fitView fills the height far better. U1 set 44/52;
       // M5 widens nodeNode to 88 (taller lanes) which, combined with the App's tuned fitView
       // padding + raised maxZoom, fills the canvas without clipping at the 1- or 14-agent ends.
-      'elk.layered.spacing.nodeNodeBetweenLayers': '40',
-      'elk.spacing.nodeNode': '88',
+      'elk.layered.spacing.nodeNodeBetweenLayers': '64', // was 40 — more lane separation (fixes inter-phase overlap, e.g. p4 Live/Review)
+      'elk.spacing.nodeNode': '88', // keep (M5 aspect: spreads fan-out arms tall so fitView fills height)
       'elk.layered.spacing.edgeNodeBetweenLayers': '24',
       'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
-      'elk.layered.mergeEdges': 'true',
+      // Edge clearance — the missing pair that caused edges to graze node borders (R7).
+      'elk.spacing.edgeNode': '24',
+      'elk.spacing.edgeEdge': '14',
+      'elk.layered.spacing.edgeEdgeBetweenLayers': '14',
+      'elk.spacing.edgeLabel': '10', // room for true/false branch labels (R5)
+      // ORTHOGONAL routing + straight-edge bias read as a clean dashboard, not an organic graph.
+      'elk.edgeRouting': 'ORTHOGONAL',
+      'elk.layered.nodePlacement.favorStraightEdges': 'true',
+      'elk.layered.thoroughness': '7', // fewer crossings (small ms cost)
+      // Distinct fan-out must NOT be fused into one fat pipe (R4/R6).
+      'elk.layered.mergeEdges': 'false', // was 'true'
+      // Predictable loop back-edge: YOUR loop edge becomes the reversed one (R6).
+      'elk.layered.cycleBreaking.strategy': 'DEPTH_FIRST',
       'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
       // Pack node layers compactly toward the top so lanes share a common baseline.
       'elk.layered.nodePlacement.strategy': 'NETWORK_SIMPLEX',
