@@ -57,6 +57,10 @@ export interface PlanLayoutResult {
 /** Padding reserved inside a loop container for its header band. */
 const CONTAINER_HEADER = 44;
 
+/** Hard cap on a single elk layout pass (arch-review #7) — beyond this the caller falls
+ *  back to the meta-only graph rather than hanging the main thread on a pathological DAG. */
+const ELK_LAYOUT_TIMEOUT_MS = 8000;
+
 const elk = new ElkConstructor();
 
 /**
@@ -148,7 +152,14 @@ export async function planLayout(input: PlanLayoutInput): Promise<PlanLayoutResu
     edges,
   };
 
-  const laid = await elk.layout(root);
+  // arch-review #7: bound the layout so a pathological DAG can't hang the main thread
+  // forever — the caller's "fall back on rejection" only works if we actually reject.
+  const laid = await Promise.race([
+    elk.layout(root),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('elk layout timed out')), ELK_LAYOUT_TIMEOUT_MS),
+    ),
+  ]);
 
   const placements = new Map<string, PlanPlacement>();
   // Flatten elk's per-parent-relative coordinates into absolute canvas coordinates.

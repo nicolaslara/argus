@@ -675,6 +675,89 @@ export async function handleDescribe(
   return { status: 200, body: { target, status, spec } };
 }
 
+/** The minimal streaming-response surface handleStream needs (a Node ServerResponse fits;
+ *  a test fake implements it). Kept structural so routes.ts stays http-framework-free. */
+export interface SseResponse {
+  writeHead(status: number, headers: Record<string, string>): void;
+  write(chunk: string): void;
+  end(chunk?: string): void;
+  on(event: string, cb: () => void): void;
+}
+
+/**
+ * L3: the SSE live stream (extracted here so it's unit-testable; arch-review #5). Watches
+ * the run's journal.jsonl and pushes a `changed` event per append → the client refetches
+ * the live model (the run-list poll detects finalize). Initial `open`, a heartbeat, and
+ * `retry: 3000` for clean EventSource reconnect; the watch is torn down on disconnect. The
+ * caller token-gates /stream before this runs. NEVER throws.
+ */
+export function handleStream(
+  deps: RouteDeps,
+  res: SseResponse,
+  slug: string,
+  session: string,
+  runId: string,
+): void {
+  const journalPath = safeRunJournalPath(deps.claudeHome, slug, session, runId);
+  if (journalPath === null) {
+    res.writeHead(400, { 'content-type': 'application/json; charset=utf-8' });
+    res.end('{"error":"bad_request"}');
+    return;
+  }
+  res.writeHead(200, {
+    'content-type': 'text/event-stream; charset=utf-8',
+    'cache-control': 'no-store',
+    connection: 'keep-alive',
+    'x-content-type-options': 'nosniff',
+  });
+  let eventId = 0;
+  const emit = (event: string): void => {
+    res.write(`id: ${(eventId += 1)}\nevent: ${event}\ndata: {}\n\n`);
+  };
+  res.write('retry: 3000\n\n');
+  emit('open');
+
+  // Debounce rapid fs.watch fires (an append can emit several 'change' events).
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const onChange = (): void => {
+    if (timer) return;
+    timer = setTimeout(() => {
+      timer = null;
+      try {
+        emit('changed');
+      } catch {
+        /* the connection may have closed mid-write */
+      }
+    }, 150);
+  };
+  let unwatch: (() => void) | null = null;
+  try {
+    unwatch = deps.port.watch(journalPath, onChange);
+  } catch {
+    /* the journal vanished (finalized) — the client's run-list poll takes over */
+  }
+  const heartbeat = setInterval(() => {
+    try {
+      res.write(': hb\n\n');
+    } catch {
+      /* ignore */
+    }
+  }, 15000);
+  const cleanup = (): void => {
+    clearInterval(heartbeat);
+    if (timer) clearTimeout(timer);
+    if (unwatch) {
+      try {
+        unwatch();
+      } catch {
+        /* ignore */
+      }
+    }
+  };
+  res.on('close', cleanup);
+  res.on('error', cleanup);
+}
+
 /**
  * GET /api/runs/:slug/:session/:runId/live -> RunModel (L2 partial live snapshot).
  * Reads the live `journal.jsonl` THROUGH the port and builds a partial RunModel

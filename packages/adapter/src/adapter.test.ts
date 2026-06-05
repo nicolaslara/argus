@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
@@ -510,12 +510,16 @@ describe('loadRun through an injected FileSystemPort (fake)', () => {
 // =========================================================================
 
 describe('adapter source never imports node:fs', () => {
-  it('neither index.ts nor raw.ts imports node:fs / node:fs/promises', () => {
-    for (const file of ['index.ts', 'raw.ts']) {
+  it('NO non-test adapter source imports node:fs / node:fs/promises (all format-aware files)', () => {
+    // arch-review #4: guard EVERY adapter src file, not just index.ts/raw.ts — live.ts,
+    // plan.ts, discovery.ts are equally format-aware + fs-free in fact; lock the invariant.
+    const files = readdirSync(HERE).filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts'));
+    expect(files.length).toBeGreaterThanOrEqual(5); // index/raw/live/plan/discovery (+more)
+    for (const file of files) {
       const src = readFileSync(join(HERE, file), 'utf8');
-      expect(src).not.toMatch(/from\s+['"]node:fs['"]/);
-      expect(src).not.toMatch(/from\s+['"]node:fs\/promises['"]/);
-      expect(src).not.toMatch(/require\(['"]node:fs['"]\)/);
+      expect(src, `${file} must not import node:fs`).not.toMatch(/from\s+['"]node:fs['"]/);
+      expect(src, `${file} must not import node:fs/promises`).not.toMatch(/from\s+['"]node:fs\/promises['"]/);
+      expect(src, `${file} must not require node:fs`).not.toMatch(/require\(['"]node:fs(\/promises)?['"]\)/);
     }
   });
 });

@@ -4,8 +4,10 @@ import {
   handleProjectRuns,
   handleAgentResult,
   handleDescribe,
+  handleStream,
   safeRunJournalPath,
   type RouteDeps,
+  type SseResponse,
 } from './routes.ts';
 import { SubUiEngine } from './subui.ts';
 import type { FileSystemPort } from '@argus/adapter';
@@ -173,6 +175,59 @@ describe('handleDescribe (I4 whole-run summary)', () => {
     );
     const subui = new SubUiEngine({ cacheDir: '/x', runner: async () => null });
     expect((await handleDescribe({ port: makePort(), claudeHome: HOME, subui }, SLUG, SESS_DONE, 'wf_absent')).status).toBe(404);
+  });
+});
+
+describe('handleStream (L3 SSE) — arch-review #5', () => {
+  function fakeRes() {
+    const writes: string[] = [];
+    const handlers: Record<string, () => void> = {};
+    let status = 0;
+    let headers: Record<string, string> = {};
+    const res: SseResponse & { _writes: string[]; _status: () => number; _headers: () => Record<string, string>; _fire: (e: string) => void } = {
+      writeHead(s, h) { status = s; headers = h; },
+      write(c) { writes.push(c); },
+      end(c) { if (c) writes.push(c); },
+      on(e, cb) { handlers[e] = cb; },
+      _writes: writes,
+      _status: () => status,
+      _headers: () => headers,
+      _fire: (e) => handlers[e]?.(),
+    };
+    return res;
+  }
+
+  it('rejects a bad runId with 400 (no stream opened)', () => {
+    const res = fakeRes();
+    handleStream(deps(), res, SLUG, SESS_LIVE, 'bad id');
+    expect(res._status()).toBe(400);
+    expect(res._writes.join('')).not.toContain('event: open');
+  });
+
+  it('opens an SSE stream, pushes `changed` on a journal change, and tears down on close', async () => {
+    let watchCb: (() => void) | null = null;
+    let unwatched = false;
+    const base = makePort();
+    const port = {
+      ...base,
+      watch: (p: string, cb: (e: { path: string; type: string }) => void) => {
+        watchCb = () => cb({ path: p, type: 'change' });
+        return () => { unwatched = true; };
+      },
+    };
+    const res = fakeRes();
+    handleStream({ port, claudeHome: HOME }, res, SLUG, SESS_LIVE, RUN_LIVE);
+    expect(res._status()).toBe(200);
+    expect(res._headers()['content-type']).toContain('text/event-stream');
+    expect(res._writes.join('')).toContain('event: open');
+    expect(watchCb).not.toBeNull();
+    // a journal change → a debounced `changed` event.
+    watchCb!();
+    await new Promise((r) => setTimeout(r, 200));
+    expect(res._writes.join('')).toContain('event: changed');
+    // disconnect → the watch is torn down (no leaked watcher).
+    res._fire('close');
+    expect(unwatched).toBe(true);
   });
 });
 

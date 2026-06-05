@@ -30,9 +30,7 @@ import {
   handleAgentResult,
   handleSubUi,
   handleDescribe,
-  safeRunJournalPath,
-  isValidRunId,
-  isValidSegment,
+  handleStream,
   type RouteDeps,
   type RouteResult,
 } from './routes.ts';
@@ -246,76 +244,6 @@ async function dispatchApi(url: URL): Promise<RouteResult | null> {
   return null;
 }
 
-/**
- * L3: SSE live stream. Watches the run's `journal.jsonl` and pushes a `changed` event on
- * every append, so the client refetches the live model immediately (no poll lag). The
- * run-LIST poll still detects finalize (the wf_<id>.json appearing) and flips status. A
- * heartbeat keeps the connection warm; `retry:` lets EventSource reconnect cleanly. The
- * watch is torn down on disconnect. Token-gated by the caller (before this runs).
- */
-function handleStream(res: ServerResponse, slug: string, session: string, runId: string): void {
-  if (!isValidSegment(slug) || !isValidSegment(session) || !isValidRunId(runId)) {
-    send(res, 400, { error: 'bad_request' });
-    return;
-  }
-  const journalPath = safeRunJournalPath(CLAUDE_HOME, slug, session, runId);
-  if (journalPath === null) {
-    send(res, 400, { error: 'bad_request' });
-    return;
-  }
-  res.writeHead(200, {
-    'content-type': 'text/event-stream; charset=utf-8',
-    'cache-control': 'no-store',
-    connection: 'keep-alive',
-    'x-content-type-options': 'nosniff',
-  });
-  let eventId = 0;
-  const emit = (event: string): void => {
-    res.write(`id: ${(eventId += 1)}\nevent: ${event}\ndata: {}\n\n`);
-  };
-  res.write('retry: 3000\n\n');
-  emit('open');
-
-  // Debounce rapid fs.watch fires (an append can emit several 'change' events).
-  let timer: ReturnType<typeof setTimeout> | null = null;
-  const onChange = (): void => {
-    if (timer) return;
-    timer = setTimeout(() => {
-      timer = null;
-      try {
-        emit('changed');
-      } catch {
-        /* the connection may have closed mid-write */
-      }
-    }, 150);
-  };
-  let unwatch: (() => void) | null = null;
-  try {
-    unwatch = deps.port.watch(journalPath, onChange);
-  } catch {
-    /* the journal vanished (finalized) — the client's run-list poll takes over */
-  }
-  const heartbeat = setInterval(() => {
-    try {
-      res.write(': hb\n\n');
-    } catch {
-      /* ignore */
-    }
-  }, 15000);
-  const cleanup = (): void => {
-    clearInterval(heartbeat);
-    if (timer) clearTimeout(timer);
-    if (unwatch) {
-      try {
-        unwatch();
-      } catch {
-        /* ignore */
-      }
-    }
-  };
-  res.on('close', cleanup);
-  res.on('error', cleanup);
-}
 
 const server = createServer((req, res) => {
   const url = new URL(req.url ?? '/', `http://${req.headers.host ?? HOST}`);
@@ -351,7 +279,7 @@ const server = createServer((req, res) => {
     // handled here, BEFORE the JSON dispatch path.
     const streamMatch = /^\/api\/runs\/([^/]+)\/([^/]+)\/([^/]+)\/stream$/.exec(url.pathname);
     if (streamMatch) {
-      handleStream(res, decodeURIComponent(streamMatch[1]!), decodeURIComponent(streamMatch[2]!), decodeURIComponent(streamMatch[3]!));
+      handleStream(deps, res, decodeURIComponent(streamMatch[1]!), decodeURIComponent(streamMatch[2]!), decodeURIComponent(streamMatch[3]!));
       return;
     }
     dispatchApi(url)
@@ -373,10 +301,12 @@ const server = createServer((req, res) => {
 });
 
 server.listen(PORT, HOST, () => {
-  // The token is printed for local launch; dev tooling reads it from here.
-  // (Never logged with file contents/paths — boundaries.md §4 redaction policy.)
-  process.stdout.write(
-    `argus server on http://${HOST}:${PORT}  (format ${ADAPTER_FORMAT})\n` +
-      `ARGUS_TOKEN=${TOKEN}\n`,
-  );
+  // Redaction (boundaries.md §4): the bearer token is NEVER printed by default — a
+  // supervisor / scrollback / log capture must not hold a live credential. The launcher
+  // (dev.mjs) shares it via env; set ARGUS_PRINT_TOKEN=1 ONLY to debug locally. (Matches
+  // dev.mjs's gate; fixes arch-review risk #1.)
+  process.stdout.write(`argus server on http://${HOST}:${PORT}  (format ${ADAPTER_FORMAT})\n`);
+  if (process.env.ARGUS_PRINT_TOKEN === '1') {
+    process.stdout.write(`ARGUS_TOKEN=${TOKEN}\n`);
+  }
 });
