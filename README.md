@@ -8,6 +8,18 @@ fullscreen graph of phases, agents, tokens, tools, and results.
 > Argus Panoptes — the many-eyed watcher. One surface to see everything a workflow
 > is doing at once.
 
+> [!WARNING]
+> **Work in progress.** argus is an early build. It reads real Claude Code workflow
+> run journals end-to-end and renders them, but both the UI and the undocumented
+> on-disk format it observes are still moving — not yet stable to build on.
+
+![argus — the Run view: a workflow's plan painted with a run; fanned steps expand in place into their agent instances](docs/screenshots/argus-run-view.png)
+
+<p align="center">
+  <img src="docs/screenshots/argus-plan-view.png" width="49%" alt="Plan view — the workflow's intended DAG, parsed from its .js (fan-out, decision diamonds, phases)" />
+  <img src="docs/screenshots/argus-loop-decision.png" width="49%" alt="a loop-until-done container with a decision diamond and a ×4 fan-out" />
+</p>
+
 ## Status
 
 Early build, end-to-end and on real data at every step. What actually works today:
@@ -21,22 +33,24 @@ Early build, end-to-end and on real data at every step. What actually works toda
   (the adapter, the normalized run model, the server↔client API, the live path, the
   render/layout pipeline, the shell, failure modes, and format-version policy).
 - **Prototype gate — passed.** The web app renders real runs on a fullscreen
-  `@xyflow/react` canvas (left→right phase lanes) in **three views**, switchable from a
+  `@xyflow/react` canvas (left→right phase lanes) in **two views**, switchable from a
   top toggle:
   - **Plan** — the workflow's *intended* DAG, parsed from its `.js` with an acorn AST
     walk: fan-out/merge, decision diamonds, loop containers, `×N` multiplicity (the
     "review-the-workflow" mode; renders run-free).
-  - **Execution** — a finished run's phase/agent graph with per-agent state, tokens,
-    tools, and a run-level partial-failure chip.
-  - **Morph** — the run *painted onto its plan template* (one graph, template vs
-    instance: `7/7 done`, ghosted not-run lanes, partial chips).
+  - **Run** — a selected run painted onto that same plan template (`7/7 done`, ghosted
+    not-run steps, partial/failure chips), where any fanned step **expands in place**
+    into its actual agent instances (state, tokens, tools, duration, result). The
+    expand replaced the old separate *Progress* + *Execution* tabs — the aggregate↔
+    instance join is now a click, not a tab-switch.
   - **Claude captions** — every node gets a one-line plain-language explanation from
     headless `claude -p`, content-addressed-cached + generated in the background.
-  - A **collapsible left icon-rail** switches between any discovered project and any of
-    its runs; Plan and Execution share one unified card + lane visual language.
+  - A **collapsible left icon-rail** (VS Code–style tree: project ▸ workflow ▸ runs)
+    switches between any discovered project and any of its runs; Plan and Run share one
+    unified card + lane visual language.
 
-**Now usable:** `npm run dev`, open `http://localhost:5173`, toggle **Plan / Morph /
-Execution**, and use the left rail to pick any project / run.
+**Now usable:** `npm run dev`, open `http://localhost:5173`, toggle **Plan / Run**, and
+use the left rail to pick any project / run.
 
 See [`project.md`](./project.md) for the product vision and the four design stances,
 [`TASKS.md`](./TASKS.md) for the active phase, and [`workpads/`](./workpads/) for the
@@ -114,10 +128,10 @@ npm run dev          # starts the backend + the web app together
 ```
 
 Then open **http://localhost:5173**. The app opens on the richest discovered run in the
-**Execution** view. Use the **left icon-rail** (collapsed by default — click `»` to
-expand) to switch between any discovered project, pick any of its runs, or open the
-**Plan** view of a declared workflow. argus reads only your own local `~/.claude` tree
-and never writes to it.
+**Run** view. Use the **left icon-rail** (a VS Code–style tree, open by default) to
+switch between any discovered project, pick any of its runs, or open the **Plan** view
+of a declared workflow. argus reads only your own local `~/.claude` tree and never
+writes to it.
 
 Gate commands (kept green every milestone):
 
