@@ -11,8 +11,16 @@
 //     to the moved handles for free — `plan-model-mapping.ts:426-437`). Edges are returned
 //     UNCHANGED here.
 //   - It returns a NEW graph (new node array, new edge ref kept) and NEVER mutates inputs.
-//   - It touches ONLY the host lane (X is safe — disjoint ELK bands; Y is safe — siblings
-//     in the SAME lane are the only ones that can overlap a grown drawer).
+//   - It re-flows in BOTH axes (the vertical grow+shift and its horizontal twin):
+//       Y: the host lane grows in HEIGHT by its drawers' heights, and same-lane siblings
+//          BELOW a template shift DOWN by the drawer height (only same-lane siblings can
+//          overlap a grown drawer vertically).
+//       X: a drawer can be WIDER than its host lane (a ×N fan grids into a multi-column
+//          drawer ~812px wide, far wider than a ~300px lane). Left unhandled it would
+//          overflow RIGHT into the neighbour lane. So the host lane also grows in WIDTH to
+//          contain its widest drawer, and every lane/top-level node to its RIGHT shifts
+//          right by that width delta — the horizontal analogue of the vertical grow+shift.
+//          (Children ride their parent lane via extent:'parent', so they need no X-shift.)
 //
 // Instance cards are emitted WITHOUT `extent:'parent'` (unlike normal lane members) so a
 // sizing error OVERFLOWS visibly rather than silently clipping a real agent. Parent-before-
@@ -371,15 +379,58 @@ export function expandInstances(
   const laneGrowth = new Map<string, number>();
   for (const p of pending) laneGrowth.set(p.laneId, (laneGrowth.get(p.laneId) ?? 0) + p.drawerH);
 
+  // --- UIBUG-1 horizontal re-flow: a drawer WIDER than its host lane grows the lane WIDTH
+  //     and pushes every lane/top-level node to its right, so the drawer never overlaps the
+  //     neighbour lane (the vertical grow+shift's horizontal twin). ---
+  const RIGHT_PAD = DRAWER_PAD_X; // breathing room past the drawer's right edge inside the lane
+  const laneWidthGrowth = new Map<string, number>(); // laneId -> dx (>=0)
+  for (const p of pending) {
+    const lane = byId.get(p.laneId);
+    if (!lane) continue;
+    const laneW = styleSize(lane).width;
+    const drawerW = (p.drawer.style as { width?: number }).width ?? 0;
+    const need = p.drawer.position.x + drawerW + RIGHT_PAD - laneW;
+    if (need > 0) laneWidthGrowth.set(p.laneId, Math.max(laneWidthGrowth.get(p.laneId) ?? 0, need));
+  }
+  // Absolute X of each growing lane → cumulative right-shift for anything to its right.
+  const grownLanes: { x: number; dx: number }[] = [];
+  for (const [laneId, dx] of laneWidthGrowth) {
+    const lane = byId.get(laneId);
+    if (lane) grownLanes.push({ x: lane.position.x, dx });
+  }
+  const rightShiftFor = (x: number): number => {
+    let s = 0;
+    for (const g of grownLanes) if (g.x < x) s += g.dx;
+    return s;
+  };
+
   const out: Node[] = graph.nodes.map((n) => {
-    // Grow the host lane(s) by exactly the sum of their drawers' drawerH.
-    const grow = laneGrowth.get(n.id);
-    if (grow != null && n.type === 'phaseLane') {
+    // A phaseLane grows in BOTH dimensions (height by its drawers' drawerH, width to contain
+    // its widest drawer) and shifts RIGHT by the growth of every lane to its left.
+    if (n.type === 'phaseLane') {
+      const wGrow = laneWidthGrowth.get(n.id) ?? 0;
+      const hGrow = laneGrowth.get(n.id) ?? 0; // existing height growth
+      const dx = rightShiftFor(n.position.x); // growth of lanes to MY left pushes me right
+      // An untouched lane keeps its object identity (the documented invariant the loop-layout
+      // inertness test relies on) — only clone when this lane actually grows or shifts.
+      if (wGrow === 0 && hGrow === 0 && dx === 0) return n;
       const { width, height } = styleSize(n);
-      return { ...n, style: { ...(n.style ?? {}), width, height: height + grow } };
+      let next: Node = {
+        ...n,
+        style: { ...(n.style ?? {}), width: width + wGrow, height: height + hGrow },
+      };
+      if (dx > 0) next = { ...next, position: { ...n.position, x: n.position.x + dx } };
+      return next;
+    }
+    // A TOP-LEVEL non-lane node rides nothing — shift it right by the growth of lanes to its left.
+    if (n.parentId == null) {
+      const dx = rightShiftFor(n.position.x);
+      if (dx > 0) return { ...n, position: { ...n.position, x: n.position.x + dx } };
+      return n;
     }
     // Shift same-lane siblings BELOW a template down by that template's drawerH. A node is a
     // sibling iff it is parented to the same lane; the threshold is the template's bottom Y.
+    // Children ride their parent lane via extent:'parent', so they need NO X-shift here.
     if (typeof n.parentId === 'string') {
       let shift = 0;
       for (const p of pending) {
@@ -403,6 +454,7 @@ export function expandInstances(
 
   // --- dev assertions (correctness invariants; stripped in production builds) -------------
   assertDev(out, pending);
+  assertDrawerFitsLane(out, pending);
 
   const edges: Edge[] = graph.edges; // waypoint-free; React Flow re-docks them for free.
   return { nodes: out, edges };
@@ -457,4 +509,33 @@ function assertDev(nodes: Node[], pending: { drawer: Node; cards: Node[] }[]): v
       }
     }
   });
+}
+
+/**
+ * Dev-only UIBUG-1 invariant: every drawer's right edge ⊆ its host lane's GROWN width, i.e. the
+ * horizontal re-flow grew the host lane wide enough that the drawer never overlaps the neighbour
+ * lane. Reads the GROWN lane widths off the `out` nodes (post grow+shift), so it validates the
+ * actual emitted geometry, not the pre-growth inputs.
+ */
+function assertDrawerFitsLane(
+  out: Node[],
+  pending: { drawer: Node; laneId: string }[],
+): void {
+  const env = (import.meta as unknown as { env?: { PROD?: boolean } }).env;
+  if (env?.PROD === true) return;
+  const byId = new Map<string, Node>();
+  for (const n of out) byId.set(n.id, n);
+  for (const { drawer, laneId } of pending) {
+    const lane = byId.get(laneId);
+    if (!lane) continue;
+    const laneW = styleSize(lane).width;
+    const drawerW = (drawer.style as { width?: number }).width ?? 0;
+    const drawerRight = drawer.position.x + drawerW;
+    if (drawerRight > laneW) {
+      throw new Error(
+        `expandInstances: drawer ${drawer.id} right edge ${drawerRight} overflows host lane ` +
+          `${laneId} grown width ${laneW}`,
+      );
+    }
+  }
 }

@@ -218,15 +218,18 @@ describe('expandInstances — flat fan-out lane-drawer (N=7)', () => {
     }
   });
 
-  it('(e) the other lane and its member are unchanged', () => {
+  it('(e) the other lane shifts right by the host width delta (UIBUG-1) but is otherwise unchanged', () => {
+    // The N=7 drawer (~812px wide) is wider than the 600px host lane, so the host lane grows in
+    // WIDTH and every lane to its right (this one, at x=800) shifts right by exactly that delta.
     const otherLane = result.nodes.find((n) => n.id === OTHER_LANE_ID)!;
     const otherMember = result.nodes.find((n) => n.id === OTHER_MEMBER_ID)!;
-    expect(otherLane.position).toEqual({ x: 800, y: 0 });
+    const hostLane = result.nodes.find((n) => n.id === LANE_ID)!;
+    const widthDelta = (hostLane.style as { width: number }).width - 600;
+    expect(widthDelta).toBeGreaterThan(0);
+    expect(otherLane.position).toEqual({ x: 800 + widthDelta, y: 0 });
+    // its style (and its member, which rides the lane via extent:'parent') is otherwise untouched.
     expect(otherLane.style).toEqual({ width: 400, height: 300 });
     expect(otherMember.position).toEqual({ x: 20, y: 50 });
-    // identity preserved (untouched node objects are returned as-is).
-    const origOther = graph.nodes.find((n) => n.id === OTHER_LANE_ID)!;
-    expect(otherLane).toBe(origOther);
   });
 
   it('does not mutate the input graph and leaves edges untouched', () => {
@@ -356,6 +359,149 @@ describe('expandInstances — fan at/below threshold still renders full cards', 
     expect(result.nodes.filter((n) => n.type === 'agentChip').length).toBe(0);
     expect(result.nodes.filter((n) => n.type === 'agentCard').length).toBe(CHIP_DEGRADE_THRESHOLD);
     expect(drawerSize(CHIP_DEGRADE_THRESHOLD).degraded).toBe(false);
+  });
+});
+
+// UIBUG-1 — HORIZONTAL re-flow: a drawer WIDER than its host lane grows the host lane's WIDTH
+// and pushes every lane to its right by exactly that width delta, so the drawer never overflows
+// into the neighbour lane. This is the horizontal twin of the existing vertical grow+shift.
+describe('expandInstances — UIBUG-1 horizontal re-flow (drawer wider than its lane)', () => {
+  // A host lane DELIBERATELY narrower than the drawer a ×7 fan produces (drawerSize(7).width is
+  // ~812px), with a SECOND lane positioned to its right that must shift right by the width delta.
+  const NARROW_LANE_W = 300;
+  const RIGHT_LANE_X = 700; // > drawer right edge of an un-grown lane → would overlap pre-fix
+  const RIGHT_LANE_ID = 'phase-right';
+  const RIGHT_MEMBER_ID = 'agent:right:1';
+  const TEMPLATE_X = 30;
+
+  function makeHGraph(laneWidth: number, agentIds: string[] = AGENT_IDS): GraphResult {
+    const count = agentIds.length;
+    const nodes: Node[] = [
+      {
+        id: LANE_ID,
+        type: 'phaseLane',
+        position: { x: 0, y: 0 },
+        data: { index: 1, title: 'Research', agentCount: 1 },
+        style: { width: laneWidth, height: 400 },
+      },
+      {
+        id: TEMPLATE_ID,
+        type: 'planAgent',
+        parentId: LANE_ID,
+        extent: 'parent',
+        position: { x: TEMPLATE_X, y: TEMPLATE_Y },
+        data: {
+          bindStatus: 'complete',
+          bindAgentIds: agentIds,
+          bindSucceeded: count,
+          bindFailed: 0,
+          bindTotal: count,
+          painted: true,
+        },
+        style: { width: CARD_SHELL_WIDTH, height: TEMPLATE_H },
+      },
+      // A SECOND lane to the right of the host — must shift right by the host's width delta.
+      {
+        id: RIGHT_LANE_ID,
+        type: 'phaseLane',
+        position: { x: RIGHT_LANE_X, y: 0 },
+        data: { index: 2, title: 'Next', agentCount: 1 },
+        style: { width: 400, height: 300 },
+      },
+      {
+        id: RIGHT_MEMBER_ID,
+        type: 'planAgent',
+        parentId: RIGHT_LANE_ID,
+        extent: 'parent',
+        position: { x: 20, y: 50 },
+        data: { painted: true },
+        style: { width: CARD_SHELL_WIDTH, height: TEMPLATE_H },
+      },
+    ];
+    const edges: Edge[] = [
+      { id: 'spine-1-r', source: LANE_ID, target: RIGHT_LANE_ID, type: 'smoothstep' },
+    ];
+    return { nodes, edges };
+  }
+
+  describe('a drawer wider than its lane grows the lane and pushes the right lane over', () => {
+    const graph = makeHGraph(NARROW_LANE_W);
+    const overlay = makeOverlay();
+    const run = makeRun();
+    const result = expandInstances(graph, overlay, run, new Set([TEMPLATE_ID]), false);
+
+    const drawer = result.nodes.find((n) => n.type === 'instanceGroup')!;
+    const drawerW = (drawer.style as { width: number }).width;
+    const hostLane = result.nodes.find((n) => n.id === LANE_ID)!;
+    const hostLaneW = (hostLane.style as { width: number }).width;
+    const widthDelta = hostLaneW - NARROW_LANE_W;
+
+    it('(1) grows the host lane width so the drawer right edge fits inside it', () => {
+      // sanity: this fan really does produce a drawer wider than the un-grown lane.
+      expect(drawerW).toBeGreaterThan(NARROW_LANE_W);
+      expect(widthDelta).toBeGreaterThan(0);
+      // drawer ⊆ grown lane (right edge within the grown width).
+      expect(drawer.position.x + drawerW).toBeLessThanOrEqual(hostLaneW);
+    });
+
+    it('(2) shifts the right-hand lane right by exactly the host lane width delta', () => {
+      const rightLane = result.nodes.find((n) => n.id === RIGHT_LANE_ID)!;
+      expect(rightLane.position.x).toBe(RIGHT_LANE_X + widthDelta);
+      // its style is otherwise untouched.
+      expect(rightLane.style).toEqual({ width: 400, height: 300 });
+    });
+
+    it('(2b) does NOT shift the host lane by its own growth (only lanes to its left push it)', () => {
+      expect(hostLane.position.x).toBe(0);
+    });
+
+    it('(2c) the right-hand lane MEMBER rides its lane (its lane-relative X is unchanged)', () => {
+      const member = result.nodes.find((n) => n.id === RIGHT_MEMBER_ID)!;
+      // extent:'parent' children ride their lane — lane-relative position is untouched.
+      expect(member.position).toEqual({ x: 20, y: 50 });
+    });
+
+    it('(3) every card ⊆ drawer ⊆ grown lane (no negative pos; right/bottom within bounds)', () => {
+      const cards = result.nodes.filter((n) => n.type === 'agentCard');
+      const dh = (drawer.style as { height: number }).height;
+      for (const c of cards) {
+        // card ⊆ drawer
+        expect(c.position.x).toBeGreaterThanOrEqual(0);
+        expect(c.position.y).toBeGreaterThanOrEqual(0);
+        expect(c.position.x + CARD_SHELL_WIDTH).toBeLessThanOrEqual(drawerW);
+        expect(c.position.y + CARD_SHELL_HEIGHT_EXEC).toBeLessThanOrEqual(dh);
+      }
+      // drawer ⊆ grown lane
+      expect(drawer.position.x).toBeGreaterThanOrEqual(0);
+      expect(drawer.position.x + drawerW).toBeLessThanOrEqual(hostLaneW);
+    });
+  });
+
+  describe('(4) a drawer that FITS its lane causes NO width growth and NO right-lane shift', () => {
+    // A lane already wider than the drawer the ×7 fan produces (~812px) → no horizontal re-flow.
+    const WIDE_LANE_W = 1000;
+    const graph = makeHGraph(WIDE_LANE_W);
+    const result = expandInstances(graph, makeOverlay(), makeRun(), new Set([TEMPLATE_ID]), false);
+
+    it('the host lane width is unchanged (regression guard)', () => {
+      const drawer = result.nodes.find((n) => n.type === 'instanceGroup')!;
+      const drawerW = (drawer.style as { width: number }).width;
+      // sanity: the drawer really does fit the wide lane.
+      expect(drawer.position.x + drawerW).toBeLessThanOrEqual(WIDE_LANE_W);
+      const hostLane = result.nodes.find((n) => n.id === LANE_ID)!;
+      expect((hostLane.style as { width: number }).width).toBe(WIDE_LANE_W);
+    });
+
+    it('the right-hand lane does NOT move', () => {
+      const rightLane = result.nodes.find((n) => n.id === RIGHT_LANE_ID)!;
+      expect(rightLane.position.x).toBe(RIGHT_LANE_X);
+    });
+
+    it('still grows the lane HEIGHT (the vertical re-flow is unaffected)', () => {
+      const size = drawerSize(N);
+      const hostLane = result.nodes.find((n) => n.id === LANE_ID)!;
+      expect((hostLane.style as { height: number }).height).toBe(400 + size.height + DRAWER_GAP);
+    });
   });
 });
 

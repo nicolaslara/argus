@@ -19,6 +19,49 @@ behind `ARGUS_PRINT_TOKEN` (`index.ts:324`); `elk.layout()` has an 8s `Promise.r
 expand-instances, ghost upcoming row, `+N more`, run-selector, failure ring, loop drill, and
 the transcript-reader (the design-plan "LATER" stack) all shipped.
 
+## Active UI bugs (opened 2026-06-06, user-reported from screenshots)
+
+- [x] **UIBUG-1 — Expand-drawer overlaps neighbouring lanes. FIXED 2026-06-06.** Horizontal
+  re-flow added to `expandInstances` (grow host lane WIDTH + shift every top-level node to its
+  right by the delta; children ride their lane). Verified on `modal-rust-plan-research` with
+  research ×7 + review ×4 BOTH expanded: DOM rects show research drawer [371–618] ⊆ Research
+  lane [336–624], review drawer [816–983] ⊆ Review lane [781–989], 0 lane overlaps, 0 drawers
+  crossing lanes. +9 unit tests. Below is the original spec.
+
+  When a fan-out expands
+  (e.g. research ×7), the instance drawer (`expandInstances`, `overlay-expand.ts`) is
+  laid out wider than its host phase lane (N=7 → 3 cols → ~812px ≫ ~300px lane) and
+  overflows RIGHT into the adjacent Design/Review lanes. `expandInstances` grows the host
+  lane in HEIGHT + shifts same-lane siblings down in Y, but never accounts for the drawer
+  being WIDER than the lane (the §2 "X is safe — disjoint ELK bands" assumption). **Fix:**
+  horizontal re-flow — grow the host lane's WIDTH to fit the drawer and shift every
+  top-level node (lanes + stray markers) to its right by the width delta (analogous to the
+  existing vertical grow+shift). Lanes are top-level; their children ride them; spine edges
+  are waypoint-free (re-dock free). **Accept:** expanding the ×7 fan shows 0 overlap with
+  the next lane (Playwright on `argus-impl-live-card-fill` / modal-rust-plan-research) +
+  a unit test (drawer wider than lane → lane width grows, right lanes shift, cards ⊆ drawer
+  ⊆ grown lane, drawer.right ≤ nextLane.left).
+
+- [x] **UIBUG-2 — A live/ad-hoc run can't see its own plan (Plan shows a DIFFERENT
+  workflow). FIXED 2026-06-06.** New pure `pickPlanSource` discriminator (`plan-correspondence.ts`):
+  when the focused run's workflow is not declared, the Plan view renders the per-run PlanModel
+  (`runPlan`) instead of `defaultWorkflow`. Verified: selecting the ad-hoc `argus-impl-live-card-fill`
+  run → toggle Plan → header names `argus-impl-live-card-fill` (not a default workflow), lanes =
+  Fetch hook · Merge · Tests · Gate · Review (same as Run), `6 nodes · AST` from the persisted
+  script. +6 unit tests. Below is the original spec.
+
+  Toggling to Plan while watching a run whose workflow has no declared
+  `.claude/workflows/*.js` (an inline `script` workflow, e.g. `argus-impl-live-card-fill`)
+  falls back to `defaultWorkflow(workflows)` (`App.tsx:490-491`) → a mismatched blueprint.
+  The Run view already fetches the correct per-run plan (`runPlanQ`/`fetchRunPlan` — the
+  server returns the EXACT persisted per-run script). **Fix:** when the focused run's
+  workflowName is not in the declared `workflows` list, the Plan view renders `runPlan`
+  (the per-run PlanModel) as the blueprint instead of the mismatched default; enable
+  `runPlanQ` in Plan view too; fix `currentWorkflowName`/`hasContent`/captions to follow
+  the per-run plan. **Accept:** select the finalized `argus-impl-live-card-fill` run →
+  toggle Plan → the SAME 4 phases (Fetch hook · Merge · Tests · Gate) render as a clean
+  blueprint, header names the run's own workflow (Playwright) + a regression test.
+
 ## Next steps by theme
 
 ### Navigation & scale

@@ -32,6 +32,7 @@ import { buildOverlay } from './overlay.ts';
 import { paintOverlay } from './overlay-paint.ts';
 import { expandInstances } from './overlay-expand.ts';
 import { expandLoopDrawer } from './overlay-loop-expand.ts';
+import { pickPlanSource } from './plan-correspondence.ts';
 import { useLiveAgentFill } from './live-agent-fill.ts';
 import { ExpandContext, type LoopDrillMode } from './expand-context.ts';
 import { readLoopDrillMode, writeLoopDrillMode } from './loop-drill-setting.ts';
@@ -505,20 +506,29 @@ export function App() {
   //     run) — so the web makes ONE clean request (no client-side 404 probe). ---
   const runPlanQ = useQuery({
     queryKey: ['run-plan', summary?.ref.slug, summary?.ref.sessionId, summary?.ref.runId],
-    enabled: !!summary && view === 'run',
+    // UIBUG-2: available in BOTH views when a run is focused (the Plan view reuses it as the
+    // blueprint for an ad-hoc run whose workflow is not a declared `.js`).
+    enabled: !!summary,
     queryFn: () => fetchRunPlan(summary!.ref),
   });
   const runPlan = runPlanQ.data;
 
+  // UIBUG-2: when the focused run's workflow is NOT a declared .js (an inline `script`
+  // workflow), the Plan toggle would fall back to a DIFFERENT workflow. Show the run's OWN
+  // plan (the per-run PlanModel, already fetched for the morph) as the Plan blueprint so
+  // Plan and Run correspond.
+  const { plan: effectivePlan, usePerRun: usePerRunPlanForPlanView, focusedHasDeclaredWorkflow } =
+    pickPlanSource({ view, summary, workflows, runPlan, declaredPlan: plan });
+
   // --- AST-mode layout: when the PlanModel is rich (static-source), lay it out with
   //     elkjs (lazily loaded). The P0 meta-only planMetaToGraph is the RUN-FREE FALLBACK
   //     used on derivedFrom==='meta-only' OR any /plan fetch error. ---
-  const useAstMode = !!plan && plan.derivedFrom === 'static-source' && plan.nodes.length > 0;
+  const useAstMode = !!effectivePlan && effectivePlan.derivedFrom === 'static-source' && effectivePlan.nodes.length > 0;
 
   const [astGraph, setAstGraph] = useState<GraphResult>(EMPTY_GRAPH);
   const [astError, setAstError] = useState(false);
   useEffect(() => {
-    if (view !== 'plan' || !useAstMode || !plan) {
+    if (view !== 'plan' || !useAstMode || !effectivePlan) {
       setAstGraph(EMPTY_GRAPH);
       setAstError(false);
       return;
@@ -528,7 +538,7 @@ export function App() {
     (async () => {
       try {
         const elk = await loadElkLayout();
-        const graph = await planModelToGraph(plan as PlanModel, elk);
+        const graph = await planModelToGraph(effectivePlan as PlanModel, elk);
         if (!cancelled) setAstGraph(graph);
       } catch {
         // Layout/elk failure → fall back to the meta-only graph (never a blank canvas).
@@ -541,7 +551,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [view, useAstMode, plan]);
+  }, [view, useAstMode, effectivePlan]);
 
   const run = runQ.data;
 
@@ -675,8 +685,11 @@ export function App() {
 
   const metaGraph = useMemo(() => {
     if (view !== 'plan') return EMPTY_GRAPH;
+    // UIBUG-2: for an ad-hoc run's per-run plan there is NO declared workflow to fall back to —
+    // `workflow` here is the WRONG (default) workflow, so never meta-graph it.
+    if (usePerRunPlanForPlanView) return EMPTY_GRAPH;
     return workflow ? planMetaToGraph(workflow) : EMPTY_GRAPH;
-  }, [view, workflow]);
+  }, [view, workflow, usePerRunPlanForPlanView]);
 
   // The AST plan is used when available AND elk succeeded; else the meta-only fallback.
   const planIsAst = view === 'plan' && useAstMode && !astError && astGraph.nodes.length > 0;
@@ -697,7 +710,9 @@ export function App() {
   const planExplanations = usePlanExplanations(
     project?.slug,
     workflow?.file,
-    view === 'plan' && planIsAst,
+    // UIBUG-2: an ad-hoc run's per-run plan has no `workflow.file` join key (the LLM caption
+    // poll keys on the declared workflow file) — disable the poll for it.
+    view === 'plan' && planIsAst && !usePerRunPlanForPlanView,
   );
   // Run-view PX captions are not joined (painted plan node ids ≠ agentIds); keep the hook
   // call present (hooks must be unconditional) but inert.
@@ -827,12 +842,22 @@ export function App() {
     (!!project && view === 'run' && runsQ.isPending) ||
     (!!summary && view === 'run' && runQ.isPending) ||
     (!!summary && view === 'run' && runPlanQ.isPending) ||
-    (!!project && view === 'plan' && workflowsQ.isPending);
+    (!!project && view === 'plan' && workflowsQ.isPending) ||
+    // UIBUG-2: in the Plan view with a focused UNDECLARED-workflow run, the per-run plan is the
+    // blueprint — wait for it rather than briefly flashing the wrong (default) workflow's plan.
+    (view === 'plan' && !!summary && !focusedHasDeclaredWorkflow && runPlanQ.isPending);
 
-  const hasContent = view === 'plan' ? !!workflow : !!run && !!runPlan;
+  const hasContent =
+    view === 'plan'
+      ? usePerRunPlanForPlanView
+        ? !!runPlan
+        : !!workflow
+      : !!run && !!runPlan;
 
   // Header: in AST mode show the real node/edge counts + coverage + the derivation tag.
-  const planNodeCount = plan?.nodes.length ?? 0;
+  // UIBUG-2: read the EFFECTIVE plan so the header count matches what the Plan view renders
+  // (the per-run plan for an ad-hoc run, else the declared-workflow plan).
+  const planNodeCount = effectivePlan?.nodes.length ?? 0;
   const planDerived = planIsAst ? 'AST' : 'declared';
 
   // P2 overlay header summary: bound / partial / planned-not-run / unplanned counts.
@@ -859,7 +884,12 @@ export function App() {
   // The "current workflow" is the selected run's workflow in the Run view, else the selected
   // workflow's name in the Plan view. RunHistory re-sorts newest-first internally, but we sort
   // here too so the surrounding component always sees a stable, newest-first list.
-  const currentWorkflowName = view === 'run' ? run?.workflowName ?? null : workflow?.name ?? null;
+  const currentWorkflowName =
+    view === 'run'
+      ? run?.workflowName ?? null
+      : usePerRunPlanForPlanView
+        ? summary?.workflowName ?? null
+        : workflow?.name ?? null;
   const workflowRuns = useMemo(() => {
     if (!currentWorkflowName) return [];
     return runs
@@ -998,13 +1028,18 @@ export function App() {
         </div>
       ) : null}
 
-      {view === 'plan' && workflow ? (
+      {view === 'plan' && (workflow || usePerRunPlanForPlanView) ? (
         <>
         <div className="run-header">
-          {workflows.length > 1 ? (
+          {/* UIBUG-2: an ad-hoc run's plan has no declared workflow to pick — show its OWN name
+              (currentWorkflowName) and hide the workflow picker (switching would leave the per-run
+              plan). The normal declared-workflow path keeps the picker. */}
+          {usePerRunPlanForPlanView ? (
+            <span className="run-header-name">{currentWorkflowName ?? 'plan'}</span>
+          ) : workflows.length > 1 ? (
             <select
               className="wf-picker"
-              value={workflow.name}
+              value={workflow!.name}
               onChange={(e) => {
                 // R2: keep Morph/Execution coherent — switch to a run of the chosen workflow.
                 const name = e.target.value;
@@ -1021,13 +1056,13 @@ export function App() {
               ))}
             </select>
           ) : (
-            <span className="run-header-name">{workflow.name}</span>
+            <span className="run-header-name">{workflow!.name}</span>
           )}
           <span className="run-badge run-badge-plan">plan</span>
           <span className="run-header-meta">
             {planIsAst
               ? `${planNodeCount} ${planNodeCount === 1 ? 'node' : 'nodes'} · ${planDerived}`
-              : `${workflow.phases.length} ${workflow.phases.length === 1 ? 'phase' : 'phases'} · declared`}
+              : `${workflow?.phases.length ?? 0} ${(workflow?.phases.length ?? 0) === 1 ? 'phase' : 'phases'} · declared`}
           </span>
         </div>
         {/* Plan = the workflow OVERVIEW (run-view-merge-plan §7b): the design + its run
