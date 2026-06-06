@@ -61,6 +61,27 @@ describe('parseJournal', () => {
     const { badLines } = parseJournal('{"type":"started"}\n');
     expect(badLines).toBe(1);
   });
+
+  it('maxBytes bound: parses only the HEAD and drops the torn trailing line (no bad-line inflation)', () => {
+    // 50 started events; each line ~46 chars. Cap to ~10 lines worth, mid-line.
+    const evLines = Array.from(
+      { length: 50 },
+      (_, i) => `{"type":"started","key":"k","agentId":"agent${i}"}`,
+    );
+    const text = evLines.join('\n') + '\n';
+    const cap = evLines.slice(0, 10).join('\n').length + 20; // land in the middle of line 11
+    const { events, badLines } = parseJournal(text, cap);
+    // Head-read preserves start order: agent0 is present, far fewer than 50 parsed.
+    expect(events.length).toBeGreaterThan(0);
+    expect(events.length).toBeLessThan(50);
+    expect(events[0]!.agentId).toBe('agent0');
+    // the partial line at the cap boundary is dropped, NOT counted as a bad line.
+    expect(badLines).toBe(0);
+  });
+
+  it('maxBytes unset / under the cap: behaves exactly like the unbounded parse', () => {
+    expect(parseJournal(journalText, journalText.length + 1000)).toEqual(parseJournal(journalText));
+  });
 });
 
 describe('reduceJournal', () => {
@@ -221,6 +242,22 @@ await parallel(items.map((it) => () => agent('do ' + it, { label: 'work:' + it, 
   it('uses the live format pin, identical to the finalized adapter pin', () => {
     expect(ADAPTER_FORMAT_LIVE).toBe(ADAPTER_FORMAT);
     expect(buildLiveModel(journalText, REF).format).toBe(ADAPTER_FORMAT);
+  });
+
+  it('maxBytes over the cap: stamps an honest journal-truncated warning (size in detail)', () => {
+    const tiny = 10; // far under journalText; forces truncation
+    const m = buildLiveModel(journalText, REF, { plan, maxBytes: tiny });
+    const w = m.warnings.find((x) => x.code === 'journal-truncated');
+    expect(w).toBeDefined();
+    expect(w?.detail).toBe(String(journalText.length)); // pre-cap size, so the caller knows "of M"
+    // still a valid, non-crashing live model.
+    expect(m.status).toBe('running');
+    expect(m.incomplete).toBe(true);
+  });
+
+  it('maxBytes generous (journal under cap): NO journal-truncated warning', () => {
+    const m = buildLiveModel(journalText, REF, { plan, maxBytes: journalText.length + 1000 });
+    expect(m.warnings.map((x) => x.code)).not.toContain('journal-truncated');
   });
 });
 

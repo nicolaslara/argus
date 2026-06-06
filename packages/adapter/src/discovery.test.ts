@@ -9,6 +9,7 @@ import {
   discoverProjectsWithReason,
   discoverRunsWithReason,
   discoverWorkflowMetas,
+  discoverWorkflowMetasWithReason,
   parseWorkflowMeta,
   type FileSystemPort,
 } from './index.ts';
@@ -291,6 +292,56 @@ describe('robustness: empty-with-reason (never throws)', () => {
     expect(rep.items.map((r) => r.workflowName)).toEqual(['q-ok']);
     expect(rep.reasons.map((r) => r.code)).toContain('run-header-unreadable');
   });
+
+  it('aggregate skip-count summary: N unreadable run headers -> one coded count', async () => {
+    const port = new MemPort();
+    const slug = '-Users-nicolas-devel-r';
+    port.setJson(`${PROJECTS}/${slug}/s1/workflows/wf_ok.json`, {
+      workflowName: 'r-ok',
+      status: 'completed',
+      scriptPath: '/Users/nicolas/devel/r/.claude/workflows/ok.js',
+    });
+    port.set(`${PROJECTS}/${slug}/s1/workflows/wf_bad1.json`, '{ not json');
+    port.set(`${PROJECTS}/${slug}/s1/workflows/wf_bad2.json`, 'also { not json');
+    const project: ProjectRef = {
+      projectPath: '/Users/nicolas/devel/r',
+      slug,
+      name: 'r',
+      sessionCount: 1,
+    };
+    const rep = await discoverRunsWithReason(port, project, HOME);
+    expect(rep.items.map((r) => r.workflowName)).toEqual(['r-ok']); // the good run survives
+    const summary = rep.reasons.find((r) => r.code === 'discovery-runs-skipped-errors');
+    expect(summary).toBeDefined();
+    expect(summary?.detail).toBe('2'); // honest count of the two unreadable headers
+  });
+
+  it('clean scan emits NO skip-summary (additive — success path untouched)', async () => {
+    const port = new MemPort();
+    const slug = '-Users-nicolas-devel-clean';
+    port.setJson(`${PROJECTS}/${slug}/s1/workflows/wf_ok.json`, {
+      workflowName: 'clean-ok',
+      status: 'completed',
+      scriptPath: '/Users/nicolas/devel/clean/.claude/workflows/ok.js',
+    });
+    const project: ProjectRef = {
+      projectPath: '/Users/nicolas/devel/clean',
+      slug,
+      name: 'clean',
+      sessionCount: 1,
+    };
+    const rep = await discoverRunsWithReason(port, project, HOME);
+    expect(rep.reasons.map((r) => r.code)).not.toContain('discovery-runs-skipped-errors');
+  });
+
+  it('expected skip (missing workflows dir) is NOT counted as an error', async () => {
+    // A session with only a non-wf file → no workflows dir read failure that counts; the
+    // EXPECTED skip must not inflate the summary.
+    const port = new MemPort();
+    port.set(`${PROJECTS}/-Users-nicolas-devel-e/sess/notes.txt`, 'hi');
+    const rep = await discoverProjectsWithReason(port, HOME);
+    expect(rep.reasons.map((r) => r.code)).not.toContain('discovery-projects-skipped-errors');
+  });
 });
 
 // ===========================================================================
@@ -342,5 +393,17 @@ describe('parseWorkflowMeta (static .claude/workflows/*.js meta)', () => {
   it('missing .claude/workflows dir -> empty (no throw)', async () => {
     const port = new MemPort();
     await expect(discoverWorkflowMetas(port, '/Users/nicolas/devel/nowhere')).resolves.toEqual([]);
+  });
+
+  it('aggregate skip-count summary: unparseable workflow source -> one coded count', async () => {
+    const port = new MemPort();
+    const projectPath = '/Users/nicolas/devel/m';
+    port.set(`${projectPath}/.claude/workflows/good.js`, wfSrc('plan-research.js'));
+    port.set(`${projectPath}/.claude/workflows/broken.js`, 'console.log("no meta here")');
+    const rep = await discoverWorkflowMetasWithReason(port, projectPath);
+    expect(rep.items.length).toBe(1); // the good one survives
+    expect(rep.reasons.map((r) => r.code)).toContain('workflow-meta-unparseable');
+    const summary = rep.reasons.find((r) => r.code === 'discovery-workflow-metas-skipped-errors');
+    expect(summary?.detail).toBe('1');
   });
 });

@@ -570,6 +570,17 @@ export function isValidAgentId(id: string): boolean {
 const RESULT_EMIT_CAP = 512 * 1024;
 
 /**
+ * Pre-flight bound on the LIVE journal read (ARCH-6 gap #2). A live run reads its whole
+ * `journal.jsonl` into memory; a pathological runaway/looping journal could OOM. 32 MB is
+ * ~3 orders of magnitude over a real run (< 100 agents × ~500 B ≈ 50 KB), so it never
+ * trips in practice but caps the worst case. When `stat` reports a journal over this, we
+ * still read it but pass the cap to the adapter, which parses only the head (preserving
+ * start-order binding) and stamps a `journal-truncated` warning (honest degrade, never a
+ * silent drop or crash). The eventual finalized snapshot is authoritative.
+ */
+const LIVE_JOURNAL_READ_CAP = 32 * 1024 * 1024;
+
+/**
  * GET /api/runs/:slug/:session/:runId/result?agentId=<id> -> { agentId, value, truncated }.
  * The FULL (uncapped) result of one agent, read from the journal `result` event (R1 — the
  * inspect panel's "full result" lazy fetch; the finalized snapshot only keeps a ~401-char
@@ -589,6 +600,10 @@ export async function handleAgentResult(
   const journalPath = safeRunJournalPath(deps.claudeHome, slug, session, runId);
   if (journalPath === null || !isValidAgentId(agentId)) return err(400, 'bad_request');
 
+  // TODO(ARCH-6 gap #2, deferred): this lazy full-result fetch reads the WHOLE journal
+  // unbounded to find one agent's result. Bounding it correctly needs a scan-to-match (not
+  // a head cap, which could miss a later agent) — a heavier change for marginal value vs
+  // the live-snapshot guard above. Left unbounded for now; revisit if a real journal grows.
   let text: string;
   try {
     text = await deps.port.readFile(journalPath);
@@ -828,9 +843,16 @@ export async function handleRunLive(
     }
   }
 
+  // Pre-flight size guard (ARCH-6 gap #2): if the journal is pathologically large, bound
+  // the parse so a runaway journal can't OOM the parse step. A null stat is a normal miss
+  // (the run finalized / never started) — fall through and let the read decide 200 vs 404.
+  let maxBytes: number | undefined;
+  const st = await deps.port.stat(journalPath);
+  if (st !== null && st.size > LIVE_JOURNAL_READ_CAP) maxBytes = LIVE_JOURNAL_READ_CAP;
+
   const ref: RunRef = { projectPath: '', slug, sessionId: session, runId };
   try {
-    const model = await loadLiveModel(deps.port, journalPath, ref, { plan: plan ?? null });
+    const model = await loadLiveModel(deps.port, journalPath, ref, { plan: plan ?? null, maxBytes });
     return { status: 200, body: model };
   } catch {
     return err(404, 'not_found');

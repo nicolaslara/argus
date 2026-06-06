@@ -145,8 +145,13 @@ adapter format-isolation, web↔contract-only all hold). Prioritized remaining w
   math), `error-redaction.ts` (`scrubError`). Added the redaction unit test + a full-stack
   integration scrub test + widened path-traversal vectors (routes.test.ts). +81 tests (501 total).
   App rewired to use the extractions (verified live: renders, objective formatArgs works).
-- [ ] **ARCH-6 — Robustness signals (med/S).** Discovery op failures are silently swallowed (no
-  client signal); the full-journal read is unbounded (no pre-flight size cap); a closed SSE
-  connection isn't surfaced server-side. Add honest signals/bounds.
+- [x] **ARCH-6 — Robustness signals. DONE 2026-06-06.** Discovery now COUNTS unexpected read/parse
+  skips (vs expected ones) and surfaces them as coded `DiscoveryReport.reasons` warnings (silent
+  skip → honest signal; resilience unchanged). The live journal read is bounded: `handleRunLive`
+  pre-flight `port.stat()`s the journal and, over a 32 MB cap (~3 orders over a real run), passes
+  `maxBytes` so `parseJournal` parses the HEAD (preserving start-order agent binding F4) + stamps a
+  `journal-truncated` warning — never an OOM or a silent drop. +9 tests (510 total). DEFERRED
+  (TODO left in code): the lazy full-result read is also unbounded, but a head-cap there could miss
+  a later agent's result — it needs a scan-to-match (heavier, marginal value), so left for later.
 - [ ] **ARCH-7 (deferred) — App.tsx decomposition (M), large-graph 200+ safeguard (L), contract
   type tests (S), remove dead `runModelToGraph` export (S).** Incremental / gate-on-need.

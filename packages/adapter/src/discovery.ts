@@ -39,6 +39,37 @@ export interface DiscoveryReport<T> {
   reasons: Array<{ code: string; detail?: string }>;
 }
 
+/**
+ * Per-item reason codes that signal an UNEXPECTED failure (a real I/O / parse error on a
+ * path we expected to read), as opposed to an EXPECTED skip (a missing `workflows`/live
+ * dir, a non-`.js` file). These are what {@link emitSkippedSummary} counts. The expected
+ * skips deliberately emit NO per-item reason (so they never inflate the summary), keeping
+ * skip-and-continue resilience honest: the count means "the list is incomplete because N
+ * things genuinely failed", never "N normal cases were ignored".
+ */
+const UNEXPECTED_DISCOVERY_CODES = new Set<string>([
+  'slug-dir-unreadable',
+  'run-header-unreadable',
+  'workflow-file-unreadable',
+  'workflow-meta-unparseable',
+]);
+
+/**
+ * Honest-degradation aggregate: if any per-item reason already in `reasons` matches an
+ * UNEXPECTED failure code, append ONE summary reason `{ code, detail: '<count>' }`. Reuses
+ * the existing `DiscoveryReport.reasons` channel (no contract change) and is additive — on
+ * a clean scan nothing is emitted. The caller can read just this one code to know the
+ * result set is incomplete and by how much.
+ */
+function emitSkippedSummary(
+  reasons: DiscoveryReport<unknown>['reasons'],
+  code: string,
+  unexpected: ReadonlySet<string>,
+): void {
+  const skipped = reasons.filter((r) => unexpected.has(r.code)).length;
+  if (skipped > 0) reasons.push({ code, detail: String(skipped) });
+}
+
 // --- path helpers (join WITHOUT importing node:path; the tree is always POSIX-ish
 //     under ~/.claude/projects and we never resolve `..`). ---
 
@@ -295,6 +326,11 @@ export async function discoverProjectsReport(
     }))
     .sort((a, b) => a.projectPath.localeCompare(b.projectPath));
 
+  // Honest-degradation summary: if any run header was UNREADABLE (a real I/O/parse
+  // failure, not an expected missing dir), surface an aggregate count so a caller sees
+  // "N items skipped" with one coded reason — no need to scan every per-item reason.
+  emitSkippedSummary(reasons, 'discovery-projects-skipped-errors', UNEXPECTED_DISCOVERY_CODES);
+
   return { items, reasons };
 }
 
@@ -334,6 +370,11 @@ export async function discoverRunsReport(
 
   // Stable order: newest first (startTime desc), nulls last.
   items.sort((a, b) => (b.startTime ?? -Infinity) - (a.startTime ?? -Infinity));
+
+  // Honest-degradation summary (see discoverProjectsReport): aggregate count of runs
+  // skipped on an UNEXPECTED failure (unreadable/malformed header), so the caller gets a
+  // single signal that this list is incomplete.
+  emitSkippedSummary(reasons, 'discovery-runs-skipped-errors', UNEXPECTED_DISCOVERY_CODES);
 
   return { items, reasons };
 }
@@ -542,5 +583,11 @@ export async function discoverWorkflowMetasReport(
   }
 
   items.sort((a, b) => a.name.localeCompare(b.name));
+
+  // Honest-degradation summary (see discoverProjectsReport): aggregate count of workflow
+  // sources skipped on an UNEXPECTED failure (unreadable file OR unparseable meta), so the
+  // caller gets a single signal that this list dropped some definitions.
+  emitSkippedSummary(reasons, 'discovery-workflow-metas-skipped-errors', UNEXPECTED_DISCOVERY_CODES);
+
   return { items, reasons };
 }

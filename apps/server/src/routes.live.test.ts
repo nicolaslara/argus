@@ -158,6 +158,36 @@ describe('handleRunLive (L2 live snapshot)', () => {
     expect((await handleRunLive(deps(), SLUG, SESS_LIVE, 'bad id')).status).toBe(400);
     expect((await handleRunLive(deps(), SLUG, SESS_LIVE, 'wf_absent')).status).toBe(404);
   });
+
+  it('pathologically large journal (over the read cap) → bounded parse + journal-truncated warning', async () => {
+    // A journal genuinely over the route's 32 MB pre-flight cap. The route passes the cap to
+    // the adapter, which parses only the head (preserving start order) and stamps the honest
+    // `journal-truncated` warning — never crashing. The leading real events bind first.
+    const RUN_BIG = 'wf_big01';
+    const oneEvent = '{"type":"started","key":"k","agentId":"padpadpad"}\n';
+    const reps = Math.ceil((33 * 1024 * 1024) / oneEvent.length); // ~33 MB > 32 MB cap
+    const bigJournal = LIVE_JOURNAL + oneEvent.repeat(reps);
+    const base = makePort();
+    const bigPath = `${HOME}/projects/${SLUG}/${SESS_LIVE}/subagents/workflows/${RUN_BIG}/journal.jsonl`;
+    const port: FileSystemPort = {
+      ...base,
+      async readFile(p) {
+        if (p === bigPath) return bigJournal;
+        return base.readFile(p);
+      },
+      async stat(p) {
+        if (p === bigPath) return { size: bigJournal.length, mtimeMs: NOW - 1000 };
+        return base.stat(p);
+      },
+    };
+    const res = await handleRunLive({ port, claudeHome: HOME, now: () => NOW }, SLUG, SESS_LIVE, RUN_BIG);
+    expect(res.status).toBe(200);
+    const m = res.body as RunModel;
+    expect(m.status).toBe('running'); // never crashed
+    expect(m.warnings.map((w) => w.code)).toContain('journal-truncated');
+    // start-order binding survives the head-read: the first real agent (aid1) is present.
+    expect(m.agents.some((a) => a.agentId === 'aid1')).toBe(true);
+  });
 });
 
 describe('handleAgentResult (R1 lazy full result)', () => {

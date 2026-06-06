@@ -53,11 +53,28 @@ export interface ParsedJournal {
  * Parse `journal.jsonl` text into ordered events. LINE-INDEPENDENT: a single malformed
  * line is counted in `badLines` and skipped, never aborting the parse (a journal being
  * actively appended can have a torn final line). NEVER throws.
+ *
+ * `maxBytes` (optional) BOUNDS the parse for a pathological journal (a runaway/looping
+ * multi-GB log): when the text exceeds it, we parse only the FIRST `maxBytes` chars and
+ * drop the trailing (possibly torn) partial line so it isn't miscounted as a bad line.
+ * Reading the HEAD (not the tail) preserves START-ORDER agent binding (F4) — the i-th
+ * agent to appear stays the i-th — so labels/phases remain correct; we simply lose the
+ * NEWEST events past the cap. The caller (buildLiveModel) emits an honest `journal-truncated`
+ * warning so the degrade is never silent.
  */
-export function parseJournal(text: string): ParsedJournal {
+export function parseJournal(text: string, maxBytes?: number): ParsedJournal {
+  let workText = text;
+  if (maxBytes !== undefined && text.length > maxBytes) {
+    const head = text.slice(0, maxBytes);
+    // Drop the trailing partial line (everything after the last newline) so a torn line
+    // at the cap boundary isn't counted as a bad line; if there's no newline at all the
+    // whole capped chunk is one (possibly torn) line and the existing parse tolerates it.
+    const lastNewline = head.lastIndexOf('\n');
+    workText = lastNewline === -1 ? head : head.slice(0, lastNewline);
+  }
   const events: JournalEvent[] = [];
   let badLines = 0;
-  for (const rawLine of text.split('\n')) {
+  for (const rawLine of workText.split('\n')) {
     const line = rawLine.trim();
     if (line.length === 0) continue;
     let o: unknown;
@@ -221,6 +238,13 @@ function makeLivePreview(s: string | undefined): Preview | null {
 export interface LiveModelOptions {
   /** Persisted-script plan, used to recover labels/phases by start-order binding (F4). */
   plan?: PlanModel | null;
+  /**
+   * Optional cap (chars) on the journal text to parse. Bounds memory/CPU for a
+   * pathological (runaway/looping multi-GB) journal. When set and the text is over it,
+   * only the head is parsed (start-order binding preserved) and a `journal-truncated`
+   * warning is emitted. Omit for the normal case (no bound — all journals so far are tiny).
+   */
+  maxBytes?: number;
 }
 
 /**
@@ -241,8 +265,13 @@ export function buildLiveModel(
   opts: LiveModelOptions = {},
 ): RunModel {
   const warnings: AdapterWarning[] = [{ code: 'live-incomplete' }];
-  const { events, badLines } = parseJournal(journalText);
+  const truncated = opts.maxBytes !== undefined && journalText.length > opts.maxBytes;
+  const { events, badLines } = parseJournal(journalText, opts.maxBytes);
   if (badLines > 0) warnings.push({ code: 'journal-bad-lines', detail: String(badLines) });
+  // Honest-degradation: the journal exceeded the read cap, so the NEWEST events past the
+  // cap were dropped (start-order binding for the parsed head stays correct). detail = the
+  // pre-cap size in chars, so the caller can surface "showing first N of M".
+  if (truncated) warnings.push({ code: 'journal-truncated', detail: String(journalText.length) });
 
   const live = reduceJournal(events);
 
