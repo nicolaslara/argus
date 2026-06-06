@@ -9,11 +9,24 @@ import type { Edge, Node } from '@xyflow/react';
 import type { AgentNode, RunModel } from '@argus/contract';
 import type { AgentCardData } from './nodes/AgentCard.tsx';
 import type { PhaseLaneData } from './nodes/PhaseLane.tsx';
+import type { LiveFill } from './live-agent-fill.ts';
 import { defaultLayout, type LayoutEngine, type LayoutInput } from './layout/index.ts';
 
 export interface GraphResult {
   nodes: Node[];
   edges: Edge[];
+}
+
+/**
+ * STEP 2 fill rule: keep the journal value when it is present AND non-zero; otherwise fall
+ * back to the transcript-derived live value (which may itself be undefined → null). This is
+ * what makes a finished run byte-unchanged: its journal metric is non-null/non-zero, so the
+ * journal always wins and `filled` is ignored. A live agent showing an em-dash (null/0) picks
+ * up the transcript number. Returns `number | null` to match AgentCardData's metric fields.
+ */
+function fillMetric(journal: number | null, filled: number | undefined): number | null {
+  if (journal != null && journal !== 0) return journal;
+  return filled != null ? filled : journal;
 }
 
 /**
@@ -23,9 +36,20 @@ export interface GraphResult {
  * card render ignores the I1 trailing fields). Extracted verbatim from the inline build —
  * no behavior change.
  */
-export function agentToCardData(agent: AgentNode, failurePoint = false): AgentCardData {
+export function agentToCardData(
+  agent: AgentNode,
+  failurePoint = false,
+  // STEP 2 (live fill): transcript-derived metrics for a RUNNING run's still-incomplete /
+  // metric-starved agents (failure-and-live-inspector §4). When present AND the journal value
+  // is missing/zero, the filled value wins so the card shows real dur/tok/tools/label instead
+  // of em-dashes. Absent for finished runs (the hook returns an empty map) — so a finished
+  // run's cards keep their finalized-model values and stay byte-unchanged.
+  liveFill?: LiveFill,
+): AgentCardData {
   return {
-    label: agent.label || agent.agentId || 'agent',
+    // The journal label wins when it's a real label; otherwise fall back to the transcript-
+    // derived label (the first-user-line task) before the bare agentId.
+    label: agent.label || liveFill?.label || agent.agentId || 'agent',
     state: agent.state,
     model: agent.model,
     cached: agent.cached,
@@ -33,9 +57,10 @@ export function agentToCardData(agent: AgentNode, failurePoint = false): AgentCa
     // STEP 3: the dead agent on a failed run → a red failure-point ring (consistent with the
     // Run-view banner). Off by default; set only for the failure-point instances.
     failurePoint,
-    tokens: agent.tokens,
-    toolCalls: agent.toolCalls,
-    durationMs: agent.durationMs,
+    // STEP 2: the journal value wins when present/non-zero; otherwise the live transcript fill.
+    tokens: fillMetric(agent.tokens, liveFill?.tokens),
+    toolCalls: fillMetric(agent.toolCalls, liveFill?.toolCount),
+    durationMs: fillMetric(agent.durationMs, liveFill?.durationMs),
     // I1: the remaining AgentNode scalars ride along on node.data so the detail panel
     // reads them with no extra fetch (the card render ignores them). Already-capped
     // previews come straight from the adapter; nothing new is computed here.

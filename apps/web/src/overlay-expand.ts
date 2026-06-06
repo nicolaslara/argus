@@ -24,6 +24,7 @@ import type { Edge, Node } from '@xyflow/react';
 import type { AgentNode, Overlay, RunModel } from '@argus/contract';
 import type { GraphResult } from './mapping.ts';
 import { agentToCardData } from './mapping.ts';
+import type { LiveFill } from './live-agent-fill.ts';
 import { CARD_SHELL_WIDTH, CARD_SHELL_HEIGHT_EXEC } from './nodes/AgentCardShell.tsx';
 
 // --- drawer geometry (one source of truth; lane growth reads the drawer's own height) ---
@@ -233,6 +234,11 @@ export function buildChipCells(
  * @param expandedNodeIds the host template node ids whose drawers are open.
  * @param live    whether the painted run is live (threaded for parity with paintOverlay;
  *                does not change the layout arithmetic here).
+ * @param failureAgentIds STEP 3 — the dead agentIds on a failed run (red failure-point ring).
+ * @param liveFill STEP 2 — agentId→LiveFill for a LIVE run's transcript-derived metrics; merged
+ *                into each instance card so a running agent shows real dur/tok/tools/label
+ *                instead of em-dashes. OPTIONAL + empty for finished runs (cards stay byte-
+ *                unchanged). Affects card data only, never the layout arithmetic.
  * @returns a NEW GraphResult with drawer + card nodes inserted and the host lanes re-flowed.
  */
 export function expandInstances(
@@ -245,6 +251,10 @@ export function expandInstances(
   // STEP 3: the dead agentIds on a failed run — the matching instance card reads as the
   // failure point (a red ring), consistent with the Run-view failure banner's attribution.
   failureAgentIds?: Set<string>,
+  // STEP 2: the live transcript fill (agentId→LiveFill) for a LIVE run; empty/undefined for a
+  // finished run. Read only in the full-card path (a degraded chip drawer shows label/state/
+  // dur, and a live fan over CHIP_DEGRADE_THRESHOLD is rare — chips stay on journal data).
+  liveFill?: Map<string, LiveFill>,
 ): GraphResult {
   if (expandedNodeIds.size === 0) return graph;
 
@@ -339,7 +349,11 @@ export function expandInstances(
             type: 'agentCard',
             parentId: drawer.id,
             position: pos,
-            data: agentToCardData(agent, failureAgentIds?.has(agent.agentId) === true),
+            data: agentToCardData(
+              agent,
+              failureAgentIds?.has(agent.agentId) === true,
+              liveFill?.get(agent.agentId),
+            ),
             draggable: false,
             selectable: false,
           } as Node;

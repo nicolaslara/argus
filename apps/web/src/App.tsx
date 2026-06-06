@@ -32,6 +32,7 @@ import { buildOverlay } from './overlay.ts';
 import { paintOverlay } from './overlay-paint.ts';
 import { expandInstances } from './overlay-expand.ts';
 import { expandLoopDrawer } from './overlay-loop-expand.ts';
+import { useLiveAgentFill } from './live-agent-fill.ts';
 import { ExpandContext, type LoopDrillMode } from './expand-context.ts';
 import { readLoopDrillMode, writeLoopDrillMode } from './loop-drill-setting.ts';
 import {
@@ -544,6 +545,17 @@ export function App() {
 
   const run = runQ.data;
 
+  // --- STEP 2 (live fill): eagerly fetch the per-agent transcript metrics a LIVE run's
+  //     journal lacks (dur/tok/tools/label), polled on the live tick, so the instance cards
+  //     show real numbers instead of em-dashes BEFORE you click each one. Returns a STABLE
+  //     empty map (and fetches nothing) for a finished run — their cards fill from the
+  //     finalized model and must stay byte-unchanged. Merged into the card build below
+  //     (expandInstances → agentToCardData); the layout arithmetic is unaffected. ---
+  const liveFill = useLiveAgentFill(
+    summary ? { slug: summary.ref.slug, sessionId: summary.ref.sessionId, runId: summary.ref.runId } : null,
+    run,
+  );
+
   // --- P2 MORPH layout: lay the run's plan out with the SAME elk pass + planModelToGraph
   //     the Plan view uses (the canonical shared layout), then PAINT the run status onto
   //     it (buildOverlay → paintOverlay). Painting is additive (data-only); toggling the
@@ -637,7 +649,10 @@ export function App() {
     // reads as the failure point; and a single-agent (non-fanned) step is marked on its painted
     // PLAN node here, so a failed run never shows the failing step as a clean "done".
     const failureAgentIds = deriveFailureInfo(run)?.failureAgentIds;
-    let expanded = expandInstances(painted, overlay, run, expandedNodeIds, live, failureAgentIds);
+    // STEP 2: thread the live transcript fill into the instance-card build. Empty for a finished
+    // run (so its cards stay byte-unchanged); for a live run it replaces a running agent's
+    // em-dashed dur/tok/tools/label with the real transcript-derived values.
+    let expanded = expandInstances(painted, overlay, run, expandedNodeIds, live, failureAgentIds, liveFill);
     // OPTION 2 (lane-drawer inside the loop): when the loop-drill setting is 'lane-drawer' AND a
     // round drawer is open AND the loop is unrolled, draw that round's agents as cards inside the
     // loop compound (the back-edge re-routes around them). In 'round-axis' mode (the default) this
@@ -656,7 +671,7 @@ export function App() {
           : n;
       }),
     };
-  }, [view, overlayBaseGraph, overlay, unrolled, run, expandedNodeIds, loopDrillMode, loopDrawerRound]);
+  }, [view, overlayBaseGraph, overlay, unrolled, run, expandedNodeIds, loopDrillMode, loopDrawerRound, liveFill]);
 
   const metaGraph = useMemo(() => {
     if (view !== 'plan') return EMPTY_GRAPH;

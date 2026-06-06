@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { Edge, Node } from '@xyflow/react';
 import type { AgentNode, Overlay, RunModel } from '@argus/contract';
 import type { GraphResult } from './mapping.ts';
+import type { LiveFill } from './live-agent-fill.ts';
 import { CARD_SHELL_WIDTH, CARD_SHELL_HEIGHT_EXEC } from './nodes/AgentCardShell.tsx';
 import {
   expandInstances,
@@ -355,5 +356,93 @@ describe('expandInstances — fan at/below threshold still renders full cards', 
     expect(result.nodes.filter((n) => n.type === 'agentChip').length).toBe(0);
     expect(result.nodes.filter((n) => n.type === 'agentCard').length).toBe(CHIP_DEGRADE_THRESHOLD);
     expect(drawerSize(CHIP_DEGRADE_THRESHOLD).degraded).toBe(false);
+  });
+});
+
+// STEP 2 (failure-and-live-inspector §4) — expandInstances PASSES the live transcript fill
+// through to the (full-card) instance cards, so a RUNNING fan's metric-starved cards show real
+// dur/tok/tools/label. The fill is data-only — it never touches the layout arithmetic.
+describe('expandInstances — live fill threads into the instance cards', () => {
+  // A live fan: every agent is running with starved metrics (null dur/tok/tools, no label) —
+  // exactly the live-journal state the transcript fill exists to repair. The card renders these
+  // nulls as em-dashes and the empty label falls back to the bare agentId.
+  const liveAgent = (over: Partial<AgentNode> & { agentId: string }): AgentNode =>
+    agentNode({
+      state: 'running',
+      label: '', // no journal label — the card falls back to the agentId until the fill arrives
+      tokens: null,
+      toolCalls: null,
+      durationMs: null,
+      ...over,
+    });
+
+  function makeLiveRun(agentIds: string[]): RunModel {
+    return { ...makeRun(agentIds), incomplete: true, status: 'running', agents: agentIds.map((id) => liveAgent({ agentId: id })) };
+  }
+
+  const ids = agentIdsFor(3);
+  const liveRun = makeLiveRun(ids);
+  const liveFill: Map<string, LiveFill> = new Map([
+    // a1 gets a full fill; a2 a partial fill; a3 is ABSENT from the map (e.g. a 404 transcript).
+    ['a1', { durationMs: 4200, tokens: 1500, toolCount: 9, label: 'research:surface' }],
+    ['a2', { tokens: 700, label: 'research:io' }],
+  ]);
+
+  const result = expandInstances(
+    makeGraph(ids),
+    makeOverlay(ids),
+    liveRun,
+    new Set([TEMPLATE_ID]),
+    true, // live
+    undefined, // no failure
+    liveFill,
+  );
+  const cardData = (agentId: string): Record<string, unknown> =>
+    result.nodes.find((n) => n.type === 'agentCard' && (n.data as { agentId?: string }).agentId === agentId)!
+      .data as Record<string, unknown>;
+
+  it('(d) a fan instance WITH a full fill shows the transcript dur/tok/tools/label', () => {
+    const d = cardData('a1');
+    expect(d.durationMs).toBe(4200);
+    expect(d.tokens).toBe(1500);
+    expect(d.toolCalls).toBe(9);
+    expect(d.label).toBe('research:surface');
+  });
+
+  it('(d) a fan instance with a PARTIAL fill fills present fields, leaves the rest starved', () => {
+    const d = cardData('a2');
+    expect(d.tokens).toBe(700);
+    expect(d.label).toBe('research:io');
+    expect(d.durationMs).toBeNull(); // not in the fill → stays starved (em-dash)
+    expect(d.toolCalls).toBeNull();
+  });
+
+  it('(d) a fan instance ABSENT from the fill keeps its journal/em-dash values', () => {
+    const d = cardData('a3');
+    expect(d.durationMs).toBeNull();
+    expect(d.tokens).toBeNull();
+    expect(d.toolCalls).toBeNull();
+    expect(d.label).toBe('a3'); // bare-id fallback (no fill entry)
+  });
+
+  it('a finished run is byte-unchanged whether or not a fill is passed (journal wins)', () => {
+    // makeRun() agents already carry journal metrics (tokens:100, tools:1, dur:1000) → the fill
+    // is a no-op. The card data must be identical with and without a fill map.
+    const finished = makeRun(ids);
+    const noFill = expandInstances(makeGraph(ids), makeOverlay(ids), finished, new Set([TEMPLATE_ID]), false);
+    const withFill = expandInstances(
+      makeGraph(ids),
+      makeOverlay(ids),
+      finished,
+      new Set([TEMPLATE_ID]),
+      false,
+      undefined,
+      liveFill, // a fill that would otherwise change a1/a2 — but the journal wins
+    );
+    for (const id of ids) {
+      const a = noFill.nodes.find((n) => n.type === 'agentCard' && (n.data as { agentId?: string }).agentId === id)!;
+      const b = withFill.nodes.find((n) => n.type === 'agentCard' && (n.data as { agentId?: string }).agentId === id)!;
+      expect(b.data).toEqual(a.data);
+    }
   });
 });
