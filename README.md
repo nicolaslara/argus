@@ -13,11 +13,11 @@ fullscreen graph of phases, agents, tokens, tools, and results.
 > run journals end-to-end and renders them, but both the UI and the undocumented
 > on-disk format it observes are still moving — not yet stable to build on.
 
-![argus — the Run view: a workflow's plan painted with a run; fanned steps expand in place into their agent instances](docs/screenshots/argus-run-view.png)
+![argus — the Run view: a workflow's plan painted with a run; fan-outs expanded into agent instance cards with result previews, plus the run's objective band](docs/screenshots/run-view.png)
 
 <p align="center">
-  <img src="docs/screenshots/feature-plan-blueprint.png" width="49%" alt="Plan view — the workflow's design as a dashed blueprint: fan-out, a decision diamond, phases" />
-  <img src="docs/screenshots/argus-loop-decision.png" width="49%" alt="a loop-until-done container with a decision diamond and a ×4 fan-out" />
+  <img src="docs/screenshots/plan-overview.png" width="49%" alt="Plan view — the dashed blueprint plus a run-history band of the workflow's runs (status · when · agents·duration)" />
+  <img src="docs/screenshots/loop-drill.png" width="49%" alt="a loop's round axis (r1·r2…) drilled — clicking a round opens that round's subagents in the detail panel" />
 </p>
 
 ## Status
@@ -61,23 +61,17 @@ per-phase work.
 Real runs from this project and its sibling `modal-rust` (argus dogfoods on the very
 workflows it visualizes).
 
-**A multi-phase run, fan-outs expanded.** Each planned step is painted with the run's
-status; a `×N` fan-out expands in place to show every subagent, and a band reads the run's
-objective + what data it was called on.
-
-![merged Run view — modal-rust-materialize-workpads, fan-out expanded with an objective band](docs/screenshots/feature-run-materialize.png)
-
 **A failed run says why, where, and when.** A failure banner names the failing step, the
 error, and the elapsed-to-failure; the failing step is ringed red instead of reading as a
-clean "done".
+clean "done"; clicking it drills into the agent's prompt + activity timeline — here, the API
+socket-close that actually killed the run (the root cause behind a generic "didn't finalize").
 
-![failure banner — run failed at a named step, with the reason and elapsed](docs/screenshots/feature-failure.png)
+![failure inspector — banner "run failed at implement:I1" plus the failing agent's prompt + activity](docs/screenshots/failure-inspector.png)
 
-**Drill into any agent.** Clicking a subagent opens its actual prompt, result, tool
-timeline, tokens, and last activity — here, the API socket-close that actually killed the
-run (the root cause behind a generic "didn't finalize" error).
+**Read any agent end to end.** "Open full" turns the detail panel into a transcript reader:
+the verbatim prompt, the ordered tool timeline, and the readable result, top to bottom.
 
-![agent drill — the prompt, tool timeline, tokens, and the root-cause last activity](docs/screenshots/feature-drill.png)
+![transcript reader — one agent read top-to-bottom: prompt, tool timeline, result](docs/screenshots/transcript-reader.png)
 
 ## How it works
 
