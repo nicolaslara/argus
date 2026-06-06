@@ -2726,3 +2726,221 @@ div.detail-log-fail {
 .tr-last {
   margin-top: 8px;
 }
+
+/* ---- "Table panel" (roadmap · M): the collapsible bottom AGENT TABLE --------------------
+   The at-scale scanning surface for a run — sort/filter by cost/time/tools/status to find the
+   outlier. Absolute over the canvas (like the other chrome), docked to the bottom; its
+   footprint is reserved as fitView bottom padding so the graph never lands underneath it. */
+.agent-table-panel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: 42vh;
+  display: flex;
+  flex-direction: column;
+  background: rgba(13, 17, 23, 0.96);
+  border-top: 1px solid #232a31;
+  backdrop-filter: blur(8px);
+  z-index: 5; /* above the run-header (4), below the right DetailPanel (6) so it overlaps cleanly */
+}
+.agent-table-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  border-bottom: 1px solid #1b2026;
+  flex: none;
+}
+.agent-table-title {
+  font-weight: 600;
+  font-size: 13px;
+}
+.agent-table-count {
+  font-size: 11px;
+  color: var(--argus-dim);
+  font-variant-numeric: tabular-nums;
+}
+.agent-table-filter {
+  margin-left: auto;
+  width: 260px;
+  max-width: 40%;
+  appearance: none;
+  background: #0d1117;
+  color: var(--argus-fg);
+  border: 1px solid #2d333b;
+  border-radius: 6px;
+  padding: 5px 10px;
+  font: inherit;
+  font-size: 12px;
+}
+.agent-table-filter:focus {
+  outline: none;
+  border-color: var(--argus-accent);
+}
+.agent-table-filter::placeholder {
+  color: #586069;
+}
+.agent-table-close {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--argus-dim);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.agent-table-close:hover {
+  color: var(--argus-fg);
+}
+.agent-table-scroll {
+  overflow: auto;
+  flex: 1 1 auto;
+}
+.agent-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.agent-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #11161c;
+  text-align: left;
+  font-weight: 600;
+  color: var(--argus-dim);
+  white-space: nowrap;
+  border-bottom: 1px solid #232a31;
+}
+.agent-table-th.is-num {
+  text-align: right;
+}
+.agent-table-th.is-active {
+  color: var(--argus-fg);
+}
+.agent-table-th-result {
+  padding: 6px 12px;
+  text-transform: none;
+  width: 100%;
+}
+.agent-table-sort-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 6px 12px;
+  width: 100%;
+  text-align: inherit;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 10px;
+}
+.agent-table-th.is-num .agent-table-sort-btn {
+  text-align: right;
+}
+.agent-table-sort-btn:hover {
+  color: var(--argus-fg);
+}
+.agent-table-arrow {
+  color: var(--argus-accent);
+  font-size: 9px;
+}
+.agent-table-row {
+  cursor: pointer;
+  border-bottom: 1px solid #161b22;
+}
+.agent-table-row:hover {
+  background: rgba(88, 157, 255, 0.08);
+}
+.agent-table-row.is-selected {
+  background: rgba(88, 157, 255, 0.16);
+}
+.agent-table-row.is-failed .agent-table-td-label {
+  color: #f0a4a0;
+}
+.agent-table-row:focus-visible {
+  outline: 1px solid var(--argus-accent);
+  outline-offset: -1px;
+}
+.agent-table-td {
+  padding: 6px 12px;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.agent-table-td.is-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.agent-table-td.is-num[data-dim='true'] {
+  color: #586069;
+}
+.agent-table-td-label {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.agent-table-td-model {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--argus-dim);
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.agent-table-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.agent-table-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+}
+.agent-table-td-fail {
+  text-align: center;
+  color: #586069;
+}
+.agent-table-fail-flag {
+  color: #f85149;
+  font-weight: 700;
+}
+.agent-table-td-result {
+  width: 100%;
+  max-width: 0; /* let the cell shrink so text-overflow kicks in */
+  color: var(--argus-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.agent-table-empty {
+  padding: 24px 12px;
+  text-align: center;
+  color: var(--argus-dim);
+}
+/* The run-header is pointer-events:none chrome; the table toggle must restore them. */
+.run-header-table-btn {
+  appearance: none;
+  pointer-events: auto;
+  background: #161b22;
+  color: var(--argus-fg);
+  border: 1px solid #2d333b;
+  border-radius: 6px;
+  padding: 3px 9px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 150ms ease;
+}
+.run-header-table-btn:hover {
+  border-color: var(--argus-accent);
+}
+.run-header-table-btn.is-active {
+  border-color: var(--argus-accent);
+  color: var(--argus-accent);
+}

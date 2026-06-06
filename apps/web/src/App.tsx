@@ -5,6 +5,7 @@ import {
   Controls,
   MiniMap,
   BackgroundVariant,
+  type Node as FlowNode,
   type NodeTypes,
   type ReactFlowInstance,
   type FitViewOptions,
@@ -26,6 +27,7 @@ import {
 // standalone execution graph. mapping.ts survives as the instance-card builder (agentToCardData,
 // used by overlay-expand.ts) + the plan-less fallback engine; only its type is imported here.
 import type { GraphResult } from './mapping.ts';
+import { agentToCardData } from './mapping.ts';
 import { planMetaToGraph } from './plan-mapping.ts';
 import { planModelToGraph } from './plan-model-mapping.ts';
 import { buildOverlay } from './overlay.ts';
@@ -69,6 +71,7 @@ import { formatRelativeTime } from './shell/format.ts';
 import { DetailPanel } from './nodes/DetailPanel.tsx';
 import { RunOverviewPanel } from './nodes/RunOverviewPanel.tsx';
 import { RunHistory } from './nodes/RunHistory.tsx';
+import { AgentTablePanel } from './tables/AgentTablePanel.tsx';
 
 // Stable identity (a fresh object each render would make React Flow warn + re-mount).
 // Execution-view types (M3, unchanged) + the P1b Plan-AST types — one shared registry.
@@ -118,6 +121,7 @@ const EXPAND_BUDGET = 24;
 function chromeAwareFitOptions(extra?: Partial<FitViewOptions>): FitViewOptions {
   let top = 0;
   let left = 0;
+  let bottom = 0;
   const main = typeof document !== 'undefined' ? document.querySelector('.argus-main') : null;
   if (main) {
     const m = main.getBoundingClientRect();
@@ -129,13 +133,17 @@ function chromeAwareFitOptions(extra?: Partial<FitViewOptions>): FitViewOptions 
     // the tall left band (Plan run-history) → reserve its right edge.
     const band = document.querySelector('.plan-run-history');
     if (band) left = Math.max(left, band.getBoundingClientRect().right - m.left);
+    // the collapsible bottom AGENT TABLE (Table panel) → reserve its top edge so a fit-viewed
+    // graph never lands underneath it (keeps the no-overlap invariant when the table is open).
+    const table = document.querySelector('.agent-table-panel');
+    if (table) bottom = Math.max(bottom, m.bottom - table.getBoundingClientRect().top);
   }
   return {
     padding: {
       top: `${Math.round(Math.max(top, 0)) + 20}px`,
       left: `${Math.round(Math.max(left, 0)) + 20}px`,
       right: '40px',
-      bottom: '40px',
+      bottom: `${Math.round(Math.max(bottom, 0)) + 40}px`,
     },
     duration: 240,
     maxZoom: 2.6,
@@ -362,6 +370,15 @@ export function App() {
   // I3: the run-overview panel (logs timeline + run totals), opened from the run-header
   // name. A node selection takes precedence over it (node detail wins).
   const [overviewOpen, setOverviewOpen] = useState(false);
+  // "Table panel" (roadmap · M): the collapsible bottom AGENT TABLE — the at-scale scanning
+  // surface for the selected run (sort/filter by cost/time/tools/status to find the outlier).
+  // Run-view + run-loaded only; toggled from the run-header. A row click selects that agent.
+  const [tableOpen, setTableOpen] = useState(false);
+  // A row click selects an agent that may NOT exist as a graph node (its fan can be collapsed),
+  // so we hold the clicked AgentNode here and synthesize a transient `agentCard` node for the
+  // DetailPanel (the panel's exec-agent path reads from node.data). It takes precedence over a
+  // canvas node selection; cleared on run/view change and on close.
+  const [tableAgentId, setTableAgentId] = useState<string | null>(null);
   // run-detail-plan §1.1: the run SELECTOR drawer in the Run-view header. The current run is a
   // compact chip with a caret; clicking it opens a small dropdown holding <RunHistory> of THIS
   // workflow's runs so the user can switch. Closes on pick / outside click.
@@ -674,6 +691,7 @@ export function App() {
       setExpandedNodeIds(new Set());
       setSelectedRound(null); // a loop round scope never carries across runs
       setLoopDrawerRound(new Map()); // nor does an open in-loop round drawer (option 2)
+      setTableAgentId(null); // nor does a table-row selection from the previous run
       seededRunKey.current = null;
     }
     if (runIdentityKey == null || !overlay) return; // wait until the overlay is built
@@ -806,10 +824,29 @@ export function App() {
     return baseGraph;
   }, [planIsAst, baseGraph, planExplanations]);
 
+  // "Table panel": a table-row selection resolves to a SYNTHETIC `agentCard` node built from the
+  // run's AgentNode (the same shape the canvas instance cards carry, via agentToCardData) so the
+  // DetailPanel's exec-agent path lights up — even when the agent's fan is collapsed on the
+  // canvas (so there is no graph node to click). It carries the failure-point flag so a dead
+  // agent reads consistently. Takes precedence over a canvas node selection below.
+  const tableSelectedNode = useMemo(() => {
+    if (!tableAgentId || !run) return null;
+    const agent = run.agents.find((a) => a.agentId === tableAgentId);
+    if (!agent) return null;
+    const failureAgentIds = deriveFailureInfo(run)?.failureAgentIds;
+    return {
+      id: `table-agent-${agent.agentId}`,
+      type: 'agentCard',
+      position: { x: 0, y: 0 },
+      data: agentToCardData(agent, failureAgentIds?.has(agent.agentId) === true, liveFill?.get(agent.agentId)),
+    } as FlowNode;
+  }, [tableAgentId, run, liveFill]);
+
   // I1: resolve the open detail node against the live graph (null if it's no longer present).
+  // A table-row selection (synthetic node) wins over a stale/absent canvas node selection.
   const selectedNode = useMemo(
-    () => graph.nodes.find((n) => n.id === selectedNodeId) ?? null,
-    [graph.nodes, selectedNodeId],
+    () => tableSelectedNode ?? graph.nodes.find((n) => n.id === selectedNodeId) ?? null,
+    [tableSelectedNode, graph.nodes, selectedNodeId],
   );
 
   // fitView (U1 cosmetic fix): the `fitView` PROP only fits on mount, so the async
@@ -882,6 +919,18 @@ export function App() {
     const raf = requestAnimationFrame(() => inst.fitView(chromeAwareFitOptions()));
     return () => cancelAnimationFrame(raf);
   }, [loopDrawerRound]);
+
+  // "Table panel" one-shot fit: opening/closing the bottom AGENT TABLE changes the clear region
+  // (its footprint is reserved as fitView bottom padding), so re-fit ONCE on the toggle so the
+  // graph reflows above it (never lands underneath). Defer a frame so the panel has mounted/
+  // unmounted and is measurable before we read its top edge in chromeAwareFitOptions.
+  useEffect(() => {
+    const inst = rfRef.current;
+    if (!inst || graph.nodes.length === 0) return;
+    const raf = requestAnimationFrame(() => inst.fitView(chromeAwareFitOptions()));
+    return () => cancelAnimationFrame(raf);
+    // Keyed only on the toggle (not graph.nodes) so a live re-paint never re-fits.
+  }, [tableOpen]);
 
   // --- M4 selection handlers (mutate the shared state, not the canvas). ---
   // Picking a project re-scopes everything: clear the dependent run + workflow choice
@@ -1050,6 +1099,7 @@ export function App() {
           setSelectedNodeId(null);
           setSelectedRound(null);
           setOverviewOpen(false);
+          setTableAgentId(null);
         }}
       >
         <Background variant={BackgroundVariant.Dots} gap={24} size={1} />
@@ -1272,6 +1322,20 @@ export function App() {
               {formatElapsed(run.durationMs)}
             </span>
           ) : null}
+          {/* "Table panel" toggle: open the collapsible bottom AGENT TABLE — the at-scale
+              scanning surface (sort/filter by cost/time/tools/status to find the outlier).
+              Run-view + run-loaded only (this header only renders then). */}
+          {run.agents.length > 0 ? (
+            <button
+              type="button"
+              className={`run-header-table-btn${tableOpen ? ' is-active' : ''}`}
+              aria-pressed={tableOpen}
+              onClick={() => setTableOpen((v) => !v)}
+              title="agent table — sort/filter this run's agents by cost, time, tools, or status"
+            >
+              ▦ table
+            </button>
+          ) : null}
         </div>
       ) : null}
 
@@ -1312,6 +1376,24 @@ export function App() {
         </div>
       ) : null}
 
+      {/* "Table panel" (roadmap · M): the collapsible bottom AGENT TABLE. Run-view + run-loaded
+          only; clicking a row selects that agent (synthetic node → DetailPanel). Sort/filter is
+          local to the panel (pure view lens) — it never relayouts the canvas. */}
+      {view === 'run' ? (
+        <AgentTablePanel
+          open={tableOpen}
+          run={run ?? null}
+          selectedAgentId={tableAgentId}
+          onClose={() => setTableOpen(false)}
+          onSelectAgent={(agent) => {
+            setTableAgentId(agent.agentId);
+            setSelectedNodeId(null); // the synthetic table node wins; drop any canvas node id
+            setSelectedRound(null);
+            setOverviewOpen(false); // node detail takes precedence over the run overview
+          }}
+        />
+      ) : null}
+
       {/* I1: node detail panel (right side), filled instantly from the clicked node's data. */}
       <DetailPanel
         node={selectedNode}
@@ -1320,6 +1402,7 @@ export function App() {
         onClose={() => {
           setSelectedNodeId(null);
           setSelectedRound(null);
+          setTableAgentId(null); // also clear a table-row selection
         }}
       />
       {/* I3: run overview (logs timeline) — only when no node is selected (node wins). */}

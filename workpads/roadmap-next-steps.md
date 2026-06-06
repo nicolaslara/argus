@@ -169,7 +169,15 @@ the transcript-reader (the design-plan "LATER" stack) all shipped.
 ### Canvas views (deferred, evidence-gated)
 - **Timeline / Gantt view** · L · the one question the DAG can't answer (duration / critical
   path); a 2nd renderer over the same `RunModel`. Gate on someone actually asking it.
-- **Table panel** (sortable/filterable agent grid) · M · best at-scale scanning; a bottom panel.
+- **Table panel** — DONE 2026-06-06. A collapsible bottom AGENT TABLE (toggled `▦ table` from
+  the run-header; Run-view + run-loaded only) — the at-scale scanning surface complementing the
+  graph. Pure `tables/agent-table.ts` (`sortAgents`/`filterAgents`: numeric keys treat null≡0 as
+  no-value sorted last; fixed state-enum order; substring filter over label/phase/model/state) +
+  `AgentTablePanel.tsx` (sortable column headers w/ asc-desc caret, filter input, row→DetailPanel
+  via a synthetic agentCard node so even a collapsed-fan agent is inspectable). `chromeAwareFit`
+  reserves its footprint + re-fits once on toggle (no canvas overlap). Validated live on the
+  14-agent modal-rust run: default tok-desc, dur sort desc/asc, row→DetailPanel, no overlap.
+  +29 tests (387 total).
 - **`normalizeLaneBaseline`** one-time pass · S · the subtle "no baseline jump on first expand"
   polish (run-view-merge-plan LATER).
 
