@@ -109,12 +109,15 @@ A 6-lens read-only audit (boundaries · test gaps · dead-code/dup · robustness
 The §6 quick-wins above are ALL now shipped. Boundaries verdict: STRONG (4-package acyclic deps,
 adapter format-isolation, web↔contract-only all hold). Prioritized remaining work:
 
-- [ ] **ARCH-1 (user-requested) — Table: execution-order view + graph cross-highlight.** Add an
-  "order" mode to the agent table showing agents in EXECUTION order (phase order; parallel agents
-  within a phase INDENTED — a vertical DAG). Cross-highlight the graph: HOVER a row → transient
-  highlight on the matching node; SELECT → persistent highlight + DetailPanel (two distinct
-  affordances). Files: tables/AgentTablePanel.tsx, tables/agent-table.ts, App.tsx (highlight
-  threading into overlayGraph), overlay-paint/expand (a `highlighted` flag), index.css.
+- [x] **ARCH-1 (user-requested) — Table: execution-order view + graph cross-highlight. DONE
+  2026-06-06.** A "⇋ order" mode (pure `orderAgentsByExecution`) groups agents by phase (the
+  sequential spine) with parallel agents indented under each phase header — a vertical DAG
+  (validated: Research·7 → Design·2 → Review·4 → Synthesize·1, 14 agents indented). Graph
+  cross-highlight via a pure `resolveHighlight` threaded data-only (mirroring the failure ring)
+  into paintOverlay + expandInstances: HOVER a row → transient glow on the matching node
+  (validated: 1 node, no panel), SELECT → persistent ring + DetailPanel. Resolves to the instance
+  card when expanded OR the aggregate plan node when collapsed. +14 tests (401). (Workflow's
+  implement agent socket-died at the tbody-wire + CSS + tests; finished in the main loop.)
 - [ ] **ARCH-2 — Consolidate duplicated formatters (med/M).** formatDuration/formatTokens/
   formatTools/formatElapsed live in ~4 places (shell/format.ts, nodes/AgentCard.tsx, the table,
   App.tsx) with INCONSISTENT null/0 handling → one shared module + one em-dash rule + tests.

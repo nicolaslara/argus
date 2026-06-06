@@ -27,6 +27,16 @@ export interface AgentCardData {
    * failure-point ring, consistent with the Run-view failure banner's attribution.
    */
   failurePoint?: boolean;
+  /**
+   * Table cross-highlight (data-only, mirrors `failurePoint`): this instance card maps to the
+   * SELECTED table row → a persistent blue ring (`is-highlighted`). Set by overlay-expand.
+   */
+  highlighted?: boolean;
+  /**
+   * Table cross-highlight (data-only): this instance card maps to the HOVERED table row → a
+   * transient soft glow (`is-hovered`). Clears on mouse-out. Both flags can coexist.
+   */
+  hovered?: boolean;
   tokens: number | null;
   toolCalls: number | null;
   durationMs: number | null;
@@ -181,6 +191,10 @@ export const AgentCardNode = memo(function AgentCardNode({ data }: { data: Agent
         : data.state === 'running'
           ? ' is-running'
           : '';
+  // Table cross-highlight (data-only): a persistent ring when SELECTED, a soft glow when HOVERED;
+  // both coexist (hovering the selected row). Orthogonal to the state ring above (a failed card
+  // that is also selected shows both — CSS layers the highlight ring over the state border).
+  const highlightClass = `${data.highlighted ? ' is-highlighted' : ''}${data.hovered ? ' is-hovered' : ''}`;
 
   return (
     <AgentCardShell
@@ -188,7 +202,7 @@ export const AgentCardNode = memo(function AgentCardNode({ data }: { data: Agent
       labelTitle={data.label}
       railColor={color}
       height={CARD_SHELL_HEIGHT_EXEC}
-      className={`agent-shell-exec${stateClass}`}
+      className={`agent-shell-exec${stateClass}${highlightClass}`}
       dot={<span className="agent-dot" style={{ backgroundColor: color }} aria-hidden="true" />}
       handles={
         <>

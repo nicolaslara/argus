@@ -55,6 +55,14 @@ export interface PaintedBindingFields {
    * last-started agent for a workflow-level failure). Renders a red ring so it never reads as
    * a clean "done". */
   failurePoint?: boolean;
+  /**
+   * Table cross-highlight (data-only, mirrors `failurePoint`): this COLLAPSED plan node
+   * aggregates the SELECTED table agent (its `bindAgentIds` includes it) → a persistent blue ring
+   * (`is-highlighted`). When the fan is EXPANDED the instance cards carry the flag instead.
+   */
+  highlighted?: boolean;
+  /** Table cross-highlight (data-only): aggregates the HOVERED table agent → a transient glow. */
+  hovered?: boolean;
 }
 
 /** The fan-out / instance aggregate chip text: '7/7 done' | '3/4 done · 1 failed' | (live) 'upcoming' | '2/4 done · 1 running'. */
@@ -184,6 +192,12 @@ export const PlanAgentNode = memo(function PlanAgentNode({
     </div>
   );
   const ghost = data.painted && data.bindStatus === 'not-run' ? ' plan-bind-ghost' : '';
+  // Table cross-highlight (data-only): the SELECTED/HOVERED table agent's COLLAPSED template
+  // lights up. When EXPANDED the instance cards in the drawer carry the highlight instead (the
+  // template sits behind the open drawer), so suppress the template ring while expanded.
+  const highlightClass = isExpanded
+    ? ''
+    : `${data.highlighted ? ' is-highlighted' : ''}${data.hovered ? ' is-hovered' : ''}`;
   return (
     <AgentCardShell
       label={data.title}
@@ -195,7 +209,7 @@ export const PlanAgentNode = memo(function PlanAgentNode({
       }
       railColor={railColor}
       height={CARD_SHELL_HEIGHT_PLAN}
-      className={`agent-shell-plan plan-node plan-agent ${confidenceClass(data.confidence)}${data.optional ? ' is-optional' : ''}${fanned ? ' is-fanned' : ''}${ghost}${blueprint ? ' is-blueprint' : ''}${data.failurePoint ? ' is-failed' : ''}${isExpanded ? ' is-expanded' : ''}`}
+      className={`agent-shell-plan plan-node plan-agent ${confidenceClass(data.confidence)}${data.optional ? ' is-optional' : ''}${fanned ? ' is-fanned' : ''}${ghost}${blueprint ? ' is-blueprint' : ''}${data.failurePoint ? ' is-failed' : ''}${isExpanded ? ' is-expanded' : ''}${highlightClass}`}
       headEnd={caret}
       handles={
         <>

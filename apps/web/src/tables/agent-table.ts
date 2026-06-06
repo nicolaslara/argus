@@ -10,8 +10,15 @@
 
 import type { AgentNode, AgentState, Phase } from '@argus/contract';
 
-/** The sortable columns. RESULT preview is inline-only (not sortable) → not a key here. */
+/**
+ * The sortable columns. RESULT preview is inline-only (not sortable) → not a key here.
+ *
+ * `order` is a DAG MODE, not a metric sort: it ignores `direction` and groups the agents by
+ * phase (the sequential spine), indenting each phase's agents (the parallel members) under a
+ * phase header. The renderer special-cases it (calls `orderAgentsByExecution`, not `sortAgents`).
+ */
 export type SortKey =
+  | 'order'
   | 'label'
   | 'phase'
   | 'state'
@@ -29,6 +36,7 @@ export interface SortState {
 }
 
 export const SORT_KEYS: readonly SortKey[] = [
+  'order',
   'label',
   'phase',
   'state',
@@ -191,4 +199,99 @@ export function filterAgents(agents: AgentNode[], query: string, phases?: Phase[
     ];
     return haystacks.some((h) => h.toLowerCase().includes(q));
   });
+}
+
+// --- EXECUTION-ORDER (DAG) view ---------------------------------------------------------------
+// The "order" mode reveals the run's DAG STRUCTURE rather than a metric ranking. The run is
+// strictly layered: phases run SEQUENTIALLY (phase 1 → 2 → 3, the spine), and agents WITHIN a
+// phase run in PARALLEL (ordered only by the adapter's stable discovery `index` — NOT wall-clock
+// start). `orderAgentsByExecution` flattens that into rows the table renders as phase headers
+// (depth 0) each followed by their agents (depth 1, indented). Like sortAgents/filterAgents it is
+// PURE: a NEW array, inputs never mutated, ties fall back to input order.
+
+/**
+ * One row of the execution-order view. The discriminator is `isPhaseHeader`:
+ *   - header row → `{ isPhaseHeader: true, depth: 0, phase, agentCountInPhase }` (no `agent`)
+ *   - agent row  → `{ agent, depth: 1 }`                                          (no `phase`)
+ * Consumers MUST check `isPhaseHeader` before reading `phase`/`agentCountInPhase` or `agent`
+ * (TypeScript will not auto-narrow these optionals without that guard).
+ */
+export interface ExecutionOrderRow {
+  /** Present iff this is an agent row; the agent to render (indented under its phase header). */
+  agent?: AgentNode;
+  /** Nesting depth: 0 for phase headers, 1 for the agents within a phase. */
+  depth: number;
+  /** True iff this row is a phase-grouping header, not an agent. */
+  isPhaseHeader?: boolean;
+  /** Present iff `isPhaseHeader`; the phase this header groups (synthetic for an unresolved bucket). */
+  phase?: Phase;
+  /** Present iff `isPhaseHeader`; the count of agents grouped under this header. */
+  agentCountInPhase?: number;
+}
+
+/**
+ * Order agents by execution STRUCTURE: phases in sequence, agents within a phase in parallel
+ * (indented). Returns a flat `ExecutionOrderRow[]` for table rendering — a phase header (depth 0)
+ * followed by its agents (depth 1) for each phase, in phase-index order.
+ *
+ * Rules (mirroring sortAgents' purity + stability):
+ *   - PURE: returns a NEW array; never mutates `agents` or `phases`.
+ *   - Phases are emitted in ascending `phase.index` order (sorted DEFENSIVELY here — the adapter
+ *     guarantees RunModel.phases is ordered, but we don't rely on it).
+ *   - A phase with NO bound agents is SKIPPED (no empty header).
+ *   - Within a phase, agents are sorted by `agent.index` ascending; ties keep input order (stable).
+ *   - An agent whose `phaseIndex` has no declared `Phase` is grouped under a SYNTHETIC header
+ *     (`{ index, title: 'phase N' }`); these unresolved buckets sort after the declared phases.
+ *   - `phases === undefined` (or empty) → all agents under ONE synthetic `{ index: 0, title:
+ *     'agents' }` header (sorted by index). An empty `agents` array returns `[]` (no header).
+ */
+export function orderAgentsByExecution(
+  agents: AgentNode[],
+  phases: Phase[] | undefined,
+): ExecutionOrderRow[] {
+  if (agents.length === 0) return [];
+
+  // No declared phases → one synthetic "agents" bucket holding everything (sorted by index).
+  if (!phases || phases.length === 0) {
+    const synthetic: Phase = { index: 0, title: 'agents', detail: null };
+    return emitPhase(synthetic, agents);
+  }
+
+  // Group agents by phaseIndex, preserving input order within each bucket (stable tie-break).
+  const byPhase = new Map<number, AgentNode[]>();
+  for (const agent of agents) {
+    const bucket = byPhase.get(agent.phaseIndex);
+    if (bucket) bucket.push(agent);
+    else byPhase.set(agent.phaseIndex, [agent]);
+  }
+
+  // The phase index → declared Phase map, and the union of declared + observed phase indices so an
+  // agent under an UNRESOLVED index still gets a (synthetic) header instead of vanishing.
+  const declared = new Map<number, Phase>();
+  for (const p of phases) declared.set(p.index, p);
+  const indices = new Set<number>([...declared.keys(), ...byPhase.keys()]);
+
+  const rows: ExecutionOrderRow[] = [];
+  // Defensive sort by index (ascending) — the sequential DAG spine, regardless of input order.
+  for (const index of [...indices].sort((a, b) => a - b)) {
+    const members = byPhase.get(index);
+    if (!members || members.length === 0) continue; // skip an agent-less (declared-only) phase
+    const phase = declared.get(index) ?? { index, title: `phase ${index}`, detail: null };
+    rows.push(...emitPhase(phase, members));
+  }
+  return rows;
+}
+
+/** Emit one phase header (depth 0) + its agents (depth 1, sorted by agent.index, stable). */
+function emitPhase(phase: Phase, members: AgentNode[]): ExecutionOrderRow[] {
+  // Stable index sort: decorate with input order so equal `agent.index` keeps discovery order.
+  const ordered = members
+    .map((agent, i) => ({ agent, i }))
+    .sort((a, b) => a.agent.index - b.agent.index || a.i - b.i)
+    .map((d) => d.agent);
+  const rows: ExecutionOrderRow[] = [
+    { depth: 0, isPhaseHeader: true, phase, agentCountInPhase: ordered.length },
+  ];
+  for (const agent of ordered) rows.push({ agent, depth: 1 });
+  return rows;
 }

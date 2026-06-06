@@ -32,6 +32,7 @@ import type { Edge, Node } from '@xyflow/react';
 import type { AgentNode, Overlay, RunModel } from '@argus/contract';
 import type { GraphResult } from './mapping.ts';
 import { agentToCardData } from './mapping.ts';
+import { resolveHighlight } from './overlay-paint.ts';
 import type { LiveFill } from './live-agent-fill.ts';
 import { CARD_SHELL_WIDTH, CARD_SHELL_HEIGHT_EXEC } from './nodes/AgentCardShell.tsx';
 
@@ -170,6 +171,10 @@ export interface AgentChipData {
   durationMs?: number | null;
   agentId?: string;
   failurePoint?: boolean;
+  /** Table cross-highlight (data-only): this chip IS the selected (persistent) table agent. */
+  highlighted?: true;
+  /** Table cross-highlight (data-only): this chip IS the hovered (transient) table agent. */
+  hovered?: true;
   /** Set ONLY on the trailing overflow tile: the count of instances NOT rendered as chips. */
   more?: number;
   [key: string]: unknown;
@@ -190,6 +195,11 @@ export function buildChipCells(
   agents: AgentNode[],
   size: DrawerSize,
   failureAgentIds: Set<string> | undefined,
+  // Table cross-highlight: the selected (persistent ring) / hovered (transient glow) table agent.
+  // A chip whose agentId matches lights up — the `+N more` overflow tile carries no id, so it
+  // never highlights, and an agent hidden by overflow simply has no rendered node (no phantom).
+  tableAgentId: string | null = null,
+  hoveredAgentId: string | null = null,
 ): Node[] {
   const n = agents.length;
   const overflow = n > size.cells; // a tile is needed iff more agents than rendered cells
@@ -205,6 +215,7 @@ export function buildChipCells(
       durationMs: agent.durationMs,
       agentId: agent.agentId,
       failurePoint: failureAgentIds?.has(agent.agentId) === true,
+      ...resolveHighlight([agent.agentId], tableAgentId, hoveredAgentId),
     };
     cells.push({
       id: chipNodeId(templateId, agent.agentId, i),
@@ -263,6 +274,11 @@ export function expandInstances(
   // finished run. Read only in the full-card path (a degraded chip drawer shows label/state/
   // dur, and a live fan over CHIP_DEGRADE_THRESHOLD is rare — chips stay on journal data).
   liveFill?: Map<string, LiveFill>,
+  // Table cross-highlight (data-only, mirrors failureAgentIds): the instance card/chip whose
+  // agentId IS the selected (persistent ring) / hovered (transient glow) table agent lights up.
+  // An expanded fan marks the instance HERE; a collapsed fan's template is marked in paintOverlay.
+  tableAgentId: string | null = null,
+  hoveredAgentId: string | null = null,
 ): GraphResult {
   if (expandedNodeIds.size === 0) return graph;
 
@@ -349,7 +365,7 @@ export function expandInstances(
     // `agentCard` cells; large (degraded) fans render compact `agentChip` cells capped at
     // CHIP_RENDER_CAP with a trailing `+N more` overflow tile.
     const cards: Node[] = size.degraded
-      ? buildChipCells(templateId, drawer.id, agents, size, failureAgentIds)
+      ? buildChipCells(templateId, drawer.id, agents, size, failureAgentIds, tableAgentId, hoveredAgentId)
       : agents.map((agent, i) => {
           const pos = cardCellPosition(i, size.cols);
           return {
@@ -357,11 +373,15 @@ export function expandInstances(
             type: 'agentCard',
             parentId: drawer.id,
             position: pos,
-            data: agentToCardData(
-              agent,
-              failureAgentIds?.has(agent.agentId) === true,
-              liveFill?.get(agent.agentId),
-            ),
+            data: {
+              ...agentToCardData(
+                agent,
+                failureAgentIds?.has(agent.agentId) === true,
+                liveFill?.get(agent.agentId),
+              ),
+              // Table cross-highlight: this instance IS the selected/hovered agent → ring/glow.
+              ...resolveHighlight([agent.agentId], tableAgentId, hoveredAgentId),
+            },
             draggable: false,
             selectable: false,
           } as Node;

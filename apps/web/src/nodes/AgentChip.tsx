@@ -55,10 +55,13 @@ export const AgentChip = memo(function AgentChip({ data }: { data: AgentChipData
     : STATE_COLOR[data.state ?? 'unknown'] ?? STATE_COLOR.unknown;
   const label = data.label || data.agentId || 'agent';
   const dur = formatDuration(data.durationMs);
+  // Table cross-highlight (data-only, chip parity with the full card): a persistent ring when
+  // SELECTED, a soft glow when HOVERED. Same class hooks as .agent-shell so the styling matches.
+  const highlightClass = `${data.highlighted ? ' is-highlighted' : ''}${data.hovered ? ' is-hovered' : ''}`;
 
   return (
     <div
-      className="agent-chip-node"
+      className={`agent-chip-node${highlightClass}`}
       style={{ width: CHIP_W, height: CHIP_H }}
       title={label}
     >

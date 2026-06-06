@@ -379,6 +379,12 @@ export function App() {
   // DetailPanel (the panel's exec-agent path reads from node.data). It takes precedence over a
   // canvas node selection; cleared on run/view change and on close.
   const [tableAgentId, setTableAgentId] = useState<string | null>(null);
+  // Graph cross-highlight: the agent currently HOVERED in the table (transient, cleared on
+  // mouse-out). Distinct from `tableAgentId` (the SELECTED row, persistent + opens the panel):
+  // hover is PURELY visual — a soft glow on the matching graph node, no panel, no refit. Both
+  // thread data-only into the overlay graph (mirroring the failure-ring), so a change just
+  // re-paints node.data — no ELK relayout (gated by overlayLayoutReady, never re-run here).
+  const [hoveredAgentId, setHoveredAgentId] = useState<string | null>(null);
   // run-detail-plan §1.1: the run SELECTOR drawer in the Run-view header. The current run is a
   // compact chip with a caret; clicking it opens a small dropdown holding <RunHistory> of THIS
   // workflow's runs so the user can switch. Closes on pick / outside click.
@@ -692,6 +698,7 @@ export function App() {
       setSelectedRound(null); // a loop round scope never carries across runs
       setLoopDrawerRound(new Map()); // nor does an open in-loop round drawer (option 2)
       setTableAgentId(null); // nor does a table-row selection from the previous run
+      setHoveredAgentId(null); // nor a stale table-row hover highlight
       seededRunKey.current = null;
     }
     if (runIdentityKey == null || !overlay) return; // wait until the overlay is built
@@ -750,7 +757,17 @@ export function App() {
     if (view !== 'run' || overlayBaseGraph.nodes.length === 0 || !overlay || !run) return EMPTY_GRAPH;
     // R8b: a live (incomplete) run paints "upcoming"/"running" instead of "planned·not-run".
     const live = run.incomplete;
-    const painted = paintOverlay(overlayBaseGraph, overlay, unrolled, live);
+    // Table cross-highlight (data-only): a COLLAPSED fan's template is marked here if its
+    // bindAgentIds aggregates the selected/hovered table agent (an EXPANDED fan marks the
+    // instance card in expandInstances instead). No relayout — just a node.data patch.
+    const painted = paintOverlay(
+      overlayBaseGraph,
+      overlay,
+      unrolled,
+      live,
+      tableAgentId,
+      hoveredAgentId,
+    );
     // STEP 3: the dead/last-started agentIds → the failing INSTANCE card (in an expanded drawer)
     // reads as the failure point; and a single-agent (non-fanned) step is marked on its painted
     // PLAN node here, so a failed run never shows the failing step as a clean "done".
@@ -758,7 +775,17 @@ export function App() {
     // STEP 2: thread the live transcript fill into the instance-card build. Empty for a finished
     // run (so its cards stay byte-unchanged); for a live run it replaces a running agent's
     // em-dashed dur/tok/tools/label with the real transcript-derived values.
-    let expanded = expandInstances(painted, overlay, run, expandedNodeIds, live, failureAgentIds, liveFill);
+    let expanded = expandInstances(
+      painted,
+      overlay,
+      run,
+      expandedNodeIds,
+      live,
+      failureAgentIds,
+      liveFill,
+      tableAgentId,
+      hoveredAgentId,
+    );
     // OPTION 2 (lane-drawer inside the loop): when the loop-drill setting is 'lane-drawer' AND a
     // round drawer is open AND the loop is unrolled, draw that round's agents as cards inside the
     // loop compound (the back-edge re-routes around them). In 'round-axis' mode (the default) this
@@ -777,7 +804,7 @@ export function App() {
           : n;
       }),
     };
-  }, [view, overlayBaseGraph, overlay, unrolled, run, expandedNodeIds, loopDrillMode, loopDrawerRound, liveFill]);
+  }, [view, overlayBaseGraph, overlay, unrolled, run, expandedNodeIds, loopDrillMode, loopDrawerRound, liveFill, tableAgentId, hoveredAgentId]);
 
   const metaGraph = useMemo(() => {
     if (view !== 'plan') return EMPTY_GRAPH;
@@ -1384,7 +1411,12 @@ export function App() {
           open={tableOpen}
           run={run ?? null}
           selectedAgentId={tableAgentId}
-          onClose={() => setTableOpen(false)}
+          hoveredAgentId={hoveredAgentId}
+          onHoverAgent={setHoveredAgentId}
+          onClose={() => {
+            setTableOpen(false);
+            setHoveredAgentId(null); // drop any lingering hover glow when the table collapses
+          }}
           onSelectAgent={(agent) => {
             setTableAgentId(agent.agentId);
             setSelectedNodeId(null); // the synthetic table node wins; drop any canvas node id

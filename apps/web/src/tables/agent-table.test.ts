@@ -5,6 +5,7 @@ import {
   filterAgents,
   isFailure,
   phaseTitleOf,
+  orderAgentsByExecution,
   STATE_ORDER,
   SORT_KEYS,
   DEFAULT_SORT,
@@ -270,5 +271,68 @@ describe('helpers', () => {
   it('SORT_KEYS + DEFAULT_SORT are coherent', () => {
     expect(SORT_KEYS).toContain(DEFAULT_SORT.key);
     expect(DEFAULT_SORT).toEqual({ key: 'tokens', direction: 'desc' });
+  });
+});
+
+// ARCH-1: orderAgentsByExecution — the EXECUTION-ORDER (DAG) view. Phases are the sequential
+// spine (header rows, depth 0); the parallel agents within a phase are indented (depth 1).
+describe('orderAgentsByExecution — the DAG view', () => {
+  const phases: Phase[] = [
+    { index: 1, title: 'Research', detail: null },
+    { index: 2, title: 'Design', detail: null },
+  ];
+
+  it('emits phase headers (depth 0) in ascending index order, each followed by its agents (depth 1)', () => {
+    const r1 = agent({ agentId: 'r1', phaseIndex: 1, index: 1 });
+    const r2 = agent({ agentId: 'r2', phaseIndex: 1, index: 2 });
+    const d1 = agent({ agentId: 'd1', phaseIndex: 2, index: 3 });
+    // pass OUT OF ORDER to prove the defensive phase + index sort.
+    const rows = orderAgentsByExecution([d1, r2, r1], phases);
+    expect(rows.map((row) => (row.isPhaseHeader ? `#${row.phase?.title}` : row.agent?.agentId))).toEqual([
+      '#Research',
+      'r1',
+      'r2',
+      '#Design',
+      'd1',
+    ]);
+    // header depth 0, agents depth 1.
+    expect(rows[0]).toMatchObject({ isPhaseHeader: true, depth: 0, agentCountInPhase: 2 });
+    expect(rows[1]).toMatchObject({ depth: 1 });
+    expect(rows[1]?.isPhaseHeader).toBeFalsy();
+  });
+
+  it('skips a declared phase that has no agents (no empty header)', () => {
+    const only = agent({ agentId: 'r1', phaseIndex: 1, index: 1 });
+    const rows = orderAgentsByExecution([only], phases);
+    expect(rows.some((row) => row.isPhaseHeader && row.phase?.title === 'Design')).toBe(false);
+  });
+
+  it('groups an agent under a SYNTHETIC header when its phaseIndex has no declared Phase', () => {
+    const orphan = agent({ agentId: 'x', phaseIndex: 9, index: 1 });
+    const rows = orderAgentsByExecution([orphan], phases);
+    const header = rows.find((row) => row.isPhaseHeader);
+    expect(header?.phase?.index).toBe(9);
+    expect(header?.phase?.title).toBe('phase 9'); // synthetic
+  });
+
+  it('with no phases, puts every agent under one synthetic "agents" bucket (sorted by index)', () => {
+    const a = agent({ agentId: 'a', index: 2 });
+    const b = agent({ agentId: 'b', index: 1 });
+    const rows = orderAgentsByExecution([a, b], undefined);
+    expect(rows[0]).toMatchObject({ isPhaseHeader: true, phase: { title: 'agents' } });
+    expect(rows.slice(1).map((row) => row.agent?.agentId)).toEqual(['b', 'a']); // index asc
+  });
+
+  it('returns [] for an empty agents array (no phantom header)', () => {
+    expect(orderAgentsByExecution([], phases)).toEqual([]);
+  });
+
+  it('is pure — does not mutate the input arrays', () => {
+    const a = agent({ agentId: 'a', phaseIndex: 1, index: 2 });
+    const b = agent({ agentId: 'b', phaseIndex: 1, index: 1 });
+    const input = [a, b];
+    const before = [...input];
+    orderAgentsByExecution(input, phases);
+    expect(input).toEqual(before); // same order, not reordered in place
   });
 });

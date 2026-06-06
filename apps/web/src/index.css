@@ -2944,3 +2944,71 @@ div.detail-log-fail {
   border-color: var(--argus-accent);
   color: var(--argus-accent);
 }
+
+/* === ARCH-1: table ⇄ graph cross-highlight + the execution-order (DAG) view === */
+/* Data-only highlight flags (resolveHighlight): a SELECTED table row paints a persistent blue
+   ring on its graph node; a HOVERED row a transient softer glow. Box-shadow rings only — they
+   never change node geometry/layout (the same discipline as the failure-point ring). */
+.agent-shell-exec.is-hovered,
+.agent-chip-node.is-hovered,
+.plan-agent.is-hovered {
+  box-shadow: 0 0 0 2px rgba(91, 157, 255, 0.45), 0 0 12px 2px rgba(91, 157, 255, 0.22);
+}
+.agent-shell-exec.is-highlighted,
+.agent-chip-node.is-highlighted,
+.plan-agent.is-highlighted {
+  box-shadow: 0 0 0 2px var(--argus-accent), 0 0 16px 3px rgba(91, 157, 255, 0.4);
+}
+
+/* The agent table's row hover-mirror (the table row reflects the same hover that glows the graph). */
+.agent-table-row.is-hovered {
+  background: rgba(88, 157, 255, 0.12);
+}
+/* Execution-order (DAG) view: indent the parallel agents nested under their phase header. */
+.agent-table-row[data-depth='1'] .agent-table-td-label {
+  padding-left: 20px;
+}
+.agent-table-row.is-phase-header {
+  cursor: default;
+}
+.agent-table-row.is-phase-header:hover {
+  background: transparent;
+}
+.agent-table-phase-head {
+  padding: 8px 10px 4px;
+  border-top: 1px solid #1e242c;
+}
+.agent-table-phase-title {
+  font-weight: 600;
+  font-size: 11px;
+  color: var(--argus-fg);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.agent-table-phase-count {
+  margin-left: 8px;
+  font-size: 10px;
+  color: var(--argus-dim);
+}
+/* The "⇋ order" DAG-mode toggle in the table header (reuses the filter/segmented look). */
+.agent-table-order-toggle {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border: 1px solid #2d333b;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--argus-dim);
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease;
+}
+.agent-table-order-toggle:hover {
+  color: var(--argus-fg);
+}
+.agent-table-order-toggle.is-active {
+  color: #fff;
+  background: var(--argus-accent);
+  border-color: var(--argus-accent);
+}
