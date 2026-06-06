@@ -90,6 +90,15 @@ the verbatim prompt, the ordered tool timeline, and the readable result, top to 
 
 ![transcript reader — one agent read top-to-bottom: prompt, tool timeline, result](docs/screenshots/transcript-reader.png)
 
+**Scan a whole run as a table — in execution order.** The bottom panel lists every agent
+with cost / time / tools / status columns, sortable and filterable. Flip it to the
+**execution-order DAG** view and the agents nest under their phase headers (`Explore·4`,
+`Judge·1`, `Refine·5`), parallel siblings indented together — a vertical read of the run's
+shape. Hovering a row cross-highlights the matching node on the graph above; clicking selects
+it in the detail panel even when its fan is collapsed.
+
+![agent table — the execution-order view: agents nested under phase headers (Explore·4, Judge·1, Refine·5), with a row hover cross-highlighting its node on the graph above](docs/screenshots/agent-table.png)
+
 ## How it works
 
 Claude Code writes every workflow run to
