@@ -1409,6 +1409,14 @@ body {
   padding-left: 0;
   flex: 1;
 }
+/* Time/Status lenses re-show the workflow name on the row (the bucket parent no longer implies
+   it). Capped so it can't crowd out the meta line; the meta keeps its flex:1 + right-aligned time. */
+.rail-run-wf {
+  flex: 0 1 auto;
+  max-width: 48%;
+  font-size: 12px;
+  color: var(--argus-fg);
+}
 
 /* ===== pinned-top LIVE region (one pulse for N running runs) =========== */
 .rail-live {
@@ -1483,6 +1491,11 @@ body {
   color: var(--argus-fg);
   margin-bottom: 6px;
 }
+/* The explorer group-by LENS control (Workflow | Time | Status), reusing .rail-segmented. */
+.rail-groupby {
+  padding: 0 6px 8px;
+}
+
 .rail-segmented {
   display: flex;
   gap: 2px;

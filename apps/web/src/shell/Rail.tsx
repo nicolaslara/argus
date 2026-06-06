@@ -15,13 +15,19 @@
 // Selection is LIFTED into App (controlled); the rail only reports the choice. All labels
 // are React text nodes; consumes ONLY @argus/contract types (no node:* / adapter import).
 
-import { memo, useMemo, useState } from 'react';
+import { memo, useCallback, useMemo, useState } from 'react';
 import type { ProjectRef, RunSummary, WorkflowMeta } from '@argus/contract';
 import type { LoopDrillMode } from '../expand-context.ts';
+import { readGroupBy, writeGroupBy } from '../group-by-setting.ts';
 import { formatDuration, formatRelativeTime, statusGlyph } from './format.ts';
 
 // 'explorer' is the tree; 'settings' the stub. ('projects'/'runs' accepted for back-compat.)
 export type RailSection = 'explorer' | 'settings' | 'projects' | 'runs';
+
+// The explorer's group-by LENS: re-buckets the SAME finished runs into different TreeNode[].
+// 'workflow' = the original tree (workflows as folders); 'time' = recency buckets; 'status' =
+// Failed/Completed. Orthogonal to selection/canvas — it only changes which TreeNode[] render.
+export type RailGroupBy = 'workflow' | 'time' | 'status';
 
 interface RailProps {
   collapsed: boolean;
@@ -58,9 +64,110 @@ function runsNewestFirst(runs: RunSummary[]): RunSummary[] {
 interface TreeNode {
   key: string;
   name: string; // display label
-  workflow: WorkflowMeta | null; // null = the orphan bucket
+  workflow: WorkflowMeta | null; // null = the orphan bucket (or a non-workflow time/status bucket)
   runs: RunSummary[]; // finished runs, newest-first
   orderKey: number; // max(startTime) of its runs — immutable, for a frozen sort
+  // 'bucket' = a Time/Status grouping header (whole label toggles open/closed); undefined for
+  // workflow folders and the orphan bucket (so the Workflow lens stays byte-for-byte unchanged).
+  kind?: 'bucket';
+}
+
+/** max(startTime) of a run list — immutable, drives the frozen sort. */
+function maxStart(rs: RunSummary[]): number {
+  return rs.reduce((m, r) => Math.max(m, r.startTime ?? 0), 0);
+}
+
+/**
+ * The group-by LENS reducer: re-buckets the SAME finished runs into different TreeNode[]
+ * depending on `groupBy`. Running runs are NEVER bucketed here (they live in the pinned
+ * LiveGroup), and every branch freezes membership + order on IMMUTABLE fields (startTime +
+ * terminal status) so a running→completed transition can't move a row between buckets mid-poll.
+ * All branches emit the same TreeNode[] shape so WorkflowTreeNode / RunRow render unchanged.
+ */
+function groupRuns(runs: RunSummary[], workflows: WorkflowMeta[], groupBy: RailGroupBy): TreeNode[] {
+  const finished = runs.filter((r) => r.status !== 'running');
+
+  // --- 'workflow' (default): the EXISTING tree memo, moved verbatim (zero behavior change). ---
+  if (groupBy === 'workflow') {
+    const wfNames = new Set(workflows.map((w) => w.name));
+    const byName = new Map<string, RunSummary[]>();
+    for (const r of finished) {
+      const list = byName.get(r.workflowName);
+      if (list) list.push(r);
+      else byName.set(r.workflowName, [r]);
+    }
+    // one node per declared workflow (even with 0 runs) + an orphan bucket for unjoinable runs.
+    const nodes: TreeNode[] = workflows.map((w) => {
+      const rs = runsNewestFirst(byName.get(w.name) ?? []);
+      return { key: `wf:${w.file}`, name: w.name, workflow: w, runs: rs, orderKey: maxStart(rs) };
+    });
+    const orphans = finished.filter((r) => !wfNames.has(r.workflowName));
+    if (orphans.length > 0) {
+      nodes.push({ key: 'orphans', name: '(other runs)', workflow: null, runs: runsNewestFirst(orphans), orderKey: maxStart(orphans) });
+    }
+    // workflows WITH runs first (most-recent on top); empty declared workflows after; orphans last.
+    nodes.sort((a, b) => {
+      if (a.key === 'orphans') return 1;
+      if (b.key === 'orphans') return -1;
+      const ar = a.runs.length > 0 ? 1 : 0;
+      const br = b.runs.length > 0 ? 1 : 0;
+      if (ar !== br) return br - ar;
+      return b.orderKey - a.orderKey || a.name.localeCompare(b.name);
+    });
+    return nodes;
+  }
+
+  // --- 'time': recency buckets keyed on the IMMUTABLE startTime (Today → Older). ---
+  if (groupBy === 'time') {
+    // Bucket order is fixed Today→Older; each bucket's runs are newest-first. Empty buckets omitted.
+    const order = ['today', 'yesterday', 'week', 'older'] as const;
+    const labels: Record<(typeof order)[number], string> = {
+      today: 'Today',
+      yesterday: 'Yesterday',
+      week: 'This week',
+      older: 'Older',
+    };
+    const buckets: Record<(typeof order)[number], RunSummary[]> = { today: [], yesterday: [], week: [], older: [] };
+    for (const r of finished) buckets[timeBucket(r.startTime)].push(r);
+    const nodes: TreeNode[] = [];
+    for (const k of order) {
+      const rs = runsNewestFirst(buckets[k]);
+      if (rs.length === 0) continue;
+      nodes.push({ key: `time:${k}`, name: labels[k], workflow: null, runs: rs, orderKey: maxStart(rs), kind: 'bucket' });
+    }
+    return nodes;
+  }
+
+  // --- 'status': terminal-status buckets (Failed = failed|killed, Completed = completed). ---
+  const failed: RunSummary[] = [];
+  const completed: RunSummary[] = [];
+  for (const r of finished) {
+    if (r.status === 'failed' || r.status === 'killed') failed.push(r);
+    else completed.push(r);
+  }
+  const nodes: TreeNode[] = [];
+  // Failed first (the thing you're scanning for), then Completed; empty buckets omitted.
+  if (failed.length > 0) {
+    const rs = runsNewestFirst(failed);
+    nodes.push({ key: 'status:failed', name: 'Failed', workflow: null, runs: rs, orderKey: maxStart(rs), kind: 'bucket' });
+  }
+  if (completed.length > 0) {
+    const rs = runsNewestFirst(completed);
+    nodes.push({ key: 'status:completed', name: 'Completed', workflow: null, runs: rs, orderKey: maxStart(rs), kind: 'bucket' });
+  }
+  return nodes;
+}
+
+/** Which recency bucket a finished run falls in, keyed on its IMMUTABLE startTime. */
+function timeBucket(startMs: number | null): 'today' | 'yesterday' | 'week' | 'older' {
+  if (startMs == null || !Number.isFinite(startMs)) return 'older';
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const dayMs = 86_400_000;
+  if (startMs >= startOfToday) return 'today';
+  if (startMs >= startOfToday - dayMs) return 'yesterday';
+  if (startMs >= startOfToday - 7 * dayMs) return 'week';
+  return 'older';
 }
 
 export const Rail = memo(function Rail(props: RailProps) {
@@ -84,39 +191,23 @@ export const Rail = memo(function Rail(props: RailProps) {
     onSelectLoopDrillMode,
   } = props;
 
+  // The explorer group-by lens. 'workflow' (default) is the original tree; 'time'/'status'
+  // re-bucket the SAME finished runs. Unlike other ephemeral rail selections this is a personal
+  // finding HABIT, so it's mirrored to localStorage (read on init, written on change) the same
+  // way App persists the loop-drill mode — non-fatal if the store is missing/disabled.
+  const [groupBy, setGroupByState] = useState<RailGroupBy>(() => readGroupBy());
+  const setGroupBy = useCallback((g: RailGroupBy) => {
+    setGroupByState(g);
+    writeGroupBy(g);
+  }, []);
+
   // --- split + group (memoized; order keyed on immutable startTime so the 2.5s live poll
   //     never reshuffles the tree) -------------------------------------------------------
   const liveRuns = useMemo(() => runsNewestFirst(runs.filter((r) => r.status === 'running')), [runs]);
-  const tree = useMemo<TreeNode[]>(() => {
-    const finished = runs.filter((r) => r.status !== 'running');
-    const wfNames = new Set(workflows.map((w) => w.name));
-    const byName = new Map<string, RunSummary[]>();
-    for (const r of finished) {
-      const list = byName.get(r.workflowName);
-      if (list) list.push(r);
-      else byName.set(r.workflowName, [r]);
-    }
-    const maxStart = (rs: RunSummary[]) => rs.reduce((m, r) => Math.max(m, r.startTime ?? 0), 0);
-    // one node per declared workflow (even with 0 runs) + an orphan bucket for unjoinable runs.
-    const nodes: TreeNode[] = workflows.map((w) => {
-      const rs = runsNewestFirst(byName.get(w.name) ?? []);
-      return { key: `wf:${w.file}`, name: w.name, workflow: w, runs: rs, orderKey: maxStart(rs) };
-    });
-    const orphans = finished.filter((r) => !wfNames.has(r.workflowName));
-    if (orphans.length > 0) {
-      nodes.push({ key: 'orphans', name: '(other runs)', workflow: null, runs: runsNewestFirst(orphans), orderKey: maxStart(orphans) });
-    }
-    // workflows WITH runs first (most-recent on top); empty declared workflows after; orphans last.
-    nodes.sort((a, b) => {
-      if (a.key === 'orphans') return 1;
-      if (b.key === 'orphans') return -1;
-      const ar = a.runs.length > 0 ? 1 : 0;
-      const br = b.runs.length > 0 ? 1 : 0;
-      if (ar !== br) return br - ar;
-      return b.orderKey - a.orderKey || a.name.localeCompare(b.name);
-    });
-    return nodes;
-  }, [runs, workflows]);
+  const tree = useMemo<TreeNode[]>(() => groupRuns(runs, workflows, groupBy), [runs, workflows, groupBy]);
+  // Time/Status lenses bucket runs from many workflows, so the run row must re-show the workflow
+  // name (it's no longer implied by the parent folder). The Workflow lens leaves it off (nested).
+  const showWorkflowName = groupBy !== 'workflow';
 
   // Per-node open state. Folders start COLLAPSED by default — the selected workflow's folder is
   // still highlighted (isSelectedWorkflow) without auto-expanding, and running runs stay visible in
@@ -201,6 +292,8 @@ export const Rail = memo(function Rail(props: RailProps) {
               loading={projectsLoading}
             />
 
+            <GroupByControl groupBy={groupBy} onSelect={setGroupBy} />
+
             {anyLive ? <LiveGroup runs={liveRuns} selectedRunId={selectedRunId} onSelectRun={onSelectRun} /> : null}
 
             <div className="rail-tree" role="tree">
@@ -219,6 +312,7 @@ export const Rail = memo(function Rail(props: RailProps) {
                     isSelectedWorkflow={node.workflow?.name === selectedWorkflowName}
                     onSelectWorkflow={onSelectWorkflow}
                     onSelectRun={onSelectRun}
+                    showWorkflowName={showWorkflowName}
                   />
                 ))
               )}
@@ -267,6 +361,42 @@ const LoopDrillSetting = memo(function LoopDrillSetting({
           ? 'Loop rounds open in the detail panel — the loop box stays compact.'
           : 'Round agents expand as cards inside the loop — the back-edge routes around them.'}
       </p>
+    </div>
+  );
+});
+
+/** The explorer group-by LENS: a 3-way segmented control (Workflow | Time | Status) that
+ *  re-buckets the SAME finished runs. Reuses the .rail-segmented styles from the settings
+ *  toggle. Owned + reported by the Rail; it only changes which TreeNode[] render (orthogonal
+ *  to selection/canvas). */
+const GroupByControl = memo(function GroupByControl({
+  groupBy,
+  onSelect,
+}: {
+  groupBy: RailGroupBy;
+  onSelect: (g: RailGroupBy) => void;
+}) {
+  const opts: { value: RailGroupBy; label: string; title: string }[] = [
+    { value: 'workflow', label: 'Workflow', title: 'Group runs under their workflow (default).' },
+    { value: 'time', label: 'Time', title: 'Group runs by recency — Today, Yesterday, This week, Older.' },
+    { value: 'status', label: 'Status', title: 'Group runs by outcome — Failed, Completed.' },
+  ];
+  return (
+    <div className="rail-groupby">
+      <div className="rail-segmented" role="group" aria-label="group runs by">
+        {opts.map((o) => (
+          <button
+            key={o.value}
+            type="button"
+            className={`rail-segmented-btn${groupBy === o.value ? ' is-active' : ''}`}
+            aria-pressed={groupBy === o.value}
+            onClick={() => onSelect(o.value)}
+            title={o.title}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 });
@@ -330,6 +460,7 @@ const WorkflowTreeNode = memo(function WorkflowTreeNode({
   isSelectedWorkflow,
   onSelectWorkflow,
   onSelectRun,
+  showWorkflowName,
 }: {
   node: TreeNode;
   open: boolean;
@@ -338,9 +469,11 @@ const WorkflowTreeNode = memo(function WorkflowTreeNode({
   isSelectedWorkflow: boolean;
   onSelectWorkflow: (w: WorkflowMeta) => void;
   onSelectRun: (r: RunSummary) => void;
+  showWorkflowName: boolean;
 }) {
   const hasChildren = node.runs.length > 0;
   const isOrphan = node.workflow === null;
+  const isBucket = node.kind === 'bucket'; // a Time/Status grouping header (label toggles)
   return (
     <div className="rail-treenode" role="treeitem" aria-expanded={open}>
       <div className={`rail-tree-head${isSelectedWorkflow ? ' is-active' : ''}`}>
@@ -358,9 +491,9 @@ const WorkflowTreeNode = memo(function WorkflowTreeNode({
           className="rail-tree-label"
           onClick={() => (node.workflow ? onSelectWorkflow(node.workflow) : onToggle())}
           title={node.workflow?.description || node.name}
-          disabled={isOrphan}
+          disabled={isOrphan && !isBucket}
         >
-          <span className="rail-tree-kind" aria-hidden="true">{isOrphan ? '◷' : '◇'}</span>
+          <span className="rail-tree-kind" aria-hidden="true">{isBucket ? '▤' : isOrphan ? '◷' : '◇'}</span>
           <span className="rail-tree-name">{node.name}</span>
           <span className="rail-tree-count">{node.runs.length || '—'}</span>
         </button>
@@ -368,7 +501,13 @@ const WorkflowTreeNode = memo(function WorkflowTreeNode({
       {open && hasChildren ? (
         <ul className="rail-list rail-indent">
           {node.runs.map((r) => (
-            <RunRow key={`${r.ref.sessionId}/${r.ref.runId}`} run={r} active={r.ref.runId === selectedRunId} onSelect={onSelectRun} />
+            <RunRow
+              key={`${r.ref.sessionId}/${r.ref.runId}`}
+              run={r}
+              active={r.ref.runId === selectedRunId}
+              onSelect={onSelectRun}
+              showWorkflowName={showWorkflowName}
+            />
           ))}
         </ul>
       ) : null}
@@ -376,15 +515,19 @@ const WorkflowTreeNode = memo(function WorkflowTreeNode({
   );
 });
 
-/** A finished run row (no workflow name — it's nested under its workflow). */
+/** A finished run row. Under the Workflow lens the parent folder implies the workflow, so the
+ *  name is omitted; under the Time/Status lenses (`showWorkflowName`) the row re-shows the
+ *  workflow name because the bucket parent no longer implies it. */
 const RunRow = memo(function RunRow({
   run: r,
   active,
   onSelect,
+  showWorkflowName = false,
 }: {
   run: RunSummary;
   active: boolean;
   onSelect: (r: RunSummary) => void;
+  showWorkflowName?: boolean;
 }) {
   return (
     <li>
@@ -399,6 +542,9 @@ const RunRow = memo(function RunRow({
           <span className={`rail-status status-${r.status}${r.partialFailure ? ' is-partial' : ''}`} aria-hidden="true">
             {statusGlyph(r.status, r.partialFailure)}
           </span>
+          {showWorkflowName ? (
+            <span className="rail-row-title rail-run-wf">{r.workflowName || '(other)'}</span>
+          ) : null}
           <span className="rail-run-meta rail-run-meta-inline">
             <span className="rail-run-agents">
               {r.agentCount} {r.agentCount === 1 ? 'agent' : 'agents'}
