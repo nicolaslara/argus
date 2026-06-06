@@ -337,7 +337,12 @@ export interface PlanLoopData {
 }
 
 export const LoopContainer = memo(function LoopContainer({ id, data }: { id: string; data: PlanLoopData }) {
-  const { selectRound } = useExpand();
+  // The loop-drill MODE (round-axis = default option 1; lane-drawer = option 2). In lane-drawer
+  // mode the round pill TOGGLES an in-loop card drawer (selectRound routes to it); the open round
+  // is marked expanded via `openLoopRound`. In round-axis mode the pill routes to the DetailPanel.
+  const { selectRound, loopDrillMode, openLoopRound } = useExpand();
+  const laneDrawer = loopDrillMode === 'lane-drawer';
+  const openRound = openLoopRound?.get(id) ?? null;
   const rounds = data.observedRounds ?? null;
   // Per-round bound instance counts (for the pill's hover + an accessible label).
   const roundCount = (r: number): number =>
@@ -376,13 +381,23 @@ export const LoopContainer = memo(function LoopContainer({ id, data }: { id: str
             // body→DetailPanel onNodeClick never double-fires. Unbound/blueprint rounds stay
             // inert spans (the plan-only round axis is unchanged).
             if (n > 0 && selectRound) {
+              const isOpen = laneDrawer && openRound === round;
+              // In lane-drawer mode the pill expands the round's cards INSIDE the loop (a recursive
+              // drawer); the verb reflects whether this round's drawer is currently open. In
+              // round-axis mode it opens that round's instances in the DetailPanel.
+              const verb = laneDrawer
+                ? isOpen
+                  ? 'collapse'
+                  : 'expand cards'
+                : 'open in panel';
               return (
                 <button
                   key={i}
                   type="button"
-                  className="plan-loop-round-col is-clickable"
-                  title={`round ${round} — ${n} instance${n === 1 ? '' : 's'}`}
-                  aria-label={`round ${round}, ${n} instance${n === 1 ? '' : 's'}`}
+                  className={`plan-loop-round-col is-clickable${isOpen ? ' is-open' : ''}`}
+                  aria-pressed={laneDrawer ? isOpen : undefined}
+                  title={`round ${round} — ${n} instance${n === 1 ? '' : 's'} · ${verb}`}
+                  aria-label={`round ${round}, ${n} instance${n === 1 ? '' : 's'}, ${verb}`}
                   onClick={(e) => {
                     e.stopPropagation();
                     selectRound(id, round);

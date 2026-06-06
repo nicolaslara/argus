@@ -30,7 +30,9 @@ import { planModelToGraph } from './plan-model-mapping.ts';
 import { buildOverlay } from './overlay.ts';
 import { paintOverlay } from './overlay-paint.ts';
 import { expandInstances } from './overlay-expand.ts';
-import { ExpandContext } from './expand-context.ts';
+import { expandLoopDrawer } from './overlay-loop-expand.ts';
+import { ExpandContext, type LoopDrillMode } from './expand-context.ts';
+import { readLoopDrillMode, writeLoopDrillMode } from './loop-drill-setting.ts';
 import {
   overlayExplanations,
   usePlanExplanations,
@@ -91,6 +93,12 @@ const EMPTY_GRAPH: GraphResult = { nodes: [], edges: [] };
 // further (larger) fans and leave them collapsed (aggregate chips). Keeps a 50-agent fan
 // from exploding the canvas while still surfacing the small/medium fans by default.
 const EXPAND_BUDGET = 24;
+
+// The persisted loop-drill MODE setting (loop-drill-gallery.html opt1 vs opt2) is held in App
+// state and mirrored to localStorage so the choice sticks across reloads. 'round-axis' (option 1)
+// is the default + the fully-working baseline; 'lane-drawer' (option 2) is the recursive in-loop
+// drawer. The pure read/write/normalize seam lives in ./loop-drill-setting.ts (so it is unit-
+// testable without the React app); a missing/unknown/unavailable store degrades to the default.
 
 /** Dogfood DEFAULT (M4: overridable): prefer modal-rust; else the first project. */
 function defaultProject(projects: ProjectRef[] | undefined): ProjectRef | undefined {
@@ -288,6 +296,14 @@ export function App() {
   //     survives the Plan⟷Execution toggle (state lives here, above the view). ---
   const [railCollapsed, setRailCollapsed] = useState(false); // open-by-default (per UX: sidebar starts expanded)
   const [railSection, setRailSection] = useState<RailSection>('explorer');
+  // Loop-drill MODE (settings toggle): how a loop step's body subagents are drilled —
+  // 'round-axis' (option 1, default) vs 'lane-drawer' (option 2). Initialized from
+  // localStorage so a reload restores the choice; the setter persists every change.
+  const [loopDrillMode, setLoopDrillModeState] = useState<LoopDrillMode>(() => readLoopDrillMode());
+  const setLoopDrillMode = useCallback((mode: LoopDrillMode) => {
+    setLoopDrillModeState(mode);
+    writeLoopDrillMode(mode);
+  }, []);
   const [selectedProjectPath, setSelectedProjectPath] = useState<string | null>(null);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [selectedWorkflowName, setSelectedWorkflowName] = useState<string | null>(null);
@@ -317,21 +333,50 @@ export function App() {
       return next;
     });
   }, []);
-  // Loop-body drill (run-view-merge-plan §5): a clickable round-axis pill selects the loop
-  // CONTAINER node + a specific ROUND; the DetailPanel then surfaces that round's bound
-  // instances (each a clickable drill into one agent's transcript). The loop body's subagents
-  // are reached HERE — not via a lane-drawer inside the loop. `null` = no round scope.
+  // Loop-body drill: a clickable round-axis pill selects the loop CONTAINER node + a specific
+  // ROUND. How that drill is shown depends on the loop-drill MODE setting:
+  //  - 'round-axis' (option 1, default): the DetailPanel surfaces that round's bound instances
+  //    (each a clickable drill into one agent's transcript). The loop box stays compact.
+  //  - 'lane-drawer' (option 2): the round's agents expand AS CARDS inside the loop compound (a
+  //    recursive drawer via expandLoopDrawer); the back-edge re-routes around the grown drawer.
+  // `selectedRound` (the DetailPanel scope) is used by option 1; `loopDrawerRound` (loopId →
+  // open round) drives option 2's in-loop drawer.
   const [selectedRound, setSelectedRound] = useState<number | null>(null);
+  // OPTION 2: which loop's round drawer is open in-canvas (loopNodeId → round). A second click
+  // on the SAME open round toggles it closed; a different round swaps. Reset on run change.
+  const [loopDrawerRound, setLoopDrawerRound] = useState<Map<string, number>>(() => new Map());
+  // `loopDrillMode` is read inside selectRound, so keep the latest in a ref to avoid re-creating
+  // the callback (and the ExpandContext value) on every mode change while staying current.
+  const loopDrillModeRef = useRef(loopDrillMode);
+  loopDrillModeRef.current = loopDrillMode;
   const selectRound = useCallback((loopNodeId: string, round: number) => {
+    if (loopDrillModeRef.current === 'lane-drawer') {
+      // OPTION 2: toggle the in-loop round drawer (a recursive lane-drawer inside the loop).
+      // Clicking the OPEN round again closes it; a different round swaps. No DetailPanel scope.
+      setLoopDrawerRound((prev) => {
+        const next = new Map(prev);
+        if (next.get(loopNodeId) === round) next.delete(loopNodeId);
+        else next.set(loopNodeId, round);
+        return next;
+      });
+      return;
+    }
+    // OPTION 1 (default): scope the DetailPanel to (loop node, round).
     setSelectedNodeId(loopNodeId);
     setSelectedRound(round);
     setOverviewOpen(false); // the loop's round detail takes precedence over the run overview
   }, []);
-  // Stable provider value (new only when the expanded set changes) so PlanAgentNode carets
-  // read a fresh `expanded` but a stable `toggle` / `selectRound`.
+  // Stable provider value (new only when the expanded set / mode / open drawer changes) so
+  // PlanAgentNode carets read a fresh `expanded` but a stable `toggle` / `selectRound`.
   const expandContextValue = useMemo(
-    () => ({ expanded: expandedNodeIds, toggle: toggleExpanded, selectRound }),
-    [expandedNodeIds, toggleExpanded, selectRound],
+    () => ({
+      expanded: expandedNodeIds,
+      toggle: toggleExpanded,
+      selectRound,
+      loopDrillMode,
+      openLoopRound: loopDrawerRound,
+    }),
+    [expandedNodeIds, toggleExpanded, selectRound, loopDrillMode, loopDrawerRound],
   );
 
   const projectsQ = useQuery({ queryKey: ['projects'], queryFn: fetchProjects });
@@ -490,6 +535,7 @@ export function App() {
     if (seededRunKey.current !== runIdentityKey) {
       setExpandedNodeIds(new Set());
       setSelectedRound(null); // a loop round scope never carries across runs
+      setLoopDrawerRound(new Map()); // nor does an open in-loop round drawer (option 2)
       seededRunKey.current = null;
     }
     if (runIdentityKey == null || !overlay) return; // wait until the overlay is built
@@ -553,7 +599,15 @@ export function App() {
     // reads as the failure point; and a single-agent (non-fanned) step is marked on its painted
     // PLAN node here, so a failed run never shows the failing step as a clean "done".
     const failureAgentIds = deriveFailureInfo(run)?.failureAgentIds;
-    const expanded = expandInstances(painted, overlay, run, expandedNodeIds, live, failureAgentIds);
+    let expanded = expandInstances(painted, overlay, run, expandedNodeIds, live, failureAgentIds);
+    // OPTION 2 (lane-drawer inside the loop): when the loop-drill setting is 'lane-drawer' AND a
+    // round drawer is open AND the loop is unrolled, draw that round's agents as cards inside the
+    // loop compound (the back-edge re-routes around them). In 'round-axis' mode (the default) this
+    // is a no-op — option 1's round-axis → DetailPanel drill is unchanged. The flat-fan
+    // lane-drawer above (expandInstances) is untouched in both modes.
+    if (loopDrillMode === 'lane-drawer' && unrolled && loopDrawerRound.size > 0) {
+      expanded = expandLoopDrawer(expanded, overlay, run, loopDrawerRound, failureAgentIds);
+    }
     if (!failureAgentIds || failureAgentIds.size === 0) return expanded;
     return {
       ...expanded,
@@ -564,7 +618,7 @@ export function App() {
           : n;
       }),
     };
-  }, [view, overlayBaseGraph, overlay, unrolled, run, expandedNodeIds]);
+  }, [view, overlayBaseGraph, overlay, unrolled, run, expandedNodeIds, loopDrillMode, loopDrawerRound]);
 
   const metaGraph = useMemo(() => {
     if (view !== 'plan') return EMPTY_GRAPH;
@@ -673,6 +727,23 @@ export function App() {
     // re-paint never re-fits).
   }, [expandedNodeIds]);
 
+  // OPTION 2 one-shot fit: when a loop's round drawer OPENS (its size grows), gently fit the
+  // grown loop region into view once — the loop container just got taller, so the back-edge +
+  // the new cards should be brought into frame. Keyed on the open-drawer count so opening fires
+  // it and closing does not (the structural plan-id signature is unchanged across the toggle).
+  const prevLoopDrawerCount = useRef(0);
+  useEffect(() => {
+    const inst = rfRef.current;
+    const count = loopDrawerRound.size;
+    const grew = count > prevLoopDrawerCount.current;
+    prevLoopDrawerCount.current = count;
+    if (!grew || !inst || graph.nodes.length === 0) return;
+    const raf = requestAnimationFrame(() =>
+      inst.fitView({ padding: 0.08, duration: 240, maxZoom: 2.6 }),
+    );
+    return () => cancelAnimationFrame(raf);
+  }, [loopDrawerRound]);
+
   // --- M4 selection handlers (mutate the shared state, not the canvas). ---
   // Picking a project re-scopes everything: clear the dependent run + workflow choice
   // so the new project's defaults take over via its (re-keyed) queries.
@@ -780,6 +851,8 @@ export function App() {
         workflows={workflows}
         selectedWorkflowName={workflow?.name}
         onSelectWorkflow={handleSelectWorkflow}
+        loopDrillMode={loopDrillMode}
+        onSelectLoopDrillMode={setLoopDrillMode}
       />
       {/* everything right of the rail lives here so overlays center on the CANVAS, not the viewport */}
       <div className="argus-main">
