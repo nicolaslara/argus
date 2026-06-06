@@ -126,6 +126,24 @@ export const RunOverviewPanel = memo(function RunOverviewPanel({
         </div>
       ) : null}
 
+      {/* Honest degradation signal (boundaries §honesty): the adapter records WHY this run read
+          back degraded (dropped phase / unresolved binding / torn journal / parse fallback) as
+          coded warnings. We render the CODES (+ optional coded detail) — never raw text/paths —
+          so a degraded run is explained calmly here, not silently dropped. */}
+      {run.warnings.length > 0 ? (
+        <div className="detail-block">
+          <div className="detail-block-label">warnings · {run.warnings.length}</div>
+          <div className="detail-warnings">
+            {run.warnings.map((w, i) => (
+              <div key={i} className="detail-warning-row">
+                <span className="detail-warning-code">{w.code}</span>
+                {w.detail ? <span className="detail-warning-detail">{w.detail}</span> : null}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
       {run.logs.length > 0 ? (
         <div className="detail-block">
           <div className="detail-block-label">narrator log · {run.logs.length}</div>

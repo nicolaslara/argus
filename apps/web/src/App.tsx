@@ -44,6 +44,13 @@ import {
 } from './explanations.ts';
 import { loadElkLayout } from './layout/index.ts';
 import { computeFitSignature } from './fit-signature.ts';
+import {
+  warningCountLabel,
+  summarizeWarningCodes,
+  isDegraded,
+  planCoverageLabel,
+  planCoverageTitle,
+} from './degradation-signal.ts';
 import { AgentCardNode } from './nodes/AgentCard.tsx';
 import { PhaseLaneNode } from './nodes/PhaseLane.tsx';
 import {
@@ -928,6 +935,14 @@ export function App() {
   // (the per-run plan for an ad-hoc run, else the declared-workflow plan).
   const planNodeCount = effectivePlan?.nodes.length ?? 0;
   const planDerived = planIsAst ? 'AST' : 'declared';
+  // Honest plan-parse signal (boundaries §honesty): the adapter reports how much of the plan
+  // SOURCE it actually parsed (coverageRatio) + any parse warnings; surface a calm badge when
+  // an AST plan came back degraded so a partial/meta-only parse is VISIBLE, not silent.
+  const planWarnings = effectivePlan?.warnings ?? [];
+  const planCoverage = effectivePlan?.coverageRatio;
+  const planDegraded = planIsAst && isDegraded(planCoverage, planWarnings);
+  const planCoverageBadgeLabel = planCoverageLabel(planCoverage, planWarnings);
+  const planCoverageBadgeTitle = planCoverageTitle(planCoverage, planWarnings);
 
   // P2 overlay header summary: bound / partial / planned-not-run / unplanned counts.
   const overlayBound = overlay?.bindings.filter((b) => b.status !== 'not-run').length ?? 0;
@@ -1137,6 +1152,13 @@ export function App() {
               ? `${planNodeCount} ${planNodeCount === 1 ? 'node' : 'nodes'} · ${planDerived}`
               : `${workflow?.phases.length ?? 0} ${(workflow?.phases.length ?? 0) === 1 ? 'phase' : 'phases'} · declared`}
           </span>
+          {/* Honest plan-parse signal: only an AST plan that came back degraded (partial source
+              coverage or a parse warning) shows this calm badge; a clean parse stays silent. */}
+          {planDegraded ? (
+            <span className="run-badge run-badge-warning" title={planCoverageBadgeTitle}>
+              ⚠ {planCoverageBadgeLabel}
+            </span>
+          ) : null}
         </div>
         {/* Plan = the workflow OVERVIEW (run-view-merge-plan §7b): the design + its run
             history. Clicking a run selects it (handleSelectRun also switches to the Run view). */}
@@ -1203,6 +1225,18 @@ export function App() {
             {overlayUnplanned > 0 ? ` · ${overlayUnplanned} unplanned` : ''}
             {overlayRounds != null ? ` · ${overlayRounds} loop rounds` : ''}
           </span>
+          {/* Honest run-degradation signal (boundaries §honesty): the adapter records WHY a run
+              read back degraded (a dropped phase, an unresolved binding, a torn journal, …) as
+              coded warnings. Surface a calm chip so the degradation is VISIBLE; the full list +
+              codes live in the RunOverviewPanel (opened from the run name). Silent when clean. */}
+          {run.warnings.length > 0 ? (
+            <span
+              className="run-badge run-badge-warning"
+              title={summarizeWarningCodes(run.warnings)}
+            >
+              ⚠ {warningCountLabel(run.warnings)}
+            </span>
+          ) : null}
           {run.partialFailure.present ? (
             <span className="run-badge run-badge-partial" title={run.partialFailure.lines[0] ?? ''}>
               partial failure

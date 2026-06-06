@@ -261,6 +261,41 @@ body {
 }
 .run-badge-partial { color: #d29922; border-style: dashed; }
 .run-badge-plan { color: #a371f7; }
+/* Honest degradation signal — a CALM amber chip (matches .live-conn-reconnecting), never red:
+   a warning explains a degraded run/plan, it is not a failure. Used by the run-header warning
+   chip + the plan-header coverage badge. */
+.run-badge-warning {
+  color: #e3b341;
+  background: rgba(227, 179, 65, 0.08);
+}
+
+/* RunOverviewPanel warnings section — amber-tinted rows listing the coded warnings + detail. */
+.detail-warnings {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.detail-warning-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  background: rgba(227, 179, 65, 0.08);
+  border: 1px solid rgba(227, 179, 65, 0.3);
+  border-radius: 6px;
+  font-size: 11px;
+}
+.detail-warning-code {
+  color: #e3b341;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 600;
+}
+.detail-warning-detail {
+  color: var(--argus-dim);
+  font-size: 10px;
+  margin-top: 2px;
+  word-break: break-word;
+}
 
 /* ---- STEP 3: Run-view FAILURE BANNER (calm, dark, red-tinted, collapsible) ----------
    Sits below the run-header in the Run-view chrome (NOT the sidebar). Renders only when the

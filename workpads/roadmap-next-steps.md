@@ -165,9 +165,12 @@ the transcript-reader (the design-plan "LATER" stack) all shipped.
   polish (run-view-merge-plan LATER).
 
 ### Architecture & honesty
-- **Surface `coverageRatio` / `warnings[]`** in the UI · M · the adapter computes them but
-  nothing in `apps/web` reads them, so a half-resolved / dropped-phase run shows no degradation
-  signal (silent degradation).
+- **Surface `coverageRatio` / `warnings[]`** in the UI — DONE 2026-06-06. A pure
+  `degradation-signal.ts` (warning count/code summary with `×N` dedup, clamped coverage %,
+  `isDegraded`) feeds: a calm amber `⚠ N warnings` chip in the run-header (codes in its
+  tooltip; full list in the RunOverviewPanel warnings section) and a `⚠ {pct}% parsed` /
+  `partial` badge in the plan-header when an AST plan came back degraded. Silent when clean.
+  +18 tests (316 total).
 - **Decide `clientVersion`: wire the drift badge or delete the dead plumbing** · M · no route
   sets it, so the "untested format" badge (boundaries §9) never appears — stop shipping an
   absent guarantee.
