@@ -17,6 +17,7 @@
 
 import { memo, useMemo, useState } from 'react';
 import type { ProjectRef, RunSummary, WorkflowMeta } from '@argus/contract';
+import type { LoopDrillMode } from '../expand-context.ts';
 import { formatDuration, formatRelativeTime, statusGlyph } from './format.ts';
 
 // 'explorer' is the tree; 'settings' the stub. ('projects'/'runs' accepted for back-compat.)
@@ -41,6 +42,11 @@ interface RailProps {
   workflows: WorkflowMeta[];
   selectedWorkflowName: string | undefined;
   onSelectWorkflow: (w: WorkflowMeta) => void;
+
+  // Settings: the loop-drill MODE (round-axis vs lane-drawer) + its setter, surfaced as a
+  // segmented control in the ⚙ settings pane.
+  loopDrillMode: LoopDrillMode;
+  onSelectLoopDrillMode: (mode: LoopDrillMode) => void;
 }
 
 /** Newest-first by startTime; runs without a startTime sort last (stable). */
@@ -74,6 +80,8 @@ export const Rail = memo(function Rail(props: RailProps) {
     workflows,
     selectedWorkflowName,
     onSelectWorkflow,
+    loopDrillMode,
+    onSelectLoopDrillMode,
   } = props;
 
   // --- split + group (memoized; order keyed on immutable startTime so the 2.5s live poll
@@ -176,10 +184,10 @@ export const Rail = memo(function Rail(props: RailProps) {
         <div className="rail-panel">
           <section className="rail-section" aria-label="settings">
             <header className="rail-section-head">Settings</header>
+            <LoopDrillSetting mode={loopDrillMode} onSelect={onSelectLoopDrillMode} />
             <div className="rail-muted rail-settings-stub">
               <p>argus · local-first, read-only</p>
               <p>Dark theme · v1</p>
-              <p className="rail-settings-note">settings are a stub for now</p>
             </div>
           </section>
         </div>
@@ -219,6 +227,47 @@ export const Rail = memo(function Rail(props: RailProps) {
         </div>
       )}
     </aside>
+  );
+});
+
+/** The loop-drill MODE setting: a labelled segmented control (Round axis | Lane drawer) +
+ *  a one-line description. The choice is owned + persisted by App; this only reports it. */
+const LoopDrillSetting = memo(function LoopDrillSetting({
+  mode,
+  onSelect,
+}: {
+  mode: LoopDrillMode;
+  onSelect: (mode: LoopDrillMode) => void;
+}) {
+  return (
+    <div className="rail-setting">
+      <div className="rail-setting-label">Loop drill</div>
+      <div className="rail-segmented" role="group" aria-label="loop drill mode">
+        <button
+          type="button"
+          className={`rail-segmented-btn${mode === 'round-axis' ? ' is-active' : ''}`}
+          aria-pressed={mode === 'round-axis'}
+          onClick={() => onSelect('round-axis')}
+          title="Round axis: the loop stays compact; rounds open in the detail panel (default)."
+        >
+          Round axis
+        </button>
+        <button
+          type="button"
+          className={`rail-segmented-btn${mode === 'lane-drawer' ? ' is-active' : ''}`}
+          aria-pressed={mode === 'lane-drawer'}
+          onClick={() => onSelect('lane-drawer')}
+          title="Lane drawer: round agents expand as cards inside the loop (the back-edge re-routes)."
+        >
+          Lane drawer
+        </button>
+      </div>
+      <p className="rail-setting-note">
+        {mode === 'round-axis'
+          ? 'Loop rounds open in the detail panel — the loop box stays compact.'
+          : 'Round agents expand as cards inside the loop — the back-edge routes around them.'}
+      </p>
+    </div>
   );
 });
 

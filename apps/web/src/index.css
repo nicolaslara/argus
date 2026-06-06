@@ -1470,6 +1470,55 @@ body {
   font-style: italic;
   opacity: 0.7;
 }
+
+/* ===== Settings: the loop-drill MODE segmented control ===== */
+.rail-setting {
+  padding: 6px 6px 12px;
+  border-bottom: 1px solid #1c2128;
+  margin-bottom: 10px;
+}
+.rail-setting-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--argus-fg);
+  margin-bottom: 6px;
+}
+.rail-segmented {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  background: rgba(22, 27, 34, 0.85);
+  border: 1px solid #232a31;
+  border-radius: 8px;
+}
+.rail-segmented-btn {
+  flex: 1;
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--argus-dim);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease;
+}
+.rail-segmented-btn:hover {
+  color: var(--argus-fg);
+}
+.rail-segmented-btn.is-active {
+  background: var(--argus-accent);
+  color: #fff;
+}
+.rail-setting-note {
+  margin: 8px 0 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--argus-dim);
+}
+
 .rail-wf-block {
   border-top: 1px solid #1c2128;
   margin-top: 8px;
@@ -1697,6 +1746,14 @@ button.plan-loop-round-col.is-clickable:hover {
 button.plan-loop-round-col.is-clickable:focus-visible {
   outline: 2px solid #e3b341;
   outline-offset: 1px;
+}
+/* OPTION 2 (lane-drawer): the round whose cards are CURRENTLY expanded inside the loop —
+   filled amber so the round axis shows which round's drawer is drawn below. */
+button.plan-loop-round-col.is-open {
+  background: rgba(210, 153, 34, 0.34);
+  border-color: #e3b341;
+  color: #f0d68a;
+  box-shadow: 0 0 0 1px rgba(227, 179, 65, 0.4);
 }
 /* the per-round bound-instance count badge inside a clickable pill. */
 .plan-loop-round-count {
