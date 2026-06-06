@@ -72,7 +72,7 @@ export function drawerCols(n: number): number {
   return Math.min(5, Math.max(2, Math.ceil(Math.sqrt(Math.max(n, 1)))));
 }
 
-interface DrawerSize {
+export interface DrawerSize {
   width: number;
   height: number;
   cols: number;
@@ -170,8 +170,12 @@ export interface AgentChipData {
  * Build the degraded drawer's children: up to `size.cells` cells in a dense chip grid. When
  * the fan overflows the cap, the LAST cell is a `+N more` overflow tile (`data.more` = the
  * hidden remainder) and only the first `size.cells - 1` agents render as instance chips.
+ *
+ * EXPORTED so the loop-container drawer (overlay-loop-expand.ts, OPTION 2) reuses the SAME
+ * chip path a flat fan uses for a large round (`templateId` namespaces the chip/tile node ids,
+ * so a loop drawer passes a loop+round-unique id to avoid colliding with flat-fan chip ids).
  */
-function buildChipCells(
+export function buildChipCells(
   templateId: string,
   drawerId: string,
   agents: AgentNode[],

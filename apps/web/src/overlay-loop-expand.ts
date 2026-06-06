@@ -32,7 +32,7 @@ import type { Edge, Node } from '@xyflow/react';
 import type { AgentNode, LoopRoundBinding, Overlay, RunModel } from '@argus/contract';
 import type { GraphResult } from './mapping.ts';
 import { agentToCardData } from './mapping.ts';
-import { drawerSize, DRAWER_GAP } from './overlay-expand.ts';
+import { drawerSize, buildChipCells, DRAWER_GAP, CHIP_W, CHIP_H } from './overlay-expand.ts';
 import { CARD_SHELL_WIDTH, CARD_SHELL_HEIGHT_EXEC } from './nodes/AgentCardShell.tsx';
 
 /**
@@ -43,6 +43,15 @@ import { CARD_SHELL_WIDTH, CARD_SHELL_HEIGHT_EXEC } from './nodes/AgentCardShell
 export const LOOP_GUTTER = 34;
 /** The smoothstep bow the re-routed back-edge takes through the gutter (clears the cards). */
 const BACKEDGE_OFFSET = 24;
+/**
+ * Extra bow given to the back-edge when the loop BODY ends in a DECISION diamond (POLISH 3). A
+ * decision's only source handles are its RIGHT (`true`) and BOTTOM (`false`) vertices — neither
+ * faces the left gutter — so a back-edge leaving it has to wrap the long way round and, with the
+ * default offset, grazes the diamond / the cards. We dock the source at the decision's BOTTOM
+ * handle (drops the edge below the diamond, clear of its body) and give it a wider bow so it
+ * settles firmly in the gutter lane before climbing to the loop's left handle.
+ */
+const BACKEDGE_OFFSET_DECISION = LOOP_GUTTER + 12;
 /** Inner padding kept between the drawer and the loop container's bottom edge. */
 const LOOP_DRAWER_PAD_BOTTOM = 14;
 /** Inner padding kept between the drawer and the loop container's right edge. */
@@ -185,6 +194,14 @@ export function expandLoopDrawer(
         templateId: loopId,
         instanceCount: n,
         title: `round r${round}`,
+        // OPTION 2 marker: tell InstanceGroup this is a LOOP drawer (not a flat fan) so its header
+        // caret collapses via `selectRound(loopId, round)` — re-selecting the open round toggles
+        // `loopDrawerRound` off, exactly as re-clicking the round pill does. `loopId`/`round` are
+        // the (loop node id, open round) the caret re-selects. A flat-fan drawer omits these, so
+        // its caret keeps the original `toggle(templateId)` path (unchanged).
+        loopDrawer: true,
+        loopId,
+        round,
         // Carry no aggregate binding chip for the loop drawer header (the round axis already
         // shows per-round counts); InstanceGroup degrades gracefully when these are absent.
       },
@@ -193,18 +210,26 @@ export function expandLoopDrawer(
       style: { width: size.width, height: size.height },
     };
 
-    const cards: Node[] = agents.map((agent, i) => {
-      const pos = cardCellPosition(i, size.cols, DRAWER_PAD_X, DRAWER_PAD_TOP, CARD_W, CARD_H, CELL_GAP_X, CELL_GAP_Y);
-      return {
-        id: loopCardNodeId(loopId, round, agent.agentId, i),
-        type: 'agentCard',
-        parentId: drawer.id,
-        position: pos,
-        data: agentToCardData(agent, failureAgentIds?.has(agent.agentId) === true),
-        draggable: false,
-        selectable: false,
-      } as Node;
-    });
+    // For a round with > CHIP_DEGRADE_THRESHOLD instances `drawerSize` degrades to a bounded
+    // chip grid; reuse the flat fan's chip path (compact `agentChip` cells + a trailing `+N more`
+    // tile) so a large round stays bounded instead of overflowing the chip-sized drawer with
+    // full cards. The loop+round-unique `${loopId}-r${round}` namespaces the chip/tile node ids
+    // so they never collide with a flat fan's `chip-…` ids. Small (≤ threshold) rounds still
+    // render full `agentCard` cells exactly as before.
+    const cards: Node[] = size.degraded
+      ? buildChipCells(`${loopId}-r${round}`, drawer.id, agents, size, failureAgentIds)
+      : agents.map((agent, i) => {
+          const pos = cardCellPosition(i, size.cols, DRAWER_PAD_X, DRAWER_PAD_TOP, CARD_W, CARD_H, CELL_GAP_X, CELL_GAP_Y);
+          return {
+            id: loopCardNodeId(loopId, round, agent.agentId, i),
+            type: 'agentCard',
+            parentId: drawer.id,
+            position: pos,
+            data: agentToCardData(agent, failureAgentIds?.has(agent.agentId) === true),
+            draggable: false,
+            selectable: false,
+          } as Node;
+        });
 
     // Grow the loop container to fit the drawer (height always; width only if the gutter +
     // drawer would overflow the current loop width).
@@ -281,16 +306,40 @@ export function expandLoopDrawer(
   // (an explicit smoothstep offset) and dock both ends at their LEFT handles, so it runs down
   // the gutter and never crosses the freshly-grown drawer's cards. Waypoint-free still (no
   // baked points), so React Flow re-docks it to the moved handles for free.
+  //
+  // POLISH 3 — the common loop shape ends in a DECISION diamond. A decision exposes source
+  // handles only on its RIGHT (`true`) and BOTTOM (`false`) vertices; with no handle override the
+  // back-edge leaves the RIGHT vertex and has to wrap the full width of the diamond to reach the
+  // left gutter, grazing the diamond and the cards on the way. When the source is a decision we
+  // instead dock the source at its BOTTOM (`false`) handle — the edge drops clear below the
+  // diamond, then a wider bow pulls it firmly into the gutter lane before it climbs to the loop's
+  // left handle. (`false` is just the nearest downward handle; this is a routing choice, not a
+  // branch — the real true/false branch edges carry their own explicit sourceHandle and are not
+  // touched here.)
   const edges: Edge[] = graph.edges.map((e) => {
     const targetsExpandedLoop = typeof e.target === 'string' && loopGrow.has(e.target);
     if (!targetsExpandedLoop || e.type !== 'smoothstep') return e;
+    const src = typeof e.source === 'string' ? byId.get(e.source) : undefined;
+    const fromDecision = src?.type === 'planDecision';
     return {
       ...e,
-      // Dock the back-edge at the loop's LEFT target handle + bow it left around the drawer.
+      // Dock the back-edge's TARGET at the loop's LEFT handle (cleared so RF re-docks for free).
       targetHandle: null,
-      pathOptions: { offset: BACKEDGE_OFFSET, borderRadius: 14 },
+      // For a decision source, leave the diamond's BOTTOM vertex (the downward `false` handle) and
+      // bow wider; otherwise keep the source handle + the standard gutter bow.
+      ...(fromDecision ? { sourceHandle: 'false' } : null),
+      pathOptions: {
+        offset: fromDecision ? BACKEDGE_OFFSET_DECISION : BACKEDGE_OFFSET,
+        borderRadius: 14,
+      },
     } as Edge;
   });
+  // Residual limitation: the route is still a waypoint-free smoothstep, so React Flow owns the
+  // exact curve — we steer it (handle + offset), we don't pin it. For the common case (loop ends
+  // in a decision or a single body, gutter clear of the cards) this keeps the back-edge in the
+  // left lane. A pathological loop body — e.g. one wider than gutter+drawer, so a child still sits
+  // ABOVE the gutter lane — could let the curve graze that child; the honest fix there is baked
+  // waypoints (rejected: it breaks free re-docking) or a per-topology gutter width.
 
   assertDev(out, pending);
   return { nodes: out, edges };
@@ -310,14 +359,18 @@ function assertDev(nodes: Node[], pending: { drawer: Node; cards: Node[]; loopId
     const ds = (drawer.style ?? {}) as { width?: number; height?: number };
     const dw = ds.width ?? 0;
     const dh = ds.height ?? 0;
-    // (1) cards ⊆ drawer.
+    // (1) cards ⊆ drawer. Chip cells use the compact CHIP_* footprint; full-card cells use the
+    // CARD_* footprint (a degraded drawer is sized to chips, not cards — parity with expandInstances).
     for (const c of cards) {
+      const isChip = c.type === 'agentChip';
+      const cw = isChip ? CHIP_W : CARD_W;
+      const ch = isChip ? CHIP_H : CARD_H;
       const x = c.position.x;
       const y = c.position.y;
-      const ok = x >= 0 && y >= 0 && x + CARD_W <= dw && y + CARD_H <= dh;
+      const ok = x >= 0 && y >= 0 && x + cw <= dw && y + ch <= dh;
       if (!ok) {
         throw new Error(
-          `expandLoopDrawer: card ${c.id} rect (${x},${y},${CARD_W}x${CARD_H}) escapes drawer ${drawer.id} (${dw}x${dh})`,
+          `expandLoopDrawer: card ${c.id} rect (${x},${y},${cw}x${ch}) escapes drawer ${drawer.id} (${dw}x${dh})`,
         );
       }
     }

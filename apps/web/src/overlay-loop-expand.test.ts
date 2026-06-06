@@ -3,7 +3,7 @@ import type { Edge, Node } from '@xyflow/react';
 import type { AgentNode, Overlay, RunModel } from '@argus/contract';
 import type { GraphResult } from './mapping.ts';
 import { CARD_SHELL_WIDTH, CARD_SHELL_HEIGHT_EXEC } from './nodes/AgentCardShell.tsx';
-import { drawerSize, DRAWER_GAP } from './overlay-expand.ts';
+import { drawerSize, DRAWER_GAP, CHIP_DEGRADE_THRESHOLD, CHIP_W, CHIP_H } from './overlay-expand.ts';
 import { expandLoopDrawer, LOOP_GUTTER } from './overlay-loop-expand.ts';
 
 // OPTION 2 — "lane-drawer inside the loop" (loop-drill-gallery.html opt2). expandLoopDrawer draws
@@ -33,6 +33,10 @@ const DECISION_SIZE = 116;
 // The round 2 instances drawn inside the loop (×4 critics — a small full-card fan).
 const R2_IDS = ['c2a', 'c2b', 'c2c', 'c2d'];
 const R1_IDS = ['c1a', 'c1b'];
+// Round 3: a SMALL round (7 ≤ threshold) that stays FULL cards. Round 4: a LARGE round
+// (50 > threshold) that must DEGRADE to chips + a `+N more` tile inside the loop (POLISH 1).
+const R3_IDS = Array.from({ length: 7 }, (_, i) => `c3_${i}`);
+const R4_IDS = Array.from({ length: 50 }, (_, i) => `c4_${i}`);
 
 function agentNode(over: Partial<AgentNode> & { agentId: string; label: string }): AgentNode {
   return {
@@ -124,6 +128,8 @@ function makeOverlay(): Overlay {
       [LOOP_ID]: [
         { round: 1, agentIds: R1_IDS, instances: R1_IDS.map((id) => ({ agentId: id, label: `critique:${id}:r1`, state: 'done' as const })) },
         { round: 2, agentIds: R2_IDS, instances: R2_IDS.map((id) => ({ agentId: id, label: `critique:${id}:r2`, state: 'done' as const })) },
+        { round: 3, agentIds: R3_IDS, instances: R3_IDS.map((id) => ({ agentId: id, label: `critique:${id}:r3`, state: 'done' as const })) },
+        { round: 4, agentIds: R4_IDS, instances: R4_IDS.map((id) => ({ agentId: id, label: `critique:${id}:r4`, state: 'done' as const })) },
       ],
     },
   };
@@ -143,6 +149,8 @@ function makeRun(): RunModel {
     agents: [
       ...R1_IDS.map((id) => agentNode({ agentId: id, label: `critique:${id}:r1` })),
       ...R2_IDS.map((id) => agentNode({ agentId: id, label: `critique:${id}:r2` })),
+      ...R3_IDS.map((id) => agentNode({ agentId: id, label: `critique:${id}:r3` })),
+      ...R4_IDS.map((id) => agentNode({ agentId: id, label: `critique:${id}:r4` })),
     ],
     edges: [],
     logs: [],
@@ -167,7 +175,12 @@ function absRect(graph: GraphResult, id: string): { x: number; y: number; w: num
     p = typeof p.parentId === 'string' ? byId.get(p.parentId) : undefined;
   }
   const s = (n.style ?? {}) as { width?: number; height?: number };
-  return { x, y, w: s.width ?? CARD_SHELL_WIDTH, h: s.height ?? CARD_SHELL_HEIGHT_EXEC };
+  // Chip cells carry no explicit style — fall back to the compact CHIP footprint (parity with
+  // the layout's own assertions), not the larger card footprint, so the rect math is honest.
+  const isChip = n.type === 'agentChip';
+  const fallbackW = isChip ? CHIP_W : CARD_SHELL_WIDTH;
+  const fallbackH = isChip ? CHIP_H : CARD_SHELL_HEIGHT_EXEC;
+  return { x, y, w: s.width ?? fallbackW, h: s.height ?? fallbackH };
 }
 
 function rectInside(child: ReturnType<typeof absRect>, parent: ReturnType<typeof absRect>): boolean {
@@ -177,6 +190,14 @@ function rectInside(child: ReturnType<typeof absRect>, parent: ReturnType<typeof
     child.x + child.w <= parent.x + parent.w &&
     child.y + child.h <= parent.y + parent.h
   );
+}
+
+/** Half-open AABB intersection (touching edges do NOT count as an overlap). */
+function overlaps(
+  a: { x: number; y: number; w: number; h: number },
+  b: { x: number; y: number; w: number; h: number },
+): boolean {
+  return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 }
 
 describe('expandLoopDrawer — OPTION 2 (lane-drawer inside the loop)', () => {
@@ -281,6 +302,54 @@ describe('expandLoopDrawer — OPTION 2 (lane-drawer inside the loop)', () => {
     }
   });
 
+  // POLISH 3 — when the loop ends in a DECISION diamond, the back-edge must dock its SOURCE at the
+  // decision's BOTTOM (`false`) handle so it drops clear below the diamond before routing left
+  // into the gutter (rather than wrapping off the diamond's RIGHT vertex across the cards).
+  it('docks the decision-sourced back-edge at the decision’s bottom handle with a wider bow', () => {
+    const graph = makeGraph();
+    const r = expandLoopDrawer(graph, makeOverlay(), makeRun(), new Map([[LOOP_ID, 2]]));
+    const back = r.edges.find((e) => e.id === 'e-loopback')!;
+    // Source is the decision → docked at its bottom (`false`) vertex; target at the loop's left.
+    expect(back.source).toBe(LOOP_DECISION);
+    expect(back.sourceHandle).toBe('false');
+    expect(back.targetHandle).toBeNull();
+    // The decision case gets a WIDER bow than the default (clears the diamond into the gutter).
+    const bo = back as Edge & { pathOptions?: { offset?: number } };
+    expect(bo.pathOptions!.offset!).toBeGreaterThan(LOOP_GUTTER);
+  });
+
+  // POLISH 3 — the back-edge route (a vertical run down the left gutter lane, entered horizontally
+  // at the decision's bottom edge) must not cross any expanded card. We model that corridor
+  // conservatively and assert no drawn card rect intersects it. This pins the geometry that makes
+  // a decision-ending loop's back-edge clean, independent of React Flow's exact smoothstep curve.
+  it('the re-routed back-edge corridor does not cross any expanded card rect (decision-ending loop)', () => {
+    const graph = makeGraph();
+    const r = expandLoopDrawer(graph, makeOverlay(), makeRun(), new Map([[LOOP_ID, 2]]));
+    const loop = absRect(r, LOOP_ID);
+    const decision = absRect(r, LOOP_DECISION);
+
+    // The corridor the routed edge occupies, in ABSOLUTE coords:
+    //  (a) a vertical lane down the left gutter — x ∈ [loop.x, loop.x + LOOP_GUTTER], full height;
+    //  (b) a short horizontal entry at the decision's BOTTOM edge, from the gutter to the decision
+    //      center (the bottom `false` handle), at y ≈ decision bottom (ABOVE the cards/drawer).
+    const verticalLane = { x: loop.x, y: loop.y, w: LOOP_GUTTER, h: loop.h };
+    const decisionCenterX = decision.x + decision.w / 2;
+    const entrySeg = {
+      x: loop.x,
+      y: decision.y + decision.h - 1,
+      w: decisionCenterX - loop.x,
+      h: 2,
+    };
+
+    const cards = r.nodes.filter((n) => n.type === 'agentCard');
+    expect(cards.length).toBeGreaterThan(0);
+    for (const c of cards) {
+      const rect = absRect(r, c.id);
+      expect(overlaps(rect, verticalLane)).toBe(false);
+      expect(overlaps(rect, entrySeg)).toBe(false);
+    }
+  });
+
   it('child-before-parent order holds for the appended drawer + cards', () => {
     const graph = makeGraph();
     const r = expandLoopDrawer(graph, makeOverlay(), makeRun(), new Map([[LOOP_ID, 2]]));
@@ -343,6 +412,59 @@ describe('expandLoopDrawer — OPTION 2 (lane-drawer inside the loop)', () => {
       (n) => n.type === 'agentCard' && (n.data as { agentId?: string }).agentId === 'c2a',
     );
     expect((clean!.data as { failurePoint?: boolean }).failurePoint).toBe(false);
+  });
+
+  // POLISH 1 — a LARGE loop round must degrade to compact chips + a `+N more` tile inside the
+  // loop (reusing the flat fan's chip path), bounded, with NO throw — never a wall of overflowing
+  // full cards. A SMALL round stays full cards (unchanged).
+  it('degrades a large loop round (N=50) to chips + a “+N more” tile inside the loop (no throw)', () => {
+    expect(R4_IDS.length).toBeGreaterThan(CHIP_DEGRADE_THRESHOLD);
+    const graph = makeGraph();
+    // No throw on the >threshold round (the dev assertions run in this non-prod test).
+    const r = expandLoopDrawer(graph, makeOverlay(), makeRun(), new Map([[LOOP_ID, 4]]));
+
+    // It renders compact chips, NOT full cards (the degrade path took over).
+    const cards = r.nodes.filter((n) => n.type === 'agentCard');
+    expect(cards.length).toBe(0);
+    const chips = r.nodes.filter((n) => n.type === 'agentChip');
+    expect(chips.length).toBeGreaterThan(0);
+
+    // The drawer + every chip is parented INSIDE the loop (a recursive in-loop drawer, OPTION 2).
+    const drawer = r.nodes.find((n) => n.type === 'instanceGroup')!;
+    expect(drawer.parentId).toBe(LOOP_ID);
+    for (const c of chips) expect(c.parentId).toBe(drawer.id);
+
+    // Exactly ONE trailing `+N more` overflow tile, accounting for the un-rendered remainder.
+    const more = chips.filter((c) => (c.data as { more?: number }).more != null);
+    expect(more.length).toBe(1);
+    const realChips = chips.length - more.length;
+    expect((more[0]!.data as { more: number }).more).toBe(R4_IDS.length - realChips);
+
+    // BOUNDED: the chip cell count is capped (does NOT grow to ~50), and the drawer matches the
+    // bounded degraded size exactly. A 50-card grid would be far taller than this.
+    const size = drawerSize(R4_IDS.length);
+    expect(size.degraded).toBe(true);
+    expect(chips.length).toBe(size.cells);
+    expect((drawer.style as { width: number; height: number })).toEqual({ width: size.width, height: size.height });
+
+    // The drawer stays inside the (grown) loop and every chip stays inside the drawer.
+    expect(rectInside(absRect(r, drawer.id), absRect(r, LOOP_ID))).toBe(true);
+    for (const c of chips) {
+      expect(rectInside(absRect(r, c.id), absRect(r, drawer.id))).toBe(true);
+      expect(rectInside(absRect(r, c.id), absRect(r, LOOP_ID))).toBe(true);
+    }
+  });
+
+  it('keeps a small loop round (N=7 ≤ threshold) as full agentCard cells (no degrade)', () => {
+    expect(R3_IDS.length).toBeLessThanOrEqual(CHIP_DEGRADE_THRESHOLD);
+    const graph = makeGraph();
+    const r = expandLoopDrawer(graph, makeOverlay(), makeRun(), new Map([[LOOP_ID, 3]]));
+    const cards = r.nodes.filter((n) => n.type === 'agentCard');
+    const chips = r.nodes.filter((n) => n.type === 'agentChip');
+    // One full card per instance, no chips, no overflow tile.
+    expect(cards.length).toBe(R3_IDS.length);
+    expect(chips.length).toBe(0);
+    expect(drawerSize(R3_IDS.length).degraded).toBe(false);
   });
 });
 
