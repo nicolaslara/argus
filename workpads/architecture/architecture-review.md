@@ -154,14 +154,19 @@ adapter format-isolation, web↔contract-only all hold). Prioritized remaining w
   (TODO left in code): the lazy full-result read is also unbounded, but a head-cap there could miss
   a later agent's result — it needs a scan-to-match (heavier, marginal value), so left for later.
 - [ ] **ARCH-7 — remaining items, triaged 2026-06-06 (need your call / gated / dropped):**
-  - **App.tsx decomposition — PASS 1 DONE 2026-06-06 (approved: smaller files for LLMs).** Extracted
-    6 cohesive files — `defaults.ts`, `fit/chrome-fit.ts`, `run-view/FailureBanner.tsx` +
-    `RunObjective.tsx`, `hooks/useLiveStream.ts` (the SSE effect), `hooks/useChromeFit.ts` (the 4
+  - **App.tsx decomposition — PASS 1 + PASS 2 DONE 2026-06-06 (approved: smaller files for LLMs).**
+    PASS 1 extracted 6 cohesive files — `defaults.ts`, `fit/chrome-fit.ts`, `run-view/FailureBanner.tsx`
+    + `RunObjective.tsx`, `hooks/useLiveStream.ts` (the SSE effect), `hooks/useChromeFit.ts` (the 4
     fitView effects) — behavior-preserving (verifier diffed each as logic-identical; validated live:
-    renders + fits + table toggle). App.tsx **1361 → 1148** lines; +9 tests (519). PASS 2 (deferred):
-    the `useRunGraph` hook (the overlay/graph memos, ~200 lines, 15+ deps) — too coupled for one safe
-    pass; do it focused next. (Earlier this session also extracted failure-info/live-connection/
-    pad-from-insets/fit-signature/plan-correspondence/loop-drill-migrate/degradation-signal.)
+    renders + fits + table toggle). App.tsx **1361 → 1148** lines; +9 tests (519). PASS 2 lifted the
+    whole graph-build pipeline into `hooks/useRunGraph.ts` (the Plan-AST + Run-morph elk layouts, the
+    live-fill fetch, the morph paint+expand, the caption polls) — App owns the run query + selection
+    state and passes them in; the hook returns `{ graph, selectedNode, overlay, planIsAst, overlayError }`.
+    Behavior-preserving (verbatim memos/effects, identical dep arrays + unconditional hook order; the
+    run-change reset/seed effect stays in App). App.tsx **1148 → 945** lines. Verified: tsc+lint clean,
+    519 tests, prod build OK, Playwright smoke across all 3 hook output paths (Run paint+expand, table→
+    graph cross-highlight, Plan astGraph+captions). (Earlier this session also extracted failure-info/
+    live-connection/pad-from-insets/fit-signature/plan-correspondence/loop-drill-migrate/degradation-signal.)
   - **Large-graph 200+ node safeguard (L) — GATED.** Speculative (no run approaches 200 nodes; the
     chip-degrade + table already help at scale). Gate on a real large run.
   - **Remove dead `runModelToGraph` export (S) — DROPPED.** Not dead: a DELIBERATE plan-less
@@ -170,6 +175,9 @@ adapter format-isolation, web↔contract-only all hold). Prioritized remaining w
     already enforces it across every consumer — a runtime test adds nothing. (Tiny doc nit: the
     README/boundaries "wire types + zod schemas" line overstates — it's types + adapter-side
     defensive parsing, no zod in the contract. Low priority.)
-- [ ] **ARCH-8 — Refresh README `docs/screenshots/*` for the new features (S) — NEEDS YOUR CALL.**
-  The text is updated (ARCH-3); the 5 screenshots predate the table/pinned/filter/coverage/exec-order
-  UI. Publishable-quality framing is a human-judgment call — best captured with you, or tell me to.
+- [x] **ARCH-8 — Refresh README `docs/screenshots/*` for the new features (S) — DONE 2026-06-06
+  (approved).** Re-captured run-view / plan-overview / loop-drill against the current UI (objective
+  band, expanded fans, in-canvas loop drawer) at 1600×1000, and added a fourth showcase:
+  `agent-table.png` (the execution-order DAG view — Explore·4 / Judge·1 / Refine·5 nested under phase
+  headers — with a row→graph cross-highlight) plus a third "A look around" README item describing the
+  table panel. failure-inspector.png + transcript-reader.png kept (those features unchanged).
