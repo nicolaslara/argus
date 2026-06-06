@@ -21,19 +21,11 @@
 import { memo } from 'react';
 import { CHIP_W, CHIP_H, type AgentChipData } from '../overlay-expand.ts';
 import { STATE_COLOR } from './AgentCard.tsx';
+import { formatDuration } from '../shell/format.ts';
 
+// The shared formatDuration (shell/format.ts) returns this em-dash for a missing dur; the
+// chip compares against it to dim the dur slot.
 const EM_DASH = '—';
-
-/** Compact duration string — mirrors AgentCard's formatDuration so a chip's dur reads the same. */
-function formatDuration(ms: number | null | undefined): string {
-  if (ms == null || !Number.isFinite(ms) || ms <= 0) return EM_DASH;
-  if (ms < 1000) return `${Math.round(ms)}ms`;
-  const s = ms / 1000;
-  if (s < 60) return `${s.toFixed(s < 10 ? 1 : 0)}s`;
-  const m = Math.floor(s / 60);
-  const rem = Math.round(s % 60);
-  return `${m}m${rem.toString().padStart(2, '0')}s`;
-}
 
 export const AgentChip = memo(function AgentChip({ data }: { data: AgentChipData }) {
   // The trailing `+N more` overflow tile: a muted count, no dot / dur (no single agent to open).

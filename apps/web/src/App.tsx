@@ -67,7 +67,7 @@ import {
 import { InstanceGroup } from './nodes/InstanceGroup.tsx';
 import { AgentChip } from './nodes/AgentChip.tsx';
 import { Rail, type RailSection } from './shell/Rail.tsx';
-import { formatRelativeTime } from './shell/format.ts';
+import { formatElapsed, formatRelativeTime } from './shell/format.ts';
 import { DetailPanel } from './nodes/DetailPanel.tsx';
 import { RunOverviewPanel } from './nodes/RunOverviewPanel.tsx';
 import { RunHistory } from './nodes/RunHistory.tsx';
@@ -193,16 +193,6 @@ interface FailureInfo {
   elapsedMs: number | null;
   /** Every dead agentId — the cards that should read as a failure point. */
   failureAgentIds: Set<string>;
-}
-
-/** A short, calm elapsed-to-failure string (mirrors the card's dur formatting). */
-function formatElapsed(ms: number | null): string | null {
-  if (ms == null || !Number.isFinite(ms) || ms < 0) return null;
-  const totalSec = Math.round(ms / 1000);
-  if (totalSec < 60) return `${totalSec}s`;
-  const m = Math.floor(totalSec / 60);
-  const s = totalSec % 60;
-  return `${m}m${s.toString().padStart(2, '0')}s`;
 }
 
 /**

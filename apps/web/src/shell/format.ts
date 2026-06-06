@@ -5,9 +5,18 @@
 
 import type { RunStatus } from '@argus/contract';
 
-/** A compact, human duration: `1.4s`, `48s`, `3m 12s`, `1h 04m`. `null` → em-dash. */
-export function formatDuration(ms: number | null): string {
-  if (ms == null || !Number.isFinite(ms) || ms < 0) return '—';
+const EM_DASH = '—';
+
+/**
+ * A compact, human duration: `1.4s`, `48s`, `3m 12s`, `1h 04m`. The ONE shared home for
+ * duration formatting (rail, run-history, agent cards/chips, the agent table all import it).
+ *
+ * null/undefined/NaN/±Infinity → em-dash, and `ms <= 0` → em-dash too: a zero or negative
+ * duration is treated as MISSING, not as a literal "0ms" (0-with-context is "unknown", not an
+ * instant run — boundaries.md §7, same convention as formatTokens/formatTools below).
+ */
+export function formatDuration(ms: number | null | undefined): string {
+  if (ms == null || !Number.isFinite(ms) || ms <= 0) return EM_DASH;
   if (ms < 1000) return `${ms}ms`;
   const totalSec = Math.round(ms / 1000);
   if (totalSec < 60) {
@@ -21,6 +30,47 @@ export function formatDuration(ms: number | null): string {
   const hr = Math.floor(min / 60);
   const remMin = min % 60;
   return `${hr}h ${String(remMin).padStart(2, '0')}m`;
+}
+
+/**
+ * A compact token count: `1`, `999`, `1.0k`, `12k`, `1.0M`. The ONE shared home for token
+ * formatting (agent cards + the agent table import it). null/undefined/0 → em-dash (0-with-
+ * tools is activity, not a cost worth comparing — boundaries.md §7), and NaN/±Infinity → em-dash.
+ */
+export function formatTokens(tokens: number | null | undefined): string {
+  if (tokens == null || tokens === 0 || !Number.isFinite(tokens)) return EM_DASH;
+  if (tokens < 1000) return String(tokens);
+  if (tokens < 1_000_000) return `${(tokens / 1000).toFixed(tokens < 10_000 ? 1 : 0)}k`;
+  return `${(tokens / 1_000_000).toFixed(1)}M`;
+}
+
+/**
+ * A tool-call count: the raw integer, or em-dash. The ONE shared home for tool formatting
+ * (agent cards + the agent table import it). null/undefined/0 → em-dash (same missing-vs-zero
+ * convention as formatTokens), and NaN/±Infinity → em-dash.
+ */
+export function formatTools(toolCalls: number | null | undefined): string {
+  if (toolCalls == null || toolCalls === 0 || !Number.isFinite(toolCalls)) return EM_DASH;
+  return String(toolCalls);
+}
+
+/**
+ * elapsed-to-failure / run-header duration: a compact `42s` or `3m07s` string, or `null`.
+ *
+ * A THIN WRAPPER over the same duration math as formatDuration BUT with two deliberate
+ * differences for its caller (App's failure banner + run-header):
+ *   1. Returns `null` (not the em-dash) on missing/invalid input, so the CALLER controls
+ *      rendering — both call sites render `after {elapsed}` / the header pill only when truthy.
+ *   2. A flatter, secondless-decimal compact format (`42s`, `3m07s`, `60m00s`) — no decimal
+ *      seconds and no hours rollover — so the banner/header read as a single calm token.
+ */
+export function formatElapsed(ms: number | null | undefined): string | null {
+  if (ms == null || !Number.isFinite(ms) || ms < 0) return null;
+  const totalSec = Math.round(ms / 1000);
+  if (totalSec < 60) return `${totalSec}s`;
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${m}m${String(s).padStart(2, '0')}s`;
 }
 
 /**

@@ -11,7 +11,7 @@
 import { memo, useMemo, useState } from 'react';
 import type { AgentNode, Phase, RunModel } from '@argus/contract';
 import { STATE_COLOR } from '../nodes/AgentCard.tsx';
-import { formatDuration } from '../shell/format.ts';
+import { formatDuration, formatTokens, formatTools } from '../shell/format.ts';
 import {
   filterAgents,
   isFailure,
@@ -24,21 +24,9 @@ import {
   type SortState,
 } from './agent-table.ts';
 
+// dur/tok/tools formatting lives in the ONE shared home (shell/format.ts); this em-dash is the
+// missing-metric marker reused across the row cells.
 const EM_DASH = '—';
-
-/** tokens: 0/null → em-dash (0-with-tools is activity, not a cost worth comparing — card rule). */
-function formatTokens(tokens: number | null): string {
-  if (tokens === null || tokens === 0 || !Number.isFinite(tokens)) return EM_DASH;
-  if (tokens < 1000) return String(tokens);
-  if (tokens < 1_000_000) return `${(tokens / 1000).toFixed(tokens < 10_000 ? 1 : 0)}k`;
-  return `${(tokens / 1_000_000).toFixed(1)}M`;
-}
-
-/** toolCalls: 0/null → em-dash; else the raw count. */
-function formatTools(toolCalls: number | null): string {
-  if (toolCalls === null || toolCalls === 0 || !Number.isFinite(toolCalls)) return EM_DASH;
-  return String(toolCalls);
-}
 
 /** The at-a-glance RESULT preview line — first non-empty line of the result, else last tool. */
 function resultLine(agent: AgentNode): string | null {

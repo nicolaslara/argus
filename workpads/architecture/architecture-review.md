@@ -118,9 +118,11 @@ adapter format-isolation, web↔contract-only all hold). Prioritized remaining w
   (validated: 1 node, no panel), SELECT → persistent ring + DetailPanel. Resolves to the instance
   card when expanded OR the aggregate plan node when collapsed. +14 tests (401). (Workflow's
   implement agent socket-died at the tbody-wire + CSS + tests; finished in the main loop.)
-- [ ] **ARCH-2 — Consolidate duplicated formatters (med/M).** formatDuration/formatTokens/
-  formatTools/formatElapsed live in ~4 places (shell/format.ts, nodes/AgentCard.tsx, the table,
-  App.tsx) with INCONSISTENT null/0 handling → one shared module + one em-dash rule + tests.
+- [x] **ARCH-2 — Consolidate duplicated formatters. DONE 2026-06-06.** formatDuration (×3),
+  formatTokens/formatTools (×2 each), formatElapsed (×1) now live ONCE in shell/format.ts with a
+  consistent null/0 → em-dash rule; AgentCard/AgentChip/AgentTablePanel/App import them (local
+  copies deleted). One deliberate consistency fix: `0ms` now renders `—` everywhere (was a mix of
+  `0ms`/`—`), matching the tokens/tools "no value" convention. +19 tests (420 total).
 - [ ] **ARCH-3 — Doc-drift sweep (high/S+M).** TASKS.md "three views" → only plan/run;
   boundaries.md §4 lists a `/transcript` endpoint never built + a deleted `resolveClientVersion` +
   a stale endpoint list; WORKING.md claims `/stream` ships `RunDelta` (it only emits `changed`);

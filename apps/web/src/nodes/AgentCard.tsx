@@ -14,6 +14,7 @@ import { memo } from 'react';
 import { Handle, Position } from '@xyflow/react';
 import type { AgentState, Preview } from '@argus/contract';
 import { AgentCardShell, CARD_SHELL_HEIGHT_EXEC } from './AgentCardShell.tsx';
+import { formatDuration, formatTokens, formatTools } from '../shell/format.ts';
 
 export interface AgentCardData {
   label: string;
@@ -84,30 +85,9 @@ const STATE_LABEL: Record<AgentState, string> = {
   unknown: 'unknown',
 };
 
+// dur/tok/tools formatting lives in the ONE shared home (shell/format.ts); the pills below
+// compare against this em-dash to render the `dim` (missing-metric) state.
 const EM_DASH = '—';
-
-function formatDuration(ms: number | null): string {
-  if (ms === null || !Number.isFinite(ms) || ms <= 0) return EM_DASH;
-  if (ms < 1000) return `${Math.round(ms)}ms`;
-  const s = ms / 1000;
-  if (s < 60) return `${s.toFixed(s < 10 ? 1 : 0)}s`;
-  const m = Math.floor(s / 60);
-  const rem = Math.round(s % 60);
-  return `${m}m${rem.toString().padStart(2, '0')}s`;
-}
-
-function formatTokens(tokens: number | null): string {
-  // tokens=0 → em-dash (boundaries.md §7); null (live, not yet known) → em-dash too.
-  if (tokens === null || tokens === 0) return EM_DASH;
-  if (tokens < 1000) return String(tokens);
-  if (tokens < 1_000_000) return `${(tokens / 1000).toFixed(tokens < 10_000 ? 1 : 0)}k`;
-  return `${(tokens / 1_000_000).toFixed(1)}M`;
-}
-
-function formatTools(toolCalls: number | null): string {
-  if (toolCalls === null || toolCalls === 0) return EM_DASH;
-  return String(toolCalls);
-}
 
 /**
  * INLINE-EXPAND: the at-a-glance RESULT PREVIEW — the first non-empty line of WHAT the agent
