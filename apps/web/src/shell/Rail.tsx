@@ -19,7 +19,8 @@ import { memo, useCallback, useMemo, useState } from 'react';
 import type { ProjectRef, RunSummary, WorkflowMeta } from '@argus/contract';
 import type { LoopDrillMode } from '../expand-context.ts';
 import { readGroupBy, writeGroupBy } from '../group-by-setting.ts';
-import { formatDuration, formatRelativeTime, statusGlyph } from './format.ts';
+import { filterTree } from '../filter-runs.ts';
+import { formatDuration, formatRelativeTime, isStale, statusGlyph } from './format.ts';
 
 // 'explorer' is the tree; 'settings' the stub. ('projects'/'runs' accepted for back-compat.)
 export type RailSection = 'explorer' | 'settings' | 'projects' | 'runs';
@@ -82,6 +83,28 @@ export interface TreeNode {
 function maxStart(rs: RunSummary[]): number {
   return rs.reduce((m, r) => Math.max(m, r.startTime ?? 0), 0);
 }
+
+/**
+ * Split an (already newest-first) run list into RECENT (≤7d) and OLDER (>7d) by an
+ * INJECTED reference time — the recency-fold input. Pure: delegates the boundary to
+ * isStale() (which mirrors the timeBucket cutoff), so a folder's fold matches its
+ * age-dimming. Order within each partition is preserved (so it stays newest-first).
+ */
+export function partitionByRecency(
+  runs: RunSummary[],
+  referenceNow: number,
+): { recent: RunSummary[]; older: RunSummary[] } {
+  const recent: RunSummary[] = [];
+  const older: RunSummary[] = [];
+  for (const r of runs) {
+    if (isStale(r.startTime, referenceNow)) older.push(r);
+    else recent.push(r);
+  }
+  return { recent, older };
+}
+
+/** How many recent runs a folder shows before the rest fold under a "+N older" toggle. */
+const RECENT_CAP = 5;
 
 /**
  * The group-by LENS reducer: re-buckets the SAME finished runs into different TreeNode[]
@@ -222,10 +245,22 @@ export const Rail = memo(function Rail(props: RailProps) {
     writeGroupBy(g);
   }, []);
 
-  // --- split + group (memoized; order keyed on immutable startTime so the 2.5s live poll
-  //     never reshuffles the tree) -------------------------------------------------------
+  // The explorer FILTER lens — an ephemeral substring query over workflow name + status.
+  // Unlike groupBy this is exploratory (not a habit), so it is NOT persisted: it resets on
+  // reload. It composes with — never replaces — the group-by lens.
+  const [filterQuery, setFilterQuery] = useState('');
+
+  // ONE reference time per render cycle (passed down to the age-dim + recency-fold children),
+  // so the memoized RunRow / WorkflowTreeNode don't churn on a fresh Date.now() per render.
+  const referenceNow = Date.now();
+
+  // --- split + group + filter (memoized; order keyed on immutable startTime so the 2.5s live
+  //     poll never reshuffles the tree) ---------------------------------------------------
   const liveRuns = useMemo(() => runsNewestFirst(runs.filter((r) => r.status === 'running')), [runs]);
-  const tree = useMemo<TreeNode[]>(() => groupRuns(runs, workflows, groupBy), [runs, workflows, groupBy]);
+  const grouped = useMemo<TreeNode[]>(() => groupRuns(runs, workflows, groupBy), [runs, workflows, groupBy]);
+  // The filter runs AFTER grouping so it composes orthogonally with the lens; live runs are
+  // NEVER filtered (they're the ACTIVITY stream — always visible in the pinned LiveGroup).
+  const tree = useMemo<TreeNode[]>(() => filterTree(grouped, filterQuery), [grouped, filterQuery]);
   // Time/Status lenses bucket runs from many workflows, so the run row must re-show the workflow
   // name (it's no longer implied by the parent folder). The Workflow lens leaves it off (nested).
   const showWorkflowName = groupBy !== 'workflow';
@@ -315,13 +350,24 @@ export const Rail = memo(function Rail(props: RailProps) {
 
             <GroupByControl groupBy={groupBy} onSelect={setGroupBy} />
 
-            {anyLive ? <LiveGroup runs={liveRuns} selectedRunId={selectedRunId} onSelectRun={onSelectRun} /> : null}
+            <FilterInput query={filterQuery} onChange={setFilterQuery} />
+
+            {anyLive ? (
+              <LiveGroup
+                runs={liveRuns}
+                selectedRunId={selectedRunId}
+                onSelectRun={onSelectRun}
+                referenceNow={referenceNow}
+              />
+            ) : null}
 
             <div className="rail-tree" role="tree">
               {runsLoading && tree.length === 0 ? (
                 <div className="rail-muted">loading…</div>
               ) : tree.length === 0 ? (
-                <div className="rail-muted">no workflows or runs for this project</div>
+                <div className="rail-muted">
+                  {filterQuery.trim() !== '' ? 'no runs match this filter' : 'no workflows or runs for this project'}
+                </div>
               ) : (
                 tree.map((node) => (
                   <WorkflowTreeNode
@@ -334,6 +380,7 @@ export const Rail = memo(function Rail(props: RailProps) {
                     onSelectWorkflow={onSelectWorkflow}
                     onSelectRun={onSelectRun}
                     showWorkflowName={showWorkflowName}
+                    referenceNow={referenceNow}
                   />
                 ))
               )}
@@ -437,16 +484,61 @@ const GroupByControl = memo(function GroupByControl({
   );
 });
 
+/** The explorer FILTER lens: a calm substring input (workflow name + status) below the
+ *  group-by control. Controlled by the Rail; composes with the lens. A clear (×) button
+ *  appears only when there's a query. Reuses the rail's segmented border/background tokens. */
+const FilterInput = memo(function FilterInput({
+  query,
+  onChange,
+}: {
+  query: string;
+  onChange: (q: string) => void;
+}) {
+  return (
+    <div className="rail-filter">
+      <div className="rail-filter-box">
+        <span className="rail-filter-icon" aria-hidden="true">⌕</span>
+        <input
+          type="text"
+          className="rail-filter-input"
+          value={query}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="Filter by name, status…"
+          aria-label="filter runs by name or status"
+          spellCheck={false}
+          autoComplete="off"
+        />
+        {query !== '' ? (
+          <button
+            type="button"
+            className="rail-filter-clear"
+            onClick={() => onChange('')}
+            aria-label="clear filter"
+            title="Clear filter"
+          >
+            ×
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+});
+
 /** The pinned-top LIVE region: a group header (the ONE pulse) + static child rows. */
 const LiveGroup = memo(function LiveGroup({
   runs,
   selectedRunId,
   onSelectRun,
+  referenceNow,
 }: {
   runs: RunSummary[];
   selectedRunId: string | undefined;
   onSelectRun: (r: RunSummary) => void;
+  // Accepted for a consistent call shape with the finished-run rows; live runs are always
+  // "now" so they never read as stale — the prop is intentionally not used for dimming here.
+  referenceNow: number;
 }) {
+  void referenceNow;
   return (
     <div className="rail-live" role="group" aria-label="live runs">
       <div className="rail-live-head">
@@ -497,6 +589,7 @@ const WorkflowTreeNode = memo(function WorkflowTreeNode({
   onSelectWorkflow,
   onSelectRun,
   showWorkflowName,
+  referenceNow,
 }: {
   node: TreeNode;
   open: boolean;
@@ -506,6 +599,7 @@ const WorkflowTreeNode = memo(function WorkflowTreeNode({
   onSelectWorkflow: (w: WorkflowMeta) => void;
   onSelectRun: (r: RunSummary) => void;
   showWorkflowName: boolean;
+  referenceNow: number; // injected so age-dim + recency-fold are deterministic/testable
 }) {
   const hasChildren = node.runs.length > 0;
   const isBucket = node.kind === 'bucket'; // a Time/Status grouping header (label toggles)
@@ -514,6 +608,16 @@ const WorkflowTreeNode = memo(function WorkflowTreeNode({
   // bucket. Only a label with nothing to do at all (no Plan AND no children) stays disabled.
   const isAdHocWorkflow = node.workflow === null && !isBucket;
   const labelInert = isAdHocWorkflow && !hasChildren;
+
+  // RECENCY FOLD: show the most-recent RECENT_CAP runs; collapse the rest under a "+N older"
+  // toggle so a deep folder doesn't bury recent activity. "older" = the stale (>7d) runs PLUS
+  // any recent runs past the cap (a folder with 20 today-runs still folds the tail). Fold state
+  // is local per node — switching lenses re-mounts the node, so it starts collapsed (acceptable:
+  // the fold is a per-folder convenience, not a persisted preference).
+  const [showOlder, setShowOlder] = useState(false);
+  const { recent, older } = partitionByRecency(node.runs, referenceNow);
+  const visibleRecent = recent.slice(0, RECENT_CAP);
+  const foldedOlder = [...recent.slice(RECENT_CAP), ...older];
   return (
     <div className="rail-treenode" role="treeitem" aria-expanded={open}>
       <div className={`rail-tree-head${isSelectedWorkflow ? ' is-active' : ''}`}>
@@ -540,15 +644,44 @@ const WorkflowTreeNode = memo(function WorkflowTreeNode({
       </div>
       {open && hasChildren ? (
         <ul className="rail-list rail-indent">
-          {node.runs.map((r) => (
+          {visibleRecent.map((r) => (
             <RunRow
               key={`${r.ref.sessionId}/${r.ref.runId}`}
               run={r}
               active={r.ref.runId === selectedRunId}
               onSelect={onSelectRun}
               showWorkflowName={showWorkflowName}
+              referenceNow={referenceNow}
             />
           ))}
+          {foldedOlder.length > 0 ? (
+            <li>
+              <button
+                type="button"
+                className="rail-fold-toggle"
+                onClick={() => setShowOlder((v) => !v)}
+                aria-expanded={showOlder}
+                title={showOlder ? 'Hide older runs' : 'Show older runs'}
+              >
+                <span className="rail-fold-icon" aria-hidden="true">{showOlder ? '▾' : '▸'}</span>
+                <span className="rail-fold-label">
+                  {showOlder ? 'fewer' : `+${foldedOlder.length} older`}
+                </span>
+              </button>
+            </li>
+          ) : null}
+          {showOlder
+            ? foldedOlder.map((r) => (
+                <RunRow
+                  key={`${r.ref.sessionId}/${r.ref.runId}`}
+                  run={r}
+                  active={r.ref.runId === selectedRunId}
+                  onSelect={onSelectRun}
+                  showWorkflowName={showWorkflowName}
+                  referenceNow={referenceNow}
+                />
+              ))
+            : null}
         </ul>
       ) : null}
     </div>
@@ -563,17 +696,23 @@ const RunRow = memo(function RunRow({
   active,
   onSelect,
   showWorkflowName = false,
+  referenceNow,
 }: {
   run: RunSummary;
   active: boolean;
   onSelect: (r: RunSummary) => void;
   showWorkflowName?: boolean;
+  // Injected reference time → AGE-DIMMING: a run >7d old gets `.is-stale` (reduced opacity)
+  // so recent work pops. Deterministic (never reads the wall clock here); the Rail passes one
+  // referenceNow per render cycle so this memoized row doesn't churn on the 2.5s live poll.
+  referenceNow: number;
 }) {
+  const stale = isStale(r.startTime, referenceNow);
   return (
     <li>
       <button
         type="button"
-        className={`rail-row rail-run${active ? ' is-active' : ''}`}
+        className={`rail-row rail-run${active ? ' is-active' : ''}${stale ? ' is-stale' : ''}`}
         onClick={() => onSelect(r)}
         aria-pressed={active}
         title={`${r.workflowName} · ${r.status}`}

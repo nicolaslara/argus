@@ -50,6 +50,23 @@ export function formatRelativeTime(startMs: number | null, now: number = Date.no
 }
 
 /**
+ * Predicate: is a run STALE (older than the 7-day retention threshold)?
+ *
+ * Deterministic + testable: the reference time is INJECTED (the helper never reads the
+ * wall clock itself), so unit tests pin "now" and the rail injects Date.now() once per
+ * render. Mirrors the timeBucket() boundary in Rail.tsx — `startMs < startOfToday - 7d`
+ * is exactly the "older than This week" cutoff, so age-dimming lines up with that lens.
+ * A null/invalid startTime is treated as stale (it sorts/buckets as "Older" too).
+ */
+export function isStale(startMs: number | null, referenceNow: number): boolean {
+  if (startMs == null || !Number.isFinite(startMs)) return true;
+  const dayMs = 86_400_000;
+  const now = new Date(referenceNow);
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  return startMs < startOfToday - 7 * dayMs;
+}
+
+/**
  * A status glyph for a run. A single visual token (text, never an icon font) that
  * carries run state by SHAPE; color is applied via a `status-<status>` class so
  * saturation stays reserved for state semantics (design system, boundaries.md §7).

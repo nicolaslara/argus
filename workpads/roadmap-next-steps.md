@@ -122,10 +122,14 @@ the transcript-reader (the design-plan "LATER" stack) all shipped.
   unbuilt nav item (the whole `navigation-and-views-plan.md` is built around it); `Rail.tsx`
   has only the Workflow tree today. Reducers over the same rows; Workflow branch = current
   tree verbatim (zero regression).
-- **Staleness / retention** (recency-windowed default + age-dimming + `+K older` fold) · M ·
-  the "old runs make the tree messy" problem (sidebar §2d) — argus is an activity tool, not a
-  database browser. Pure Rail; applies before grouping.
-- **Filter / search box** (name · status · age) · M · the real escape hatch at hundreds of runs.
+- **Staleness / retention** — DONE 2026-06-06. `isStale(start, refNow)` (injected ref time,
+  mirrors the timeBucket 7d cutoff) drives age-dimming (`.is-stale` → reduced opacity) on every
+  RunRow, and `partitionByRecency` + `RECENT_CAP=5` folds a deep folder's tail under a calm
+  "+N older" toggle (validated: argus-implement's 13 runs show 5 + "+8 older"). Pure + tested.
+- **Filter / search box** — DONE 2026-06-06. A calm rail filter input (ephemeral, not persisted)
+  with pure `filterRuns`/`filterTree` (substring over workflow name + status) that runs AFTER
+  grouping so it composes with all three lenses; live runs are never filtered. Validated: "failed"
+  narrows ~33 folders → the 3 with failed runs. Age token deferred (name+status covers the need).
 - **Pinned / favorite workflows** · S · keep active work on top regardless of recency.
 
 ### Live & inspection
