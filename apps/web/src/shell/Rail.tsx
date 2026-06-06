@@ -276,9 +276,11 @@ export const Rail = memo(function Rail(props: RailProps) {
   // reload. It composes with — never replaces — the group-by lens.
   const [filterQuery, setFilterQuery] = useState('');
 
-  // ONE reference time per render cycle (passed down to the age-dim + recency-fold children),
-  // so the memoized RunRow / WorkflowTreeNode don't churn on a fresh Date.now() per render.
-  const referenceNow = Date.now();
+  // ARCH-4 (perf): ONE reference time pinned at mount (NOT a fresh Date.now() per render — that
+  // defeated the very memo it feeds: a new value each render re-rendered every memoized RunRow /
+  // WorkflowTreeNode on every 2.5s poll). Staleness is day-granular, so a session-lifetime constant
+  // is correct + stable; the memoized children only re-render on a real prop change now.
+  const referenceNow = useMemo(() => Date.now(), []);
 
   // --- split + group + filter (memoized; order keyed on immutable startTime so the 2.5s live
   //     poll never reshuffles the tree) ---------------------------------------------------

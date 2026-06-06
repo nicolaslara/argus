@@ -131,9 +131,13 @@ adapter format-isolation, web↔contract-only all hold). Prioritized remaining w
   SSE connection state). Docs-only; gates stayed green; reviewed for no overstatement. FOLLOW-UP:
   the README `docs/screenshots/*` predate the table/pinned/filter/coverage features — a re-capture
   would freshen them (ARCH-8, S).
-- [ ] **ARCH-4 — Perf memo-stability (high/S).** Rail re-renders on every 2.5s poll (referenceNow
-  = wall-clock per render defeats memo); useLiveAgentFill builds a new array per render; the PX
-  plan-explanations poll isn't gated to the visible Plan view. Stabilize + gate.
+- [x] **ARCH-4 — Perf memo-stability. DONE 2026-06-06.** Rail's `referenceNow` is now pinned at
+  mount (`useMemo(()=>Date.now(),[])`) instead of a fresh `Date.now()` per render — it was
+  re-rendering every memoized RunRow/WorkflowTreeNode on every 2.5s poll. `useLiveAgentFill` now
+  keys its result memo on a PRIMITIVE content signature instead of `queries.map(q=>q.data)` (a
+  fresh array each render that rebuilt the map every render). Behavior-neutral (420 tests
+  unchanged). NOTE: the PX plan-explanations poll was ALREADY gated (`enabled: view==='plan' &&…`)
+  — no fix needed there.
 - [ ] **ARCH-5 — Test gaps (high/M).** Extract the web SSE connection state machine to a pure
   tested helper (browser-only today); a server log-scrubbing test (no `$bunfs`/`/Users/` leaks);
   widen path-traversal tests; test App.tsx pure helpers (deriveFailureInfo/pickFailurePoint/

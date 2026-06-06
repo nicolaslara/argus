@@ -129,6 +129,19 @@ export function useLiveAgentFill(
     })),
   });
 
+  // ARCH-4 (perf): a PRIMITIVE content signature of the resolved activity. The memo then rebuilds
+  // ONLY when a fetch actually resolves OR a live metric changes (tokens grow, a tool runs) — NOT
+  // every render. `queries.map((q) => q.data)` was a FRESH array each render, so the dep always
+  // differed and the memo rebuilt every render (defeating it). A string is stable when unchanged.
+  const fillSig = queries
+    .map((q, i) => {
+      const d = q.data;
+      if (!d) return `${targetIds[i]}:`;
+      const tok = d.tokens ? d.tokens.input + d.tokens.output + d.tokens.cacheRead : '';
+      return `${targetIds[i]}:${d.durationMs ?? ''}:${tok}:${d.toolCalls ?? ''}:${d.label ?? ''}`;
+    })
+    .join('|');
+
   return useMemo(() => {
     if (!isLive || targetIds.length === 0) return EMPTY_FILL;
     const map = new Map<string, LiveFill>();
@@ -138,9 +151,7 @@ export function useLiveAgentFill(
       map.set(id, toLiveFill(q.data));
     });
     return map.size > 0 ? map : EMPTY_FILL;
-    // queries is a fresh array each render; key the memo on the data identities so it only
-    // rebuilds when a fetch actually resolves (not on every render). The deps array is
-    // intentionally the data identities (not `queries`) — exhaustive-deps is not enforced
-    // by this project's eslint config, so no disable directive is needed.
-  }, [isLive, targetIds, queries.map((q) => q.data)]);
+    // Keyed on the primitive `fillSig` (not the fresh `queries` array) so it only rebuilds on a
+    // real data change; exhaustive-deps is not enforced here, so no disable directive is needed.
+  }, [isLive, targetIds, fillSig]);
 }
