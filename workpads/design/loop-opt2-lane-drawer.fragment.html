@@ -1,0 +1,388 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>argus · opt2-lane-drawer</title><style>
+:root{--bg:#0d1117;--panel:#11161c;--panel-2:#0b0f14;--fg:#e6edf3;--dim:#8b949e;--faint:#6e7681;--line:#21262d;--line-2:#30363d;--accent:#5b9dff;--green:#3fb950;--amber:#d29922;--red:#f85149;--purple:#a371f7;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,system-ui,sans-serif}
+*{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans)}body{padding:40px 40px 80px;line-height:1.5}
+.page-head{max-width:1080px;margin:0 auto 28px}.page-head h1{font-size:26px;margin:0 0 6px}.page-head .sub{color:var(--dim);font-size:15px}
+.gallery{display:grid;grid-template-columns:1fr;gap:24px;max-width:1180px;margin:0 auto}
+.card{background:var(--panel-2);border:1px solid var(--line);border-radius:12px;padding:18px 20px 22px}
+.card h3{margin:0 0 2px;font-size:16px}.card .cap{margin:4px 0 16px;font-size:13px;color:var(--dim)}.card .cap em{color:var(--fg);font-style:normal;font-weight:600}
+.canvas{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;font-family:var(--mono);font-size:12px;overflow:auto}
+.g-done{color:var(--green)}.g-fail{color:var(--red)}.g-run{color:var(--accent)}
+.reco{max-width:1080px;margin:32px auto 0;background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:10px;padding:18px 22px}.reco h2{margin:0 0 8px;font-size:17px}.reco p{margin:0 0 10px;font-size:14px}.reco p:last-child{margin:0}.reco b{color:var(--accent)}
+</style><style>body{padding:28px}</style></head><body><div class="gallery"><section class="card" data-view="opt2-lane-drawer">
+  <h3>Lane-drawer inside the loop</h3>
+  <p class="cap">
+    <em>Option 2 — the ×4 critique fan expands as full cards right inside the loop box, exactly like a flat fan does in a phase lane.</em>
+    The dashed-amber LOOP compound is the canvas. Each round's body is a real sequence: a <strong>×4 critique fan-out</strong> → a <strong>decision diamond</strong> → a <strong>revise</strong> step. Selecting round 2 expands its four critics <em>in place</em> as solid cards in a 2×2 grid — each with label · status dot · dur · a one-line result preview — then the decision and revise cards follow beneath. The most visually consistent option: a loop fan expands the same way a phase fan does, no side panel needed. The cost is vertical: the loop box grows tall and the dashed-amber <strong>back-edge</strong> must re-route down the left gutter and around the grown drawer to rejoin the round start.
+  </p>
+
+  <style>
+    [data-view="opt2-lane-drawer"]{
+      --bg:#0d1117;--panel:#11161c;--panel-2:#0b0f14;--fg:#e6edf3;--dim:#8b949e;--faint:#6e7681;
+      --line:#21262d;--line-2:#30363d;--accent:#5b9dff;--green:#3fb950;--amber:#d29922;--red:#f85149;
+      --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    }
+    [data-view="opt2-lane-drawer"] .canvas{ background:var(--bg); padding:18px 20px 22px; overflow:auto; font-family:var(--mono); }
+
+    /* phase chip the loop hangs off (context) */
+    [data-view="opt2-lane-drawer"] .ld-phase{
+      display:flex; align-items:center; gap:9px; font-size:10px; letter-spacing:.05em; color:var(--dim);
+      margin:0 0 4px 2px;
+    }
+    [data-view="opt2-lane-drawer"] .ld-phase .pc{
+      display:inline-flex; align-items:center; gap:6px; padding:3px 9px; border:1px solid var(--line-2);
+      border-radius:6px; background:var(--panel); color:var(--fg);
+    }
+    [data-view="opt2-lane-drawer"] .ld-phase .pc.done{ border-color:color-mix(in srgb, var(--green) 34%, var(--line-2)); }
+    [data-view="opt2-lane-drawer"] .ld-phase .seam{ color:#3a4049; }
+
+    /* the LOOP compound: dashed amber, the round drawer lives inside */
+    [data-view="opt2-lane-drawer"] .ld-loop{
+      position:relative; border:1.5px dashed color-mix(in srgb, var(--amber) 62%, var(--line-2));
+      border-radius:12px; padding:14px 16px 16px 50px;
+      background:linear-gradient(180deg, color-mix(in srgb, var(--amber) 5%, transparent), transparent 120px), color-mix(in srgb, var(--panel-2) 60%, transparent);
+    }
+    /* the loop header ribbon */
+    [data-view="opt2-lane-drawer"] .ld-loophdr{
+      display:flex; align-items:center; gap:10px; margin:0 0 13px -34px;
+    }
+    [data-view="opt2-lane-drawer"] .ld-loophdr .lk{
+      display:inline-flex; align-items:center; gap:7px; font-size:10px; letter-spacing:.12em;
+      color:var(--amber); padding:3px 10px; border:1px solid color-mix(in srgb, var(--amber) 50%, var(--line-2));
+      border-radius:6px; background:color-mix(in srgb, var(--amber) 9%, var(--bg));
+    }
+    [data-view="opt2-lane-drawer"] .ld-loophdr .lcond{ font-size:10px; color:var(--dim); }
+    [data-view="opt2-lane-drawer"] .ld-loophdr .lcond b{ color:var(--fg); font-weight:600; }
+    [data-view="opt2-lane-drawer"] .ld-loophdr .lprog{
+      margin-left:auto; display:inline-flex; align-items:center; gap:5px; font-size:9.5px; color:var(--faint);
+    }
+    [data-view="opt2-lane-drawer"] .ld-loophdr .rdot{ width:7px; height:7px; border-radius:50%; display:inline-block; }
+    [data-view="opt2-lane-drawer"] .ld-loophdr .rdot.d{ background:var(--green); }
+    [data-view="opt2-lane-drawer"] .ld-loophdr .rdot.cur{ background:var(--accent); box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+    [data-view="opt2-lane-drawer"] .ld-loophdr .rdot.pend{ background:transparent; border:1px solid var(--line-2); }
+
+    /* the dashed-amber BACK-EDGE: runs down the left gutter, around the grown drawer, back to the round head */
+    [data-view="opt2-lane-drawer"] .ld-backedge{
+      position:absolute; left:18px; top:54px; bottom:78px; width:20px; pointer-events:none;
+    }
+    [data-view="opt2-lane-drawer"] .ld-backedge .be-line{
+      position:absolute; left:9px; top:0; bottom:0; width:0;
+      border-left:1.5px dashed color-mix(in srgb, var(--amber) 58%, var(--line-2));
+    }
+    /* the elbow at the bottom that turns the edge back INTO the round head */
+    [data-view="opt2-lane-drawer"] .ld-backedge .be-foot{
+      position:absolute; left:9px; bottom:0; width:24px; height:0;
+      border-top:1.5px dashed color-mix(in srgb, var(--amber) 58%, var(--line-2));
+    }
+    [data-view="opt2-lane-drawer"] .ld-backedge .be-head{
+      position:absolute; left:8px; top:-1px; font-size:11px; color:var(--amber); line-height:1; transform:translateY(-2px);
+    }
+    [data-view="opt2-lane-drawer"] .ld-backedge .be-lab{
+      position:absolute; left:-2px; top:50%; transform:translateY(-50%) rotate(180deg); writing-mode:vertical-rl;
+      font-size:8.5px; letter-spacing:.14em; color:color-mix(in srgb, var(--amber) 80%, var(--fg)); white-space:nowrap;
+    }
+
+    /* the selected ROUND drawer inside the loop */
+    [data-view="opt2-lane-drawer"] .ld-round{ position:relative; }
+    [data-view="opt2-lane-drawer"] .ld-roundhdr{
+      display:flex; align-items:center; gap:9px; font-size:9.5px; letter-spacing:.07em; color:var(--faint);
+      margin:0 0 10px 1px;
+    }
+    [data-view="opt2-lane-drawer"] .ld-roundhdr .rnum{
+      color:var(--accent); border:1px solid color-mix(in srgb, var(--accent) 36%, var(--line-2));
+      border-radius:5px; padding:2px 8px; background:color-mix(in srgb, var(--accent) 8%, transparent); letter-spacing:.06em;
+    }
+    [data-view="opt2-lane-drawer"] .ld-roundhdr .rtabs{ margin-left:auto; display:inline-flex; gap:5px; }
+    [data-view="opt2-lane-drawer"] .ld-roundhdr .rtab{
+      font-size:9px; color:var(--faint); border:1px solid var(--line-2); border-radius:5px; padding:2px 8px;
+      background:var(--panel-2); cursor:pointer;
+    }
+    [data-view="opt2-lane-drawer"] .ld-roundhdr .rtab.on{ color:var(--accent); border-color:color-mix(in srgb, var(--accent) 40%, var(--line-2)); background:color-mix(in srgb, var(--accent) 10%, transparent); }
+    [data-view="opt2-lane-drawer"] .ld-roundhdr .rtab .x{ color:var(--green); }
+
+    /* the ×4 fan sub-header */
+    [data-view="opt2-lane-drawer"] .ld-fanhdr{
+      display:flex; align-items:center; gap:8px; font-size:9px; letter-spacing:.1em; color:var(--faint);
+      margin:0 0 9px 1px;
+    }
+    [data-view="opt2-lane-drawer"] .ld-fanhdr .fx{ color:var(--amber); }
+    [data-view="opt2-lane-drawer"] .ld-fanhdr .frest{ margin-left:auto; color:var(--accent); cursor:pointer; }
+
+    /* 2x2 grid of expanded critic cards */
+    [data-view="opt2-lane-drawer"] .ld-grid{ display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:9px; }
+    [data-view="opt2-lane-drawer"] .ld-card{
+      position:relative; border:1px solid var(--line); border-radius:8px; background:var(--bg);
+      padding:10px 11px 11px; box-shadow:0 1px 2px rgba(0,0,0,.35); min-width:0;
+    }
+    [data-view="opt2-lane-drawer"] .ld-card.done{ border-color:color-mix(in srgb, var(--green) 26%, var(--line)); }
+    [data-view="opt2-lane-drawer"] .ld-card.flag{ border-color:color-mix(in srgb, var(--amber) 40%, var(--line)); background:color-mix(in srgb, var(--amber) 5%, var(--bg)); }
+
+    [data-view="opt2-lane-drawer"] .ld-top{ display:flex; align-items:center; gap:8px; }
+    [data-view="opt2-lane-drawer"] .ld-top .cdot{ font-size:11px; line-height:1; flex:none; }
+    [data-view="opt2-lane-drawer"] .ld-top .cname{ font-size:11.5px; color:var(--fg); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+    [data-view="opt2-lane-drawer"] .ld-top .open{
+      margin-left:auto; flex:none; font-size:9px; color:var(--accent); cursor:pointer; user-select:none;
+      border:1px solid color-mix(in srgb, var(--accent) 28%, var(--line-2)); border-radius:5px; padding:2px 7px;
+      background:color-mix(in srgb, var(--accent) 7%, transparent);
+    }
+    [data-view="opt2-lane-drawer"] .ld-meta{ display:flex; flex-wrap:wrap; gap:3px 11px; font-size:9.5px; color:var(--dim); margin-top:8px; font-variant-numeric:tabular-nums; }
+    [data-view="opt2-lane-drawer"] .ld-meta .mk{ color:var(--faint); }
+    [data-view="opt2-lane-drawer"] .ld-meta .nflag{ color:var(--amber); }
+    [data-view="opt2-lane-drawer"] .ld-meta .nclean{ color:var(--green); }
+
+    [data-view="opt2-lane-drawer"] .ld-prev{
+      margin-top:9px; font-size:10px; line-height:1.45; color:var(--dim);
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+      border-top:1px solid var(--line); padding-top:8px;
+    }
+    [data-view="opt2-lane-drawer"] .ld-prev .pk{ color:var(--faint); margin-right:6px; }
+    [data-view="opt2-lane-drawer"] .ld-card.flag .ld-prev{ white-space:normal; color:#e9d8a6; }
+
+    /* connector from fan-in down to the decision */
+    [data-view="opt2-lane-drawer"] .ld-seam{
+      display:flex; align-items:center; gap:8px; margin:11px 0 11px 1px; font-size:9px; color:var(--faint);
+    }
+    [data-view="opt2-lane-drawer"] .ld-seam .wire{ height:1px; background:var(--line-2); flex:1; }
+    [data-view="opt2-lane-drawer"] .ld-seam .join{ color:var(--amber); }
+
+    /* the DECISION diamond row */
+    [data-view="opt2-lane-drawer"] .ld-decision{
+      display:flex; align-items:center; gap:13px; padding:2px 0 2px 2px;
+    }
+    [data-view="opt2-lane-drawer"] .ld-diamond{
+      position:relative; width:30px; height:30px; flex:none; border:1.5px solid color-mix(in srgb, var(--amber) 70%, var(--accent));
+      transform:rotate(45deg); border-radius:4px;
+      background:linear-gradient(135deg, color-mix(in srgb, var(--amber) 12%, transparent), transparent 70%), var(--panel);
+    }
+    [data-view="opt2-lane-drawer"] .ld-diamond::after{
+      content:"?"; position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+      transform:rotate(-45deg); font-size:13px; color:var(--amber); font-weight:600;
+    }
+    [data-view="opt2-lane-drawer"] .ld-dtext{ min-width:0; }
+    [data-view="opt2-lane-drawer"] .ld-dtext .dq{ font-size:11px; color:var(--fg); }
+    [data-view="opt2-lane-drawer"] .ld-dtext .dq code{ color:var(--accent); background:color-mix(in srgb, var(--accent) 10%, transparent); padding:0 4px; border-radius:4px; }
+    [data-view="opt2-lane-drawer"] .ld-dtext .dbranch{ font-size:9.5px; color:var(--dim); margin-top:5px; display:flex; gap:14px; flex-wrap:wrap; }
+    [data-view="opt2-lane-drawer"] .ld-dtext .dbranch .bt{ color:var(--faint); }
+    [data-view="opt2-lane-drawer"] .ld-dtext .dbranch .taken{ color:var(--amber); }
+    [data-view="opt2-lane-drawer"] .ld-dtext .dbranch .exit{ color:var(--green); }
+
+    /* the false-branch arrow into revise */
+    [data-view="opt2-lane-drawer"] .ld-branchwire{
+      display:flex; align-items:center; gap:9px; margin:9px 0 9px 14px; font-size:9px; color:var(--amber);
+    }
+    [data-view="opt2-lane-drawer"] .ld-branchwire .vline{ width:0; height:14px; border-left:1.5px dashed color-mix(in srgb, var(--amber) 55%, var(--line-2)); margin-left:1px; }
+    [data-view="opt2-lane-drawer"] .ld-branchwire .blab{ letter-spacing:.06em; }
+
+    /* the REVISE card */
+    [data-view="opt2-lane-drawer"] .ld-revise{
+      border:1px solid color-mix(in srgb, var(--green) 26%, var(--line)); border-radius:8px; background:var(--bg);
+      padding:10px 12px 11px; box-shadow:0 1px 2px rgba(0,0,0,.35); max-width:560px;
+    }
+    [data-view="opt2-lane-drawer"] .ld-revise .rv-top{ display:flex; align-items:center; gap:8px; }
+    [data-view="opt2-lane-drawer"] .ld-revise .rv-top .rname{ font-size:11.5px; color:var(--fg); }
+    [data-view="opt2-lane-drawer"] .ld-revise .rv-top .rtag{ margin-left:auto; font-size:9px; color:var(--amber); border:1px solid color-mix(in srgb, var(--amber) 36%, var(--line-2)); border-radius:5px; padding:2px 7px; }
+    [data-view="opt2-lane-drawer"] .ld-revise .rv-meta{ display:flex; gap:11px; font-size:9.5px; color:var(--dim); margin-top:7px; }
+    [data-view="opt2-lane-drawer"] .ld-revise .rv-meta .mk{ color:var(--faint); }
+    [data-view="opt2-lane-drawer"] .ld-revise .rv-prev{ margin-top:8px; padding-top:8px; border-top:1px solid var(--line); font-size:10px; color:var(--dim); line-height:1.45; }
+    [data-view="opt2-lane-drawer"] .ld-revise .rv-prev .pk{ color:var(--faint); margin-right:6px; }
+
+    /* footer note: where the back-edge rejoins */
+    [data-view="opt2-lane-drawer"] .ld-loopback{
+      display:flex; align-items:center; gap:8px; margin-top:14px; padding-top:11px;
+      border-top:1px dashed color-mix(in srgb, var(--amber) 30%, var(--line-2));
+      font-size:9.5px; color:var(--amber);
+    }
+    [data-view="opt2-lane-drawer"] .ld-loopback .arc{ font-size:13px; }
+    [data-view="opt2-lane-drawer"] .ld-loopback span.note{ color:var(--dim); }
+
+    /* phase chip after the loop (context) */
+    [data-view="opt2-lane-drawer"] .ld-after{
+      display:flex; align-items:center; gap:9px; font-size:10px; color:var(--dim); margin:6px 0 0 2px;
+    }
+    [data-view="opt2-lane-drawer"] .ld-after .pc{
+      display:inline-flex; align-items:center; gap:6px; padding:3px 9px; border:1px dashed var(--line-2);
+      border-radius:6px; background:transparent; color:var(--faint);
+    }
+    [data-view="opt2-lane-drawer"] .ld-after .seam{ color:#3a4049; }
+
+    [data-view="opt2-lane-drawer"] .g-done{ color:var(--green); }
+    [data-view="opt2-lane-drawer"] .g-fail{ color:var(--red); }
+    [data-view="opt2-lane-drawer"] .g-run{ color:var(--accent); }
+  </style>
+
+  <div class="canvas">
+
+    <!-- context: the phase that flows into the loop -->
+    <div class="ld-phase">
+      <span class="pc done"><span class="g-done">●</span> LOAD · 1 agent</span>
+      <span class="seam">───▸</span>
+      <span>enters the critique loop</span>
+    </div>
+
+    <!-- THE LOOP COMPOUND (dashed amber). its body is the selected round, expanded. -->
+    <div class="ld-loop">
+
+      <!-- loop header ribbon -->
+      <div class="ld-loophdr">
+        <span class="lk">↺ LOOP</span>
+        <span class="lcond">until <b>material.length === 0</b> · max <b>3</b> rounds</span>
+        <span class="lprog">
+          <span class="rdot d" title="round 1 · 8 findings"></span>
+          <span class="rdot cur" title="round 2 · selected"></span>
+          <span class="rdot pend" title="round 3"></span>
+          &nbsp;round 2 / up to 3
+        </span>
+      </div>
+
+      <!-- the dashed-amber BACK-EDGE down the left gutter, around the drawer, back to round head -->
+      <div class="ld-backedge">
+        <span class="be-head">▲</span>
+        <span class="be-line"></span>
+        <span class="be-foot"></span>
+        <span class="be-lab">↺ revise → re-run critique</span>
+      </div>
+
+      <!-- the selected round, expanded -->
+      <div class="ld-round">
+
+        <div class="ld-roundhdr">
+          <span class="rnum">ROUND 2</span>
+          <span>critique → decision → revise</span>
+          <span class="rtabs">
+            <span class="rtab">r1 <span class="x">✓8 fixed</span></span>
+            <span class="rtab on">r2 ◌</span>
+            <span class="rtab">r3 ·</span>
+          </span>
+        </div>
+
+        <!-- the ×4 critique fan, expanded as full cards (recursive drawer) -->
+        <div class="ld-fanhdr">
+          <span>┄ CRITIQUE · <span class="fx">×4 lenses</span> · parallel · expanded ┄</span>
+          <span class="frest">open ▸ any critic for its full findings</span>
+        </div>
+
+        <div class="ld-grid">
+
+          <!-- 1: red-team -->
+          <div class="ld-card flag">
+            <div class="ld-top">
+              <span class="cdot g-done">●</span>
+              <span class="cname">critique:red-team:r2</span>
+              <span class="open">open ▸</span>
+            </div>
+            <div class="ld-meta">
+              <span><span class="mk">done</span> opus-4-8</span>
+              <span><span class="mk">dur</span> 51s</span>
+              <span><span class="mk">tok</span> 9,204</span>
+              <span class="nflag">2 findings</span>
+            </div>
+            <div class="ld-prev"><span class="pk">▸</span> loop exit relies on critics self-reporting "clean"; a lazy lens could starve the gate and force early exit.</div>
+          </div>
+
+          <!-- 2: sequencing -->
+          <div class="ld-card done">
+            <div class="ld-top">
+              <span class="cdot g-done">●</span>
+              <span class="cname">critique:sequencing:r2</span>
+              <span class="open">open ▸</span>
+            </div>
+            <div class="ld-meta">
+              <span><span class="mk">done</span> opus-4-8</span>
+              <span><span class="mk">dur</span> 44s</span>
+              <span><span class="mk">tok</span> 7,881</span>
+              <span class="nclean">0 findings</span>
+            </div>
+            <div class="ld-prev"><span class="pk">▸</span> task ordering is sound; LOAD precedes critique and revise gates on the decision. No blockers.</div>
+          </div>
+
+          <!-- 3: modal-correctness -->
+          <div class="ld-card flag">
+            <div class="ld-top">
+              <span class="cdot g-done">●</span>
+              <span class="cname">critique:modal-correctness:r2</span>
+              <span class="open">open ▸</span>
+            </div>
+            <div class="ld-meta">
+              <span><span class="mk">done</span> opus-4-8</span>
+              <span><span class="mk">dur</span> 58s</span>
+              <span><span class="mk">tok</span> 10,442</span>
+              <span class="nflag">1 finding</span>
+            </div>
+            <div class="ld-prev"><span class="pk">▸</span> deploy/call path assumes a warm container; cold-start retry budget is unspecified in step 4.</div>
+          </div>
+
+          <!-- 4: rust-quality -->
+          <div class="ld-card done">
+            <div class="ld-top">
+              <span class="cdot g-done">●</span>
+              <span class="cname">critique:rust-quality:r2</span>
+              <span class="open">open ▸</span>
+            </div>
+            <div class="ld-meta">
+              <span><span class="mk">done</span> opus-4-8</span>
+              <span><span class="mk">dur</span> 47s</span>
+              <span><span class="mk">tok</span> 8,113</span>
+              <span class="nclean">0 findings</span>
+            </div>
+            <div class="ld-prev"><span class="pk">▸</span> error enums and the adapter trait boundary hold; no unwrap() on the read path. Clean.</div>
+          </div>
+
+        </div>
+
+        <!-- fan-in seam: 4 critics → aggregated material -->
+        <div class="ld-seam">
+          <span class="wire"></span>
+          <span class="join">└─ fan-in · material = 3 findings ─┘</span>
+          <span class="wire"></span>
+        </div>
+
+        <!-- the DECISION diamond -->
+        <div class="ld-decision">
+          <span class="ld-diamond"></span>
+          <div class="ld-dtext">
+            <div class="dq">DECISION · <code>material.length === 0?</code></div>
+            <div class="dbranch">
+              <span><span class="taken">✗ false</span> (3 findings) → revise &amp; loop back</span>
+              <span class="bt">·</span>
+              <span><span class="exit">✓ true</span> → exit loop → FINALIZE</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- false branch → revise -->
+        <div class="ld-branchwire">
+          <span class="vline"></span>
+          <span class="blab">false →</span>
+        </div>
+
+        <div class="ld-revise">
+          <div class="rv-top">
+            <span class="cdot g-done">●</span>
+            <span class="rname">revise:r2</span>
+            <span class="rtag">applies 3 fixes</span>
+          </div>
+          <div class="rv-meta">
+            <span><span class="mk">done</span> opus-4-8</span>
+            <span><span class="mk">dur</span> 1m12s</span>
+            <span><span class="mk">tok</span> 12,650</span>
+          </div>
+          <div class="rv-prev"><span class="pk">▸</span> folded the red-team gate-starvation fix + cold-start retry budget into the plan; re-runs critique as round 3.</div>
+        </div>
+
+        <!-- the loop-back footer, where the dashed back-edge rejoins the round head -->
+        <div class="ld-loopback">
+          <span class="arc">↺</span>
+          revise complete → back-edge re-enters CRITIQUE as round 3
+          <span class="note">&nbsp;(round 3 ran ×4 critics → 0 findings → exited)</span>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- context: what the loop exits into -->
+    <div class="ld-after">
+      <span class="seam">└──▸</span>
+      <span class="pc">◌ FINALIZE · 1 agent · pending until exit</span>
+    </div>
+
+  </div>
+</section></div></body></html>
