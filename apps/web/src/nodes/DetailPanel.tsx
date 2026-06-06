@@ -6,12 +6,13 @@
 // ALL text is rendered as React text nodes (never dangerouslySetInnerHTML): previews /
 // results / labels can echo the user's own run content (boundaries §4).
 
-import { memo, useMemo, useState } from 'react';
+import { memo, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { Node } from '@xyflow/react';
-import type { AgentActivity, AgentTimelineEntry } from '@argus/contract';
+import type { AgentActivity, AgentState, AgentTimelineEntry, LoopRoundInstance } from '@argus/contract';
 import { fetchAgentActivity, fetchAgentResult, fetchSubUi } from '../api.ts';
 import { GenerativePanel } from './GenerativePanel.tsx';
+import { STATE_COLOR } from './AgentCard.tsx';
 import { TranscriptReader } from './TranscriptReader.tsx';
 // transcript-reader: shared readable renderers / formatting (extracted so the full-read
 // overlay reuses the SAME helpers rather than duplicating them).
@@ -227,14 +228,102 @@ function ActivityBlock({ activity, loading }: { activity: AgentActivity | undefi
   );
 }
 
+/** A small filled/hollow status dot per instance state (reuses the shared STATE_COLOR hues). */
+function StateDot({ state }: { state: AgentState }) {
+  const color = STATE_COLOR[state] ?? STATE_COLOR.unknown;
+  // done = filled ●, error/interrupted = filled (red/amber), running = filled blue, others hollow.
+  const filled = state === 'done' || state === 'error' || state === 'interrupted' || state === 'running';
+  return (
+    <span
+      className="detail-round-dot"
+      title={state}
+      aria-label={state}
+      style={filled ? { background: color, borderColor: color } : { borderColor: color }}
+    />
+  );
+}
+
+/**
+ * The loop-body ROUND drill (run-view-merge-plan §5): a compact, round-labelled list of the
+ * loop body's bound instances. When a specific round was picked (the round-axis pill), only
+ * THAT round's instances show; otherwise the whole loop body's instances list, each row tagged
+ * with its derived round (the best-effort whole-body aggregate). Each row is CLICKABLE and
+ * drills into that instance's transcript/result/activity — reusing the panel's agent machinery
+ * (the loop body's subagents are reached HERE, never via a lane-drawer inside the loop).
+ */
+function RoundInstanceList({
+  roundBindings,
+  selectedRound,
+  pickedInstanceId,
+  onPick,
+}: {
+  roundBindings: Array<{ round: number; instances: LoopRoundInstance[] }>;
+  selectedRound: number | null;
+  pickedInstanceId: string | null;
+  onPick: (agentId: string) => void;
+}) {
+  const shown =
+    selectedRound != null ? roundBindings.filter((rb) => rb.round === selectedRound) : roundBindings;
+  const total = shown.reduce((n, rb) => n + rb.instances.length, 0);
+  if (total === 0) {
+    return (
+      <div className="detail-block">
+        <div className="detail-block-label">
+          {selectedRound != null ? `round r${selectedRound} — instances` : 'loop instances'}
+        </div>
+        <div className="detail-uncaptured">no bound instances for this round</div>
+      </div>
+    );
+  }
+  return (
+    <div className="detail-block">
+      <div className="detail-block-label">
+        {selectedRound != null ? `round r${selectedRound} — instances` : 'loop instances'}
+        <span className="detail-trunc">{total}</span>
+      </div>
+      {shown.map((rb) => (
+        <div key={rb.round} className="detail-round-group">
+          {/* When no round is picked we group by round; with a picked round the heading above
+              already names it, so a single group reads cleanly. */}
+          {selectedRound == null ? (
+            <div className="detail-round-heading">r{rb.round}</div>
+          ) : null}
+          <ul className="detail-round-list">
+            {rb.instances.map((inst) => (
+              <li key={inst.agentId}>
+                <button
+                  type="button"
+                  className={`detail-round-row${inst.agentId === pickedInstanceId ? ' is-active' : ''}`}
+                  onClick={() => onPick(inst.agentId)}
+                  title={`${inst.label} — ${inst.state}`}
+                >
+                  <StateDot state={inst.state} />
+                  <span className="detail-round-label">{inst.label}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export const DetailPanel = memo(function DetailPanel({
   node,
   runRef,
+  selectedRound = null,
   onClose,
 }: {
   node: Node | null;
   /** The current run's ref — lets an execution agent lazily fetch its FULL result (R1). */
   runRef?: { slug: string; sessionId: string; runId: string } | null;
+  /**
+   * Loop-body drill: when the selected node is a `planLoop` opened from a round-axis pill,
+   * the chosen round (1-based). The panel lists THAT round's bound instances (each a clickable
+   * drill into one agent); `null` for any non-loop selection (or a loop selected without a round).
+   */
+  selectedRound?: number | null;
   onClose: () => void;
 }) {
   // Hooks must run unconditionally (before the early return). Derive from a possibly-null node.
@@ -245,11 +334,35 @@ export const DetailPanel = memo(function DetailPanel({
   // (str(undefined)) and the panel stays inert for it (there is no single agent to open).
   const nodeType = node?.type ?? '';
   const isAgent = nodeType === 'agentCard' || nodeType === 'agentChip';
+  // Loop-body drill: a `planLoop` opened from a round pill carries `roundBindings` (per-round
+  // bound instances). Clicking an instance row picks ONE agent to inspect — held in local state
+  // so the SAME transcript/result/activity machinery (below) fires for that instance. Reset when
+  // the selected node OR round changes (a new node/round id keys this memo fresh).
+  const isLoop = nodeType === 'planLoop';
+  const roundBindings = Array.isArray(dMaybe.roundBindings)
+    ? (dMaybe.roundBindings as Array<{ round: number; agentIds: string[]; instances: LoopRoundInstance[] }>)
+    : null;
+  const [pickedInstanceId, setPickedInstanceId] = useState<string | null>(null);
+  // Clear the picked instance whenever the selection (node id or round) changes.
+  const selectionKey = `${node?.id ?? ''}::${selectedRound ?? ''}`;
+  const lastSelectionKey = useRef(selectionKey);
+  if (lastSelectionKey.current !== selectionKey) {
+    lastSelectionKey.current = selectionKey;
+    if (pickedInstanceId !== null) setPickedInstanceId(null);
+  }
   // A single-agent plan step has no separate instance card to click — drill into its ONE bound
   // agent's transcript activity straight from the plan node, so a failed single-agent step (e.g.
   // `implement`) surfaces its root-cause last-activity, not just static template detail.
   const boundIds = Array.isArray(dMaybe.bindAgentIds) ? (dMaybe.bindAgentIds as unknown[]) : [];
-  const agentId = isAgent ? str(dMaybe.agentId) : boundIds.length === 1 ? str(boundIds[0]) : null;
+  // A picked loop instance wins (the row the user clicked); else an exec instance's own id; else
+  // a single-agent plan step's one bound agent.
+  const agentId = pickedInstanceId
+    ? pickedInstanceId
+    : isAgent
+      ? str(dMaybe.agentId)
+      : boundIds.length === 1
+        ? str(boundIds[0])
+        : null;
   const resultQ = useQuery({
     queryKey: ['agent-result', runRef?.slug, runRef?.sessionId, runRef?.runId, agentId],
     queryFn: () => fetchAgentResult(runRef!, agentId!),
@@ -294,10 +407,18 @@ export const DetailPanel = memo(function DetailPanel({
   const cardLabel = str(d.label);
   const activityLabel = str(activity?.label);
   const labelIsBareId = !cardLabel || (!!agentId && cardLabel === agentId);
+  // A picked loop instance's run label (from roundBindings) — shown immediately as the title
+  // so a drilled-into round instance reads as the agent, not the loop, before activity loads.
+  const pickedInstanceLabel = pickedInstanceId
+    ? (roundBindings
+        ?.flatMap((rb) => rb.instances)
+        .find((inst) => inst.agentId === pickedInstanceId)?.label ?? null)
+    : null;
   // Title: prefer the fullest label we have. Plan agents carry the authored template in
   // `labelRaw` ("research:${r.key}") — richer than the static-prefix `title` the card splits
   // out; exec agents carry the concrete `label` ("research:modal-rs-surface") and no labelRaw.
   const title =
+    pickedInstanceLabel ??
     str(d.labelRaw) ??
     (labelIsBareId && activityLabel ? activityLabel : null) ??
     cardLabel ??
@@ -399,6 +520,19 @@ export const DetailPanel = memo(function DetailPanel({
           </>
         )}
       </div>
+
+      {/* Loop-body ROUND drill (run-view-merge-plan §5): a loop container opened from a
+          round-axis pill lists THAT round's bound instances (each clickable → drills into the
+          agent below). With no picked round it lists the whole loop body's instances, round-
+          tagged (the honest best-effort aggregate). The loop body's subagents are reached HERE. */}
+      {isLoop && roundBindings && roundBindings.length > 0 ? (
+        <RoundInstanceList
+          roundBindings={roundBindings}
+          selectedRound={selectedRound}
+          pickedInstanceId={pickedInstanceId}
+          onPick={setPickedInstanceId}
+        />
+      ) : null}
 
       {/* STEP 2: the agent PROMPT — the verbatim transcript task when we have it (richer than
           the card's capped preview), else the card-data preview. Sits above RESULT/ACTIVITY. */}

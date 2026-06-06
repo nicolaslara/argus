@@ -317,11 +317,21 @@ export function App() {
       return next;
     });
   }, []);
+  // Loop-body drill (run-view-merge-plan §5): a clickable round-axis pill selects the loop
+  // CONTAINER node + a specific ROUND; the DetailPanel then surfaces that round's bound
+  // instances (each a clickable drill into one agent's transcript). The loop body's subagents
+  // are reached HERE — not via a lane-drawer inside the loop. `null` = no round scope.
+  const [selectedRound, setSelectedRound] = useState<number | null>(null);
+  const selectRound = useCallback((loopNodeId: string, round: number) => {
+    setSelectedNodeId(loopNodeId);
+    setSelectedRound(round);
+    setOverviewOpen(false); // the loop's round detail takes precedence over the run overview
+  }, []);
   // Stable provider value (new only when the expanded set changes) so PlanAgentNode carets
-  // read a fresh `expanded` but a stable `toggle`.
+  // read a fresh `expanded` but a stable `toggle` / `selectRound`.
   const expandContextValue = useMemo(
-    () => ({ expanded: expandedNodeIds, toggle: toggleExpanded }),
-    [expandedNodeIds, toggleExpanded],
+    () => ({ expanded: expandedNodeIds, toggle: toggleExpanded, selectRound }),
+    [expandedNodeIds, toggleExpanded, selectRound],
   );
 
   const projectsQ = useQuery({ queryKey: ['projects'], queryFn: fetchProjects });
@@ -479,6 +489,7 @@ export function App() {
     // the overlay for the new run is ready, below).
     if (seededRunKey.current !== runIdentityKey) {
       setExpandedNodeIds(new Set());
+      setSelectedRound(null); // a loop round scope never carries across runs
       seededRunKey.current = null;
     }
     if (runIdentityKey == null || !overlay) return; // wait until the overlay is built
@@ -793,10 +804,12 @@ export function App() {
         elementsSelectable={false}
         onNodeClick={(_, n) => {
           setSelectedNodeId(n.id);
+          setSelectedRound(null); // a plain node click clears any loop round-axis scope
           setOverviewOpen(false); // node detail takes precedence over the run overview
         }}
         onPaneClick={() => {
           setSelectedNodeId(null);
+          setSelectedRound(null);
           setOverviewOpen(false);
         }}
       >
@@ -1019,7 +1032,11 @@ export function App() {
       <DetailPanel
         node={selectedNode}
         runRef={summary ? { slug: summary.ref.slug, sessionId: summary.ref.sessionId, runId: summary.ref.runId } : null}
-        onClose={() => setSelectedNodeId(null)}
+        selectedRound={selectedRound}
+        onClose={() => {
+          setSelectedNodeId(null);
+          setSelectedRound(null);
+        }}
       />
       {/* I3: run overview (logs timeline) — only when no node is selected (node wins). */}
       {!selectedNode && overviewOpen ? (

@@ -348,17 +348,49 @@ export interface PlanBinding {
 }
 
 /**
+ * A loop container's bound run instances split BY ROUND. `PlanBinding` folds every round
+ * of a loop body onto ONE plan node (a whole-loop-body aggregate); this per-round split is
+ * the granularity needed to make a loop-body fan reachable via the round axis → DetailPanel
+ * (the loop body's agents are NOT lane-drawn — they are drilled through the round axis).
+ * The round is re-derived from each agent's `:rN` label suffix / ` rN` phase title (the same
+ * signals `observeRounds` reads); an agent matching neither falls to round 1 (the
+ * conservative whole-body bucket). Additive & web-side only (Stance 4: no wire/on-disk change).
+ */
+/** One loop-body run instance in a round (the minimum a clickable drill row needs). */
+export interface LoopRoundInstance {
+  /** The run AgentNode.agentId — keys the DetailPanel drill (transcript/result/activity). */
+  agentId: string;
+  /** The concrete run label (`critique:red-team:r1`), shown on the row. */
+  label: string;
+  /** The instance run state — drives the row's status glyph/color (reuses STATE_COLOR). */
+  state: AgentState;
+}
+
+export interface LoopRoundBinding {
+  /** The observed round (1-based). */
+  round: number;
+  /** The run AgentNode.agentId values that ran in this round of this loop body. */
+  agentIds: string[];
+  /** The instances (agentId + label + state) for this round — feeds the clickable drill rows. */
+  instances: LoopRoundInstance[];
+}
+
+/**
  * The complete Plan⟷Execution overlay for one (plan, run) pair. Web-side only.
  * - `bindings`: one entry per plan node that bound at least one agent OR is a planned
  *   node with no run instance (planned-not-run → `status:'not-run'`, ghosted in the UI).
  * - `unplannedAgentIds`: run agents whose label matched NO plan node (unplanned-agent).
  * - `rounds`: the observed loop-round count when the run unrolled a loop body more than
  *   once (drives the folded↔unrolled mode switch); `null` when no loop unrolling is seen.
+ * - `loopRounds`: per loop-container id, the bound instances split by round (drives the
+ *   clickable round axis → DetailPanel drill). Omitted when no loop body bound any agent.
  */
 export interface Overlay {
   bindings: PlanBinding[];
   unplannedAgentIds: string[];
   rounds: number | null;
+  /** loopNodeId → that loop body's bound instances, split by round. */
+  loopRounds?: Record<string, LoopRoundBinding[]>;
 }
 
 // ============================================================================

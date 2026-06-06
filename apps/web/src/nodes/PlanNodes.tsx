@@ -20,7 +20,7 @@
 
 import { memo } from 'react';
 import { Handle, Position } from '@xyflow/react';
-import type { Confidence, Multiplicity, PlanBinding } from '@argus/contract';
+import type { Confidence, LoopRoundBinding, Multiplicity, PlanBinding } from '@argus/contract';
 import { MultiplicityChip, isFanned } from './MultiplicityChip.tsx';
 import {
   AgentCardShell,
@@ -326,11 +326,22 @@ export interface PlanLoopData {
    */
   observedRounds?: number | null;
   unrolled?: boolean;
+  /**
+   * P2 loop-body drill: this loop body's bound run instances split BY ROUND (painted by
+   * paintOverlay from overlay.loopRounds). Drives the CLICKABLE round axis — a round pill
+   * routes (loop node id, round) → DetailPanel, surfacing that round's agent instances. A
+   * loop body's subagents are reached HERE (the round axis), never via a lane-drawer.
+   */
+  roundBindings?: LoopRoundBinding[];
   [key: string]: unknown;
 }
 
-export const LoopContainer = memo(function LoopContainer({ data }: { data: PlanLoopData }) {
+export const LoopContainer = memo(function LoopContainer({ id, data }: { id: string; data: PlanLoopData }) {
+  const { selectRound } = useExpand();
   const rounds = data.observedRounds ?? null;
+  // Per-round bound instance counts (for the pill's hover + an accessible label).
+  const roundCount = (r: number): number =>
+    data.roundBindings?.find((rb) => rb.round === r)?.agentIds.length ?? 0;
   // The round count shown: the observed run rounds (painted) else the static cap.
   const roundLabel =
     rounds != null ? `↻ ${rounds} round${rounds === 1 ? '' : 's'}` : data.maxRounds != null ? `↻ max ${data.maxRounds}` : '↻';
@@ -356,11 +367,40 @@ export const LoopContainer = memo(function LoopContainer({ data }: { data: PlanL
         // the one loop container. Folded collapses back to a single body (the affordance
         // is the App-level mode toggle). The primary phase axis stays vertical.
         <div className="plan-loop-round-axis" aria-label={`${rounds} rounds`}>
-          {Array.from({ length: rounds! }, (_, i) => (
-            <span key={i} className="plan-loop-round-col">
-              r{i + 1}
-            </span>
-          ))}
+          {Array.from({ length: rounds! }, (_, i) => {
+            const round = i + 1;
+            const n = roundCount(round);
+            // A round pill is a DRILL when this loop body bound instances for that round
+            // (painted run). It selects (loop node id, round) → DetailPanel via the shared
+            // ExpandContext, mirroring the expand caret's stopPropagation so the global
+            // body→DetailPanel onNodeClick never double-fires. Unbound/blueprint rounds stay
+            // inert spans (the plan-only round axis is unchanged).
+            if (n > 0 && selectRound) {
+              return (
+                <button
+                  key={i}
+                  type="button"
+                  className="plan-loop-round-col is-clickable"
+                  title={`round ${round} — ${n} instance${n === 1 ? '' : 's'}`}
+                  aria-label={`round ${round}, ${n} instance${n === 1 ? '' : 's'}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    selectRound(id, round);
+                  }}
+                >
+                  r{round}
+                  <span className="plan-loop-round-count" aria-hidden="true">
+                    {n}
+                  </span>
+                </button>
+              );
+            }
+            return (
+              <span key={i} className="plan-loop-round-col">
+                r{round}
+              </span>
+            );
+          })}
         </div>
       ) : null}
     </div>

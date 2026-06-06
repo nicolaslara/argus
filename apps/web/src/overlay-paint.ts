@@ -54,9 +54,22 @@ export function paintOverlay(
   const laneMemberStatuses = new Map<string, PlanBinding['status'][]>();
 
   const painted: Node[] = graph.nodes.map((n) => {
-    // Loop containers receive the observed run rounds + the folded↔unrolled mode flag.
+    // Loop containers receive the observed run rounds + the folded↔unrolled mode flag, plus
+    // the per-round split of THIS loop body's bound instances (overlay.loopRounds keyed by the
+    // loop node id) — the data that makes the round axis a clickable → DetailPanel drill.
     if (n.type === 'planLoop') {
-      return { ...n, data: { ...n.data, observedRounds: overlay.rounds, unrolled, painted: true, bindLive: live } };
+      const roundBindings = overlay.loopRounds?.[n.id];
+      return {
+        ...n,
+        data: {
+          ...n.data,
+          observedRounds: overlay.rounds,
+          unrolled,
+          painted: true,
+          bindLive: live,
+          ...(roundBindings ? { roundBindings } : {}),
+        },
+      };
     }
     const b = byNodeId.get(n.id);
     if (!b) return n;

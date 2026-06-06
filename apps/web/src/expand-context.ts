@@ -12,11 +12,19 @@ export interface ExpandContextValue {
   expanded: Set<string>;
   /** Flip a host node's expanded state. */
   toggle: (id: string) => void;
+  /**
+   * Select a loop CONTAINER + a specific ROUND from its clickable round axis. The Run view
+   * routes this to the DetailPanel (selectedNode = the loop node, scoped to the chosen round)
+   * so a loop-body fan's per-round instances become reachable WITHOUT a lane-drawer inside the
+   * loop. Inert default (a round pill rendered outside a provider never throws).
+   */
+  selectRound?: (loopNodeId: string, round: number) => void;
 }
 
 const DEFAULT: ExpandContextValue = {
   expanded: new Set<string>(),
   toggle: () => {},
+  selectRound: () => {},
 };
 
 export const ExpandContext = createContext<ExpandContextValue>(DEFAULT);

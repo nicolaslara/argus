@@ -29,6 +29,8 @@
 
 import type {
   AgentNode,
+  LoopRoundBinding,
+  LoopRoundInstance,
   Overlay,
   PlanBinding,
   PlanModel,
@@ -160,11 +162,66 @@ export function buildOverlay(plan: PlanModel, run: RunModel): Overlay {
     });
   }
 
+  // --- per-round split for loop-body fans (drives the clickable round axis → DetailPanel) ---
+  // `bindings` folds ALL rounds of a loop body onto one plan node; a loop-body fan's agents
+  // are reached via the loop's ROUND AXIS, so we additionally split each loop body's bound
+  // agents by round (re-derived per-agent from the same `:rN` / ` rN` signals observeRounds
+  // reads). Buckets are grouped under the ENCLOSING loop container id (PlanNode.loopRef).
+  const loopRounds: Record<string, LoopRoundBinding[]> = {};
+  // phaseTitle (round-suffix STRIPPED) lookup is in runPhaseTitle; we need the RAW title to
+  // recover the round, so index the raw phase title by index too.
+  const runPhaseRawTitle = new Map<number, string>();
+  for (const p of run.phases) runPhaseRawTitle.set(p.index, p.title);
+  // Per loop id, a round → instances accumulator (a loop MAY contain >1 body node).
+  const loopRoundAcc = new Map<string, Map<number, LoopRoundInstance[]>>();
+
+  for (const b of bindables) {
+    if (b.node.loopRef == null) continue; // only loop-body plan nodes feed a round axis
+    const bound = boundByNode.get(b.node.id);
+    if (!bound || bound.length === 0) continue;
+    const loopId = b.node.loopRef;
+    if (!loopRoundAcc.has(loopId)) loopRoundAcc.set(loopId, new Map());
+    const byRound = loopRoundAcc.get(loopId)!;
+    for (const agent of bound) {
+      const round = roundOf(agent, runPhaseRawTitle.get(agent.phaseIndex) ?? null);
+      if (!byRound.has(round)) byRound.set(round, []);
+      byRound.get(round)!.push({ agentId: agent.agentId, label: agent.label, state: agent.state });
+    }
+  }
+
+  for (const [loopId, byRound] of loopRoundAcc) {
+    loopRounds[loopId] = [...byRound.entries()]
+      .sort(([a], [c]) => a - c)
+      .map(([round, instances]) => ({
+        round,
+        agentIds: instances.map((i) => i.agentId),
+        instances,
+      }));
+  }
+
   return {
     bindings,
     unplannedAgentIds,
     rounds: observeRounds(run),
+    ...(Object.keys(loopRounds).length > 0 ? { loopRounds } : {}),
   };
+}
+
+/**
+ * Re-derive a bound agent's loop round from the SAME signals `observeRounds` reads:
+ *   1. a `:rN` suffix on the agent label (`critique:…:r2`).
+ *   2. a ` rN` round-suffixed phase title (`Critique r2`).
+ * Falls back to round 1 (the conservative whole-body bucket) when neither is present —
+ * matching `observeRounds`'s "no unrolling ⇒ a single body" default. Never invents a round.
+ */
+function roundOf(agent: AgentNode, rawPhaseTitle: string | null): number {
+  const lm = /:r(\d+)\b/i.exec(agent.label);
+  if (lm) return Number(lm[1]);
+  if (rawPhaseTitle) {
+    const pm = /\sr(\d+)$/i.exec(rawPhaseTitle);
+    if (pm) return Number(pm[1]);
+  }
+  return 1;
 }
 
 /** Collect candidate plan nodes for one run agent, tagged exact|prefix. */
