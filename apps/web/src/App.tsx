@@ -7,6 +7,7 @@ import {
   BackgroundVariant,
   type NodeTypes,
   type ReactFlowInstance,
+  type FitViewOptions,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -93,6 +94,43 @@ const EMPTY_GRAPH: GraphResult = { nodes: [], edges: [] };
 // further (larger) fans and leave them collapsed (aggregate chips). Keeps a 50-agent fan
 // from exploding the canvas while still surfacing the small/medium fans by default.
 const EXPAND_BUDGET = 24;
+
+/**
+ * No-overlap invariant: the floating top-left chrome (the run-header chip, the run-chrome
+ * column = objective band + failure banner, and the Plan run-history band) sits ABSOLUTE over
+ * a full-bleed React Flow canvas, so a fit-viewed graph would otherwise land UNDERNEATH it.
+ * We RESERVE the chrome's footprint as per-side fitView padding (React Flow v12 `Padding`),
+ * MEASURED from the live DOM so it adapts to a tall failure banner / a long objective / the
+ * Plan band — the graph then fits into the clear region (below the top chrome, right of the
+ * left band). `top`/`left` only; right/bottom get a small fixed gutter.
+ */
+function chromeAwareFitOptions(extra?: Partial<FitViewOptions>): FitViewOptions {
+  let top = 0;
+  let left = 0;
+  const main = typeof document !== 'undefined' ? document.querySelector('.argus-main') : null;
+  if (main) {
+    const m = main.getBoundingClientRect();
+    // top chrome (the header chip + the objective/failure column) → reserve their bottom edge.
+    for (const sel of ['.run-header', '.run-chrome']) {
+      const el = document.querySelector(sel);
+      if (el) top = Math.max(top, el.getBoundingClientRect().bottom - m.top);
+    }
+    // the tall left band (Plan run-history) → reserve its right edge.
+    const band = document.querySelector('.plan-run-history');
+    if (band) left = Math.max(left, band.getBoundingClientRect().right - m.left);
+  }
+  return {
+    padding: {
+      top: `${Math.round(Math.max(top, 0)) + 20}px`,
+      left: `${Math.round(Math.max(left, 0)) + 20}px`,
+      right: '40px',
+      bottom: '40px',
+    },
+    duration: 240,
+    maxZoom: 2.6,
+    ...extra,
+  };
+}
 
 // The persisted loop-drill MODE setting (loop-drill-gallery.html opt1 vs opt2) is held in App
 // state and mirrored to localStorage so the choice sticks across reloads. 'round-axis' (option 1)
@@ -680,12 +718,14 @@ export function App() {
   // handled by the SEPARATE one-shot fitBounds effect below.
   const fitSignature = useMemo(
     () =>
-      `${view}:` +
+      // include the selected runId so switching runs re-fits (the chrome — objective/failure —
+      // changes per run); runId is stable DURING a run, so a live tick still never re-fits.
+      `${view}:${summary?.ref.runId ?? ''}:` +
       graph.nodes
         .filter((n) => n.type !== 'instanceGroup' && n.type !== 'agentCard')
         .map((n) => n.id)
         .join(','),
-    [view, graph.nodes],
+    [view, summary?.ref.runId, graph.nodes],
   );
   useEffect(() => {
     if (graph.nodes.length === 0) return;
@@ -695,12 +735,9 @@ export function App() {
     // the default maxZoom=2 fit it to WIDTH and left a tall empty band. Give both views a
     // tighter padding AND a higher maxZoom so the graph is allowed to zoom up and FILL the
     // canvas (paired with the taller elk lanes above).
-    const isWideShort = view === 'plan' || view === 'run';
-    const opts = isWideShort
-      ? { padding: 0.06, duration: 240, maxZoom: 2.6 }
-      : { padding: 0.12, duration: 240 };
-    // Defer one frame so React Flow has measured the new nodes before fitting.
-    const raf = requestAnimationFrame(() => inst.fitView(opts));
+    // Defer one frame so React Flow has measured the new nodes AND the chrome before fitting,
+    // then reserve the chrome footprint so the graph never lands under it (no overlap).
+    const raf = requestAnimationFrame(() => inst.fitView(chromeAwareFitOptions()));
     return () => cancelAnimationFrame(raf);
     // Intentionally keyed ONLY on the frozen plan-id signature (which encodes `view`); a
     // graph.nodes churn from instance/ghost/drawer changes must NOT re-fit (see the
@@ -719,9 +756,7 @@ export function App() {
     const grew = count > prevExpandCount.current;
     prevExpandCount.current = count;
     if (!grew || !inst || graph.nodes.length === 0) return;
-    const raf = requestAnimationFrame(() =>
-      inst.fitView({ padding: 0.08, duration: 240, maxZoom: 2.6 }),
-    );
+    const raf = requestAnimationFrame(() => inst.fitView(chromeAwareFitOptions()));
     return () => cancelAnimationFrame(raf);
     // Fire only on the expand-set transition (graph.nodes intentionally excluded so a live
     // re-paint never re-fits).
@@ -738,9 +773,7 @@ export function App() {
     const grew = count > prevLoopDrawerCount.current;
     prevLoopDrawerCount.current = count;
     if (!grew || !inst || graph.nodes.length === 0) return;
-    const raf = requestAnimationFrame(() =>
-      inst.fitView({ padding: 0.08, duration: 240, maxZoom: 2.6 }),
-    );
+    const raf = requestAnimationFrame(() => inst.fitView(chromeAwareFitOptions()));
     return () => cancelAnimationFrame(raf);
   }, [loopDrawerRound]);
 
@@ -868,7 +901,7 @@ export function App() {
         nodeTypes={nodeTypes}
         colorMode="dark"
         fitView
-        fitViewOptions={{ padding: 0.12 }}
+        fitViewOptions={{ padding: { top: '110px', left: '88px', right: '40px', bottom: '40px' }, maxZoom: 2.6 }}
         minZoom={0.1}
         maxZoom={3}
         proOptions={{ hideAttribution: true }}
@@ -888,7 +921,10 @@ export function App() {
       >
         <Background variant={BackgroundVariant.Dots} gap={24} size={1} />
         <MiniMap pannable zoomable />
-        <Controls showInteractive={false} />
+        <Controls
+          showInteractive={false}
+          onFitView={() => rfRef.current?.fitView(chromeAwareFitOptions())}
+        />
       </ReactFlow>
       </ExpandContext.Provider>
 
