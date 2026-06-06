@@ -100,3 +100,38 @@ No replace recommendations. The stack is deliberately small and each piece sits 
 ---
 
 _Key files: `apps/server/src/index.ts` (token print L378-381; SSE L256-318), `packages/adapter/src/index.ts` (clientVersion L259), `packages/adapter/src/adapter.test.ts` (contract-test scope L513), `apps/web/src/App.tsx` (SSE L156-168; derivedFrom L205), `apps/web/src/layout/elk.ts` (no timeout L151; direction RIGHT L114), `apps/server/src/routes.ts` (full-result read L584), `packages/contract/src/index.ts` (RunDelta L457, clientVersion L115)._
+
+---
+
+## 7. Autonomous review backlog (2026-06-06)
+
+A 6-lens read-only audit (boundaries · test gaps · dead-code/dup · robustness · perf · doc drift).
+The §6 quick-wins above are ALL now shipped. Boundaries verdict: STRONG (4-package acyclic deps,
+adapter format-isolation, web↔contract-only all hold). Prioritized remaining work:
+
+- [ ] **ARCH-1 (user-requested) — Table: execution-order view + graph cross-highlight.** Add an
+  "order" mode to the agent table showing agents in EXECUTION order (phase order; parallel agents
+  within a phase INDENTED — a vertical DAG). Cross-highlight the graph: HOVER a row → transient
+  highlight on the matching node; SELECT → persistent highlight + DetailPanel (two distinct
+  affordances). Files: tables/AgentTablePanel.tsx, tables/agent-table.ts, App.tsx (highlight
+  threading into overlayGraph), overlay-paint/expand (a `highlighted` flag), index.css.
+- [ ] **ARCH-2 — Consolidate duplicated formatters (med/M).** formatDuration/formatTokens/
+  formatTools/formatElapsed live in ~4 places (shell/format.ts, nodes/AgentCard.tsx, the table,
+  App.tsx) with INCONSISTENT null/0 handling → one shared module + one em-dash rule + tests.
+- [ ] **ARCH-3 — Doc-drift sweep (high/S+M).** TASKS.md "three views" → only plan/run;
+  boundaries.md §4 lists a `/transcript` endpoint never built + a deleted `resolveClientVersion` +
+  a stale endpoint list; WORKING.md claims `/stream` ships `RunDelta` (it only emits `changed`);
+  README/project.md/AGENTS.md don't mention shipped features (table, pinned, filter, loop-drill,
+  coverage chips). Make the workpads honest.
+- [ ] **ARCH-4 — Perf memo-stability (high/S).** Rail re-renders on every 2.5s poll (referenceNow
+  = wall-clock per render defeats memo); useLiveAgentFill builds a new array per render; the PX
+  plan-explanations poll isn't gated to the visible Plan view. Stabilize + gate.
+- [ ] **ARCH-5 — Test gaps (high/M).** Extract the web SSE connection state machine to a pure
+  tested helper (browser-only today); a server log-scrubbing test (no `$bunfs`/`/Users/` leaks);
+  widen path-traversal tests; test App.tsx pure helpers (deriveFailureInfo/pickFailurePoint/
+  formatArgs) + chromeAwareFitOptions.
+- [ ] **ARCH-6 — Robustness signals (med/S).** Discovery op failures are silently swallowed (no
+  client signal); the full-journal read is unbounded (no pre-flight size cap); a closed SSE
+  connection isn't surfaced server-side. Add honest signals/bounds.
+- [ ] **ARCH-7 (deferred) — App.tsx decomposition (M), large-graph 200+ safeguard (L), contract
+  type tests (S), remove dead `runModelToGraph` export (S).** Incremental / gate-on-need.
