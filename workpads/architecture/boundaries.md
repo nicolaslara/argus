@@ -72,12 +72,19 @@ discoverRuns(port, project): Promise<RunSummary[]>;       // HEADER fields only 
 loadRun(port, ref): Promise<RunModel>;                    // finalized wf_*.json → parseFinalizedRun; running → buildLiveModel
 parseFinalizedRun(raw: unknown, ctx): RunModel;           // PURE
 buildLiveModel(journal: JournalEvent[], agentMeta, prev?): RunModel; // partial, incomplete=true
-loadResult(port, ref): Promise<unknown>;                  // LAZY full result (capped preview is inline; this is the handle)
-loadTranscript(port, ref, agentId, page): Promise<TranscriptPage>;   // LAZY, paginated agent-*.jsonl
-loadWorkflowSource(port, ref): Promise<string>;           // LAZY "view source" (script not in default model)
+loadWorkflowSource(port, jsPath): Promise<string>;        // LAZY workflow .js source (the per-run plan source)
 parseWorkflowMeta(src: string): WorkflowMeta | null;      // static .claude/workflows/*.js export const meta
-resolveClientVersion(port, ref): Promise<string | undefined>; // LAZY, best-effort: first line of one agent-*.jsonl, cached
 ```
+
+> **Shipped vs. sketch:** the full lazy result and the per-agent transcript are read in
+> the server route handlers, not via dedicated adapter functions — `/result` reads the
+> journal `result` event inline (`handleAgentResult`) and `/activity` parses
+> `agent-*.jsonl` (`handleAgentActivity`); there is no `loadResult`/`loadTranscript`
+> adapter surface and no `TranscriptPage` type. The `resolveClientVersion` function (and
+> the whole `clientVersion` field) was **deleted** 2026-06-06 (see
+> `architecture-review.md` risk #2): format compatibility is managed by the
+> `ADAPTER_FORMAT` pin + zod defensive parsing + captured fixtures, not by client-version
+> signaling.
 
 ### 2.3 Defensive-parsing rules (binding)
 
@@ -197,18 +204,34 @@ runs only have the log line — e.g. our 14-agent fixture's `parallel[…] faile
 
 ## 4. Server↔client API (`apps/server`, types in `packages/contract`)
 
-REST snapshot + SSE live deltas. Endpoints:
+REST snapshot + an SSE live channel. The shipped routes (from `apps/server/src/index.ts`
+dispatch + `routes.ts` handlers):
 
 ```
-GET  /api/projects                                   -> ProjectRef[]
-GET  /api/projects/:slug/runs                        -> RunSummary[]    (grouped by recovered projectPath)
-GET  /api/runs/:slug/:session/:runId                 -> RunModel        (snapshot)
-GET  /api/runs/:slug/:session/:runId/stream          -> text/event-stream (SSE deltas)
-GET  /api/runs/:slug/:session/:runId/agents/:id/transcript?cursor=  -> TranscriptPage (lazy)
-GET  /api/runs/:slug/:session/:runId/result          -> full result    (lazy handle)
-GET  /api/runs/:slug/:session/:runId/source          -> workflow script (lazy "view source")
-GET  /health
+GET  /api/projects                                    -> ProjectRef[]
+GET  /api/projects/:slug/runs                         -> RunSummary[]   (grouped by recovered projectPath)
+GET  /api/projects/:slug/workflows                    -> WorkflowMeta[] (P0: declared, run-free)
+GET  /api/projects/:slug/workflows/:file/plan         -> PlanModel      (P1: run-free static plan DAG)
+GET  /api/projects/:slug/workflows/:file/explanations -> ExplanationBatch (PX caption poll)
+GET  /api/runs/:slug/:session/:runId                  -> RunModel       (snapshot)
+GET  /api/runs/:slug/:session/:runId/live             -> RunModel       (L2 partial, incomplete=true)
+GET  /api/runs/:slug/:session/:runId/plan             -> PlanModel      (P2: the per-run persisted plan source)
+GET  /api/runs/:slug/:session/:runId/result?agentId=  -> { agentId, value, truncated } (R1: full lazy result)
+GET  /api/runs/:slug/:session/:runId/activity?agentId= -> { activity }  (per-agent transcript drill-in)
+GET  /api/runs/:slug/:session/:runId/subui?agentId=   -> SubUiResponse  (#9 generative panel)
+GET  /api/runs/:slug/:session/:runId/describe         -> SubUiResponse  (I4 whole-run summary)
+GET  /api/runs/:slug/:session/:runId/explanations     -> ExplanationBatch (PX caption poll)
+GET  /api/runs/:slug/:session/:runId/stream           -> text/event-stream (SSE: emits a coarse `changed` event + `open` + heartbeat)
+GET  /health                                          -> { status, format }
 ```
+
+The `/stream` channel emits only a `changed` event (plus `open` and a heartbeat); the
+client full-refetches the live model on each append. There is **no** incremental
+`RunDelta` on the wire — that type is a deferred contract seam (see §5). The
+never-built `/agents/:id/transcript` and `/source` endpoints are not part of the API;
+per-agent transcript data is served by `/activity`, and the workflow script is not
+exposed (script/scriptPath are intentionally absent from the emitted model — there is no
+shipped "view source" route).
 
 - **`RunRef` is keyed/cached by the recovered absolute `projectPath`** (from
   `scriptPath`), not the slug. When several cwds collapse to one slug dir, the UI shows
@@ -247,12 +270,18 @@ GET  /health
    journal is authoritative until it stops appending; only then does `wf_*.json`
    structure take over (resolves the finalize-vs-tail race). Re-read-and-diff
    `wf_*.json` per fs event is valid **post-finalize only**.
-4. **SSE deltas:** on an fs event, re-normalize the affected run via the adapter and
-   emit a versioned delta keyed `runId`+`eventId`; the client **patches `node.data` in
-   place** (CSS-animate) and **re-layouts only on structural add/remove** (batched),
-   never on a metric tick. Reconnect via `Last-Event-ID` + snapshot. Per-run reads are
-   **single-flight**; stale-mtime diffs discarded; a torn read keeps last-good rather
-   than flipping `incomplete`.
+4. **SSE live channel (shipped):** on a `journal.jsonl` append, the server emits a coarse
+   `changed` event (plus an initial `open` and a periodic heartbeat); the client
+   **full-refetches the live `RunModel`** via `/live` on each `changed`. This is a
+   deliberate, documented choice for the 1–14-agent corpus (see `architecture-review.md`
+   #6), not an oversight. **Incremental `RunDelta` patching is deferred** — the `RunDelta`
+   envelope (versioned, keyed `runId`+`eventId`, the future `node.data`-in-place patch +
+   structural-only relayout described below) is defined in `packages/contract` as the
+   scale-only seam but has **zero producers/consumers today**. When it lands, the intended
+   shape is: emit a delta per fs event, the client patches `node.data` in place
+   (CSS-animate) and re-layouts only on structural add/remove (batched), never on a metric
+   tick; reconnect via `Last-Event-ID` + snapshot; per-run reads single-flight; stale-mtime
+   diffs discarded; a torn read keeps last-good rather than flipping `incomplete`.
 
 ---
 

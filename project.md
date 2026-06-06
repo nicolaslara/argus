@@ -68,6 +68,12 @@ These come from the brief and override convenience.
    bar and reviewed as deliverables, not afterthoughts. "It renders" is not done;
    "it reads beautifully at a glance and scales to a 14-agent run" is.
 
+   *(Delivered toward this stance in the prototype: an inline-expand Run view — the
+   aggregate↔instance join is a click, not a tab-switch; a sortable/filterable agent table
+   with an execution-order DAG + graph cross-highlight; pinned workflows and a filter /
+   group-by rail; loop-drill modes; partial-parse coverage / warnings degradation chips; and
+   a live SSE connection-state indicator.)*
+
 4. **Treat the on-disk schema as observed, versioned, and untrusted.** The format
    is not officially documented and will drift across Claude Code versions. The
    ingestion layer tolerates unknown/missing fields, never crashes on a new field,

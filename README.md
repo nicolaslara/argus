@@ -47,7 +47,24 @@ Early build, end-to-end and on real data at every step. What actually works toda
     headless `claude -p`, content-addressed-cached + generated in the background.
   - A **collapsible left icon-rail** (VS Code–style tree: project ▸ workflow ▸ runs)
     switches between any discovered project and any of its runs; Plan and Run share one
-    unified card + lane visual language.
+    unified card + lane visual language. The rail also **pins** favorite workflows to the
+    top, **filters** runs (by status / staleness, with a stale-runs fold), and offers a
+    **group-by lens** (group runs by their plan).
+
+Beyond the two views, the prototype ships:
+
+- **Agent table panel** — a sortable, filterable bottom panel (cost / time / tools / status
+  columns) for scanning a large run, plus an **execution-order DAG** view; hovering a row
+  cross-highlights the matching graph node (a soft glow, no viewport change), and clicking
+  a row selects that agent in the detail panel even when its fan is collapsed on the canvas.
+- **Loop drill** — a loop step exposes its round axis (`r1·r2…`) with two display modes (a
+  round-axis detail in the side panel, or an in-canvas lane-drawer expansion) via a settings
+  toggle.
+- **Plan coverage & warnings chips** — a calm header badge surfaces parse coverage (when AST
+  parsing is only partial) and any schema warnings, so a half-resolved plan never fails
+  silently.
+- **Live SSE connection state** — a live run shows a small status chip
+  (connecting / open / reconnecting / lost) so a dropped stream is never silent.
 
 **Now usable:** `npm run dev`, open `http://localhost:5173`, toggle **Plan / Run**, and
 use the left rail to pick any project / run.
@@ -86,6 +103,13 @@ interface for the read path.
 - A **running** run renders from the live journal stream (`subagents/workflows/wf_<id>/journal.jsonl`
   plus per-agent `agent-*.jsonl`), reconciled to `wf_<id>.json` when the run
   finalizes. (Live updates are a later phase — see the `live` workpad.)
+
+On top of those journals the UI gives you a **merged Run view** (any fanned workflow step
+expands in place into its actual agent instances — the aggregate↔instance join is a click,
+not a separate tab), an agent detail panel, a fullscreen sortable **agent table** with an
+execution-order DAG and graph cross-highlight, **pinned** workflows, run **filtering** and
+**grouping** in the rail, **loop drilling**, plan coverage / warnings chips, and a live SSE
+connection-state indicator.
 
 The on-disk format is undocumented, unversioned, and treated as untrusted: all
 schema knowledge is isolated behind one adapter so a format change is a one-file fix.

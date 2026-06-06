@@ -4,6 +4,14 @@ Repository for **argus**, a web app for visualizing and exploring Claude Code
 workflows (the multi-agent runs produced by the `Workflow` tool). Progress
 persists in files and git, not conversation context.
 
+The shipped app renders runs on a fullscreen `@xyflow/react` canvas in **two views**
+(Plan and Run); the Run view merges the old Progress + Execution tabs via an in-place
+expand (the aggregate↔instance join is a click, not a tab-switch). Beyond that it ships a
+sortable/filterable agent **table** (with an execution-order DAG view + graph
+cross-highlight), **pinned** workflows + a **filter** / staleness-fold / **group-by** rail,
+**loop-drill** modes (round-axis / lane-drawer), partial-parse **coverage / warnings**
+degradation chips, and a live **SSE connection-state** indicator.
+
 ## Source Of Truth
 
 | File | Role |

@@ -101,7 +101,7 @@ Every task needs evidence before completion. Match depth to scope:
 | Adapter / ingestion code | Unit tests against **captured real journals** (finished, running, failed, killed); tolerates unknown/missing fields without crashing; round-trips a known `modal-rust` run to the expected normalized model |
 | Backend / API code | `tsc --noEmit`, lint, unit/integration test of the endpoint or watcher; a manual request/stream observed |
 | Frontend / render code | `tsc --noEmit`, lint, build, **and a UI smoke**: argus renders the target real run, observed in a browser (screenshot or Playwright snapshot). Must read well fullscreen and at the largest real run (14-agent `modal-rust-plan-research`). |
-| Live updates | A real or replayed running run animates to completion without losing/duplicating nodes; reconnect after a dropped channel recovers state |
+| Live updates | A real or replayed running run animates to completion without losing/duplicating nodes; reconnect after a dropped channel recovers state. Note: the `/stream` SSE channel emits a coarse `changed` event (plus `open`/heartbeat) and the client full-refetches the live model on each append — incremental `RunDelta` patching is a deferred contract seam (defined in `packages/contract`, no producers/consumers yet), not shipped. |
 
 Record skipped verification in the task or `knowledge.md` with a reason. "It
 compiles / it renders" is necessary, not sufficient — visual deliverables are

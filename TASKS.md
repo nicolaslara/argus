@@ -51,16 +51,18 @@ transcript, I4 describe-via-Claude). See the per-workpad `tasks.md`.
   pipeline, shell/IA, failure modes, and format-version policy — derived from the
   adversarially-reviewed synthesis.
 - [x] **prototype** — GATE PASSED 2026-06-04 (M0–M5 + P0/P1/P2/PX/U1). A real modal-rust
-  run renders correctly fullscreen in **three views** (Plan AST DAG / Morph overlay /
-  Execution) with Claude captions + a project/run rail; 118 tests; 0 console errors.
-  Known residual cosmetic: Plan/Morph wide-short DAG leaves vertical empty space.
+  run renders correctly fullscreen in **two views** (Plan AST DAG / Run overlay) with
+  Claude captions + a project/run rail; 118 tests; 0 console errors. The old Progress +
+  Execution tabs were MERGED into the Run view: the aggregate↔instance join is now an
+  in-place expand (a click), not a tab-switch. Known residual cosmetic: Plan/Run wide-short
+  DAG leaves vertical empty space.
 - [x] **live** — GATE MET 2026-06-05. M6 (L1 detection + L2 journal→model), L3 SSE push
   stream (journal-watch → `changed`, heartbeat, clean reconnect), L4 a running run renders
   on Morph as done/running/**upcoming**, L5 finalize reconciliation (de-dup + agentId/start-
   order), L6 a journal-replay test (no lost/duplicated nodes → reconciles to finalized).
   On-disk live behavior locked (`workpads/live/knowledge.md` F1–F5). Residual future polish:
   incremental SSE deltas + a no-jump finalize swap.
-- [x] **inspect** — GATE MET 2026-06-05. I1 node detail panel (all three views); I3
+- [x] **inspect** — GATE MET 2026-06-05. I1 node detail panel (both Plan and Run views); I3
   run-overview with the narrator `log()` timeline; I4 "describe this run" via Claude; per-
   node results are full + readable + generatively rendered (R1 + #9). I2 (agent transcript)
   is BLOCKED by data reality — workflow-agent `agent-*.jsonl` transcripts are not reliably

@@ -123,11 +123,14 @@ adapter format-isolation, web↔contract-only all hold). Prioritized remaining w
   consistent null/0 → em-dash rule; AgentCard/AgentChip/AgentTablePanel/App import them (local
   copies deleted). One deliberate consistency fix: `0ms` now renders `—` everywhere (was a mix of
   `0ms`/`—`), matching the tokens/tools "no value" convention. +19 tests (420 total).
-- [ ] **ARCH-3 — Doc-drift sweep (high/S+M).** TASKS.md "three views" → only plan/run;
-  boundaries.md §4 lists a `/transcript` endpoint never built + a deleted `resolveClientVersion` +
-  a stale endpoint list; WORKING.md claims `/stream` ships `RunDelta` (it only emits `changed`);
-  README/project.md/AGENTS.md don't mention shipped features (table, pinned, filter, loop-drill,
-  coverage chips). Make the workpads honest.
+- [x] **ARCH-3 — Doc-drift sweep. DONE 2026-06-06.** Reconciled TASKS.md (three→two views),
+  boundaries.md (removed the never-built `/transcript` + deleted `resolveClientVersion`; completed
+  the real 14-endpoint API list; corrected the SSE `changed` vs deferred-`RunDelta` claim), WORKING.md
+  (the `/stream` RunDelta note), and README/project.md/AGENTS.md (now mention the shipped table +
+  exec-order DAG + cross-highlight, pinned/filter/group-by rail, loop-drill, coverage/warnings chips,
+  SSE connection state). Docs-only; gates stayed green; reviewed for no overstatement. FOLLOW-UP:
+  the README `docs/screenshots/*` predate the table/pinned/filter/coverage features — a re-capture
+  would freshen them (ARCH-8, S).
 - [ ] **ARCH-4 — Perf memo-stability (high/S).** Rail re-renders on every 2.5s poll (referenceNow
   = wall-clock per render defeats memo); useLiveAgentFill builds a new array per render; the PX
   plan-explanations poll isn't gated to the visible Plan view. Stabilize + gate.
