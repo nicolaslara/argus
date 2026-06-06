@@ -53,6 +53,10 @@ interface RailProps {
   // segmented control in the ⚙ settings pane.
   loopDrillMode: LoopDrillMode;
   onSelectLoopDrillMode: (mode: LoopDrillMode) => void;
+  // Whether the active run actually has a drillable (>1-round) loop. When false the loop-drill
+  // mode has no visible effect, so the control is shown as inert (dimmed + an explanatory note)
+  // instead of reading as a broken toggle.
+  loopDrillable: boolean;
 }
 
 /** Newest-first by startTime; runs without a startTime sort last (stable). */
@@ -189,6 +193,7 @@ export const Rail = memo(function Rail(props: RailProps) {
     onSelectWorkflow,
     loopDrillMode,
     onSelectLoopDrillMode,
+    loopDrillable,
   } = props;
 
   // The explorer group-by lens. 'workflow' (default) is the original tree; 'time'/'status'
@@ -275,7 +280,7 @@ export const Rail = memo(function Rail(props: RailProps) {
         <div className="rail-panel">
           <section className="rail-section" aria-label="settings">
             <header className="rail-section-head">Settings</header>
-            <LoopDrillSetting mode={loopDrillMode} onSelect={onSelectLoopDrillMode} />
+            <LoopDrillSetting mode={loopDrillMode} onSelect={onSelectLoopDrillMode} drillable={loopDrillable} />
             <div className="rail-muted rail-settings-stub">
               <p>argus · local-first, read-only</p>
               <p>Dark theme · v1</p>
@@ -329,14 +334,27 @@ export const Rail = memo(function Rail(props: RailProps) {
 const LoopDrillSetting = memo(function LoopDrillSetting({
   mode,
   onSelect,
+  drillable,
 }: {
   mode: LoopDrillMode;
   onSelect: (mode: LoopDrillMode) => void;
+  // False when the active run has no loop that ran >1 round → the mode has nothing to act on.
+  drillable: boolean;
 }) {
   return (
     <div className="rail-setting">
-      <div className="rail-setting-label">Loop drill</div>
-      <div className="rail-segmented" role="group" aria-label="loop drill mode">
+      <div className="rail-setting-label">
+        Loop drill
+        {!drillable ? <span className="rail-setting-tag"> · inert here</span> : null}
+      </div>
+      {/* When there's nothing to drill the buttons still toggle the (persisted) preference, but
+          they're dimmed so the control doesn't read as a broken no-op. */}
+      <div
+        className="rail-segmented"
+        role="group"
+        aria-label="loop drill mode"
+        style={drillable ? undefined : { opacity: 0.5 }}
+      >
         <button
           type="button"
           className={`rail-segmented-btn${mode === 'round-axis' ? ' is-active' : ''}`}
@@ -357,9 +375,11 @@ const LoopDrillSetting = memo(function LoopDrillSetting({
         </button>
       </div>
       <p className="rail-setting-note">
-        {mode === 'round-axis'
-          ? 'Loop rounds open in the detail panel — the loop box stays compact.'
-          : 'Round agents expand as cards inside the loop — the back-edge routes around them.'}
+        {!drillable
+          ? 'No multi-round loop to drill in this run. Open a run whose loop ran more than once, then ⊞ unroll it and click a round.'
+          : mode === 'round-axis'
+            ? 'Loop rounds open in the detail panel — the loop box stays compact.'
+            : 'Round agents expand as cards inside the loop — the back-edge routes around them.'}
       </p>
     </div>
   );

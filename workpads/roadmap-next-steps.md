@@ -88,6 +88,18 @@ the transcript-reader (the design-plan "LATER" stack) all shipped.
   LOOP_GUTTER re-route). Must not regress refine-plan's loop, decisions outside loops, or the
   run-overlay loop drawer. Surfaced by the UIBUG-2 fix (ad-hoc runs now show their own plan).
 
+- [x] **UIBUG-4 — "Round axis vs Lane drawer" toggle reads as a no-op. CLARIFIED + FIXED
+  2026-06-06.** Not broken: the loop-drill mode only has a visible effect when the active RUN
+  has a loop that ran **>1 round** (→ a round axis to ⊞ unroll + a round pill to click).
+  Verified live on the 3-round `argus-view-unification` loop: round-axis → the round's
+  instances open in the DetailPanel; lane-drawer → they expand as cards INSIDE the loop (and
+  switching to round-axis collapses that drawer). On single-round-loop runs (e.g. the
+  `dashboard-design-iteration` run = `wf_d219195d-30d`, loop ran once → `audit:r1` only) there's
+  nothing to drill, so it was silently inert. **Fix:** the Settings control now flags itself
+  `· inert here` (dimmed + "no multi-round loop to drill in this run…") whenever the active run
+  has no drillable loop, so it no longer reads as broken. Manual-validation workflows (loop ran
+  >1 round): `argus-view-unification`, `argus-sidebar-redesign`, `capo-workpad-execute`.
+
 ## Next steps by theme
 
 ### Navigation & scale

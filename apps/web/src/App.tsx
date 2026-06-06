@@ -931,6 +931,10 @@ export function App() {
         onSelectWorkflow={handleSelectWorkflow}
         loopDrillMode={loopDrillMode}
         onSelectLoopDrillMode={setLoopDrillMode}
+        // The loop-drill mode only has a visible effect when the active RUN view has a loop that
+        // ran >1 round (→ a round axis to unroll + drill). Tell the Rail so it can flag the
+        // setting as inert (rather than reading as broken) when there's nothing to drill.
+        loopDrillable={view === 'run' && overlayRounds != null && overlayRounds > 1}
       />
       {/* everything right of the rail lives here so overlays center on the CANVAS, not the viewport */}
       <div className="argus-main">

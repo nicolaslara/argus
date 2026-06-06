@@ -1491,6 +1491,12 @@ body {
   color: var(--argus-fg);
   margin-bottom: 6px;
 }
+/* "· inert here" — flags a setting that has no effect on the current run (loop drill with no
+   multi-round loop). Muted + normal weight so it reads as an aside, not part of the label. */
+.rail-setting-tag {
+  font-weight: 400;
+  color: var(--argus-fg-muted, #6b7280);
+}
 /* The explorer group-by LENS control (Workflow | Time | Status), reusing .rail-segmented. */
 .rail-groupby {
   padding: 0 6px 8px;
