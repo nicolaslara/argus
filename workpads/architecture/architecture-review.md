@@ -153,5 +153,20 @@ adapter format-isolation, web↔contract-only all hold). Prioritized remaining w
   `journal-truncated` warning — never an OOM or a silent drop. +9 tests (510 total). DEFERRED
   (TODO left in code): the lazy full-result read is also unbounded, but a head-cap there could miss
   a later agent's result — it needs a scan-to-match (heavier, marginal value), so left for later.
-- [ ] **ARCH-7 (deferred) — App.tsx decomposition (M), large-graph 200+ safeguard (L), contract
-  type tests (S), remove dead `runModelToGraph` export (S).** Incremental / gate-on-need.
+- [ ] **ARCH-7 — remaining items, triaged 2026-06-06 (need your call / gated / dropped):**
+  - **App.tsx decomposition (M) — NEEDS YOUR CALL.** Already shrank 1419→1360 lines this session
+    (extracted failure-info, live-connection, pad-from-insets, fit-signature, plan-correspondence,
+    loop-drill-migrate, degradation-signal). Further (extract a `useLiveStream` hook for the SSE
+    effect, a selection hook) is real but it's the CENTRAL component + an effect extraction — I
+    held off doing it unsupervised; how to slice it is a structural choice worth your input.
+  - **Large-graph 200+ node safeguard (L) — GATED.** Speculative (no run approaches 200 nodes; the
+    chip-degrade + table already help at scale). Gate on a real large run.
+  - **Remove dead `runModelToGraph` export (S) — DROPPED.** Not dead: a DELIBERATE plan-less
+    fallback engine kept per run-view-merge-plan §4 (the audit mislabeled it). Leave as-is.
+  - **Contract type tests (S) — DROPPED.** The contract is types-only (no runtime zod), so `tsc`
+    already enforces it across every consumer — a runtime test adds nothing. (Tiny doc nit: the
+    README/boundaries "wire types + zod schemas" line overstates — it's types + adapter-side
+    defensive parsing, no zod in the contract. Low priority.)
+- [ ] **ARCH-8 — Refresh README `docs/screenshots/*` for the new features (S) — NEEDS YOUR CALL.**
+  The text is updated (ARCH-3); the 5 screenshots predate the table/pinned/filter/coverage/exec-order
+  UI. Publishable-quality framing is a human-judgment call — best captured with you, or tell me to.
