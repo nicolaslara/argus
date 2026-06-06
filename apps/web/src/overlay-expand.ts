@@ -39,6 +39,34 @@ const DRAWER_PAD_BOTTOM = 18;
 /** The vertical gap between the host template node and its drawer below it. */
 export const DRAWER_GAP = 20;
 
+// --- density degrade (Ship #6): above the threshold, full cards collapse to chips --------
+/**
+ * Above this instance count an expanded fan degrades from full `agentCard` cells to compact
+ * `agentChip` cells, so the drawer height stays bounded instead of growing to ~ceil(N/5) card
+ * rows (a 50-instance fan would otherwise be a wall of cards taller than the viewport). At or
+ * below the threshold the fan renders full cards exactly as before.
+ */
+export const CHIP_DEGRADE_THRESHOLD = 18;
+/**
+ * Compact chip cell footprint — far smaller than a card (a label + a state dot + a duration).
+ * EXPORTED so the React `AgentChip` node's CSS sizes to the SAME box the layout reserves for it
+ * (one source of truth — the node must fill, never overflow, the cell expandInstances positions).
+ */
+export const CHIP_W = 150;
+export const CHIP_H = 30;
+const CHIP_GAP_X = 10;
+const CHIP_GAP_Y = 8;
+/** Dense column count for a chip grid: clamp(ceil(sqrt(N)), 4, 8) — wider/denser than cards. */
+export function chipCols(n: number): number {
+  return Math.min(8, Math.max(4, Math.ceil(Math.sqrt(Math.max(n, 1)))));
+}
+/**
+ * Max chip CELLS rendered in a degraded drawer. The last cell is always a `+N more` overflow
+ * tile when there is overflow, so at most `CHIP_RENDER_CAP - 1` real instance chips show and
+ * one tile accounts for the rest (an honest overflow marker; "show all" is later work).
+ */
+const CHIP_RENDER_CAP = 24; // → up to 23 instance chips + 1 "+N more" tile
+
 /** Column count for N instances: clamp(ceil(sqrt(N)), 2, 5) — a roughly-square, bounded grid. */
 export function drawerCols(n: number): number {
   return Math.min(5, Math.max(2, Math.ceil(Math.sqrt(Math.max(n, 1)))));
@@ -49,6 +77,10 @@ interface DrawerSize {
   height: number;
   cols: number;
   rows: number;
+  /** Whether this drawer renders compact chips (true) or full cards (false). */
+  degraded: boolean;
+  /** Number of grid CELLS actually rendered (chips + an optional overflow tile, or all cards). */
+  cells: number;
 }
 
 /**
@@ -57,15 +89,32 @@ interface DrawerSize {
  *   height = header + ceil(N/cols) card rows + ONE ghost row (+ gaps + bottom padding)
  * The ghost row is the "upcoming slot" gutter — it keeps the drawer from hugging the last
  * real card and reserves room for the dashed upcoming-instance placeholder.
+ *
+ * When `n > CHIP_DEGRADE_THRESHOLD` the drawer degrades to a DENSE chip grid: the rendered
+ * cell count is capped at CHIP_RENDER_CAP (the last cell a `+N more` tile), so the height is
+ * BOUNDED by ceil(CHIP_RENDER_CAP/cols) chip rows regardless of how large N gets.
  */
 export function drawerSize(n: number): DrawerSize {
-  const cols = drawerCols(n);
-  const cardRows = Math.ceil(Math.max(n, 1) / cols);
+  const count = Math.max(n, 1);
+  if (count > CHIP_DEGRADE_THRESHOLD) {
+    const cols = chipCols(count);
+    // Render at most CHIP_RENDER_CAP cells; the last is a `+N more` tile if there is overflow.
+    const overflow = count > CHIP_RENDER_CAP;
+    const cells = overflow ? CHIP_RENDER_CAP : count;
+    const cellRows = Math.ceil(cells / cols);
+    const rows = cellRows + 1; // + one ghost row (parity with the card grid gutter)
+    const width = DRAWER_PAD_X * 2 + cols * CHIP_W + (cols - 1) * CHIP_GAP_X;
+    const height =
+      DRAWER_PAD_TOP + rows * CHIP_H + (rows - 1) * CHIP_GAP_Y + DRAWER_PAD_BOTTOM;
+    return { width, height, cols, rows, degraded: true, cells };
+  }
+  const cols = drawerCols(count);
+  const cardRows = Math.ceil(count / cols);
   const rows = cardRows + 1; // + one ghost row
   const width = DRAWER_PAD_X * 2 + cols * CARD_W + (cols - 1) * CELL_GAP_X;
   const height =
     DRAWER_PAD_TOP + rows * CARD_H + (rows - 1) * CELL_GAP_Y + DRAWER_PAD_BOTTOM;
-  return { width, height, cols, rows };
+  return { width, height, cols, rows, degraded: false, cells: count };
 }
 
 /** The lane-relative grid position of the i-th card inside the drawer (drawer-relative). */
@@ -78,14 +127,96 @@ function cardCellPosition(i: number, cols: number): { x: number; y: number } {
   };
 }
 
+/** The drawer-relative grid position of the i-th CHIP cell in a degraded drawer. */
+function chipCellPosition(i: number, cols: number): { x: number; y: number } {
+  const col = i % cols;
+  const row = Math.floor(i / cols);
+  return {
+    x: DRAWER_PAD_X + col * (CHIP_W + CHIP_GAP_X),
+    y: DRAWER_PAD_TOP + row * (CHIP_H + CHIP_GAP_Y),
+  };
+}
+
 const drawerNodeId = (templateId: string): string => `instances-${templateId}`;
 const cardNodeId = (templateId: string, agentId: string, i: number): string =>
   `inst-${templateId}-${agentId || 'x'}-${i}`;
+const chipNodeId = (templateId: string, agentId: string, i: number): string =>
+  `chip-${templateId}-${agentId || 'x'}-${i}`;
+const moreTileId = (templateId: string): string => `chip-${templateId}-more`;
 
 /** Read a node's explicit style width/height (group nodes carry size in style). */
 function styleSize(n: Node): { width: number; height: number } {
   const s = (n.style ?? {}) as { width?: number; height?: number };
   return { width: s.width ?? 0, height: s.height ?? 0 };
+}
+
+/**
+ * The compact-chip node data for a degraded drawer cell. A real instance chip carries the
+ * minimal at-a-glance fields (`label`, `state`, `durationMs`, `agentId`, optional
+ * `failurePoint`); the trailing overflow tile carries `more` (the remaining hidden count).
+ */
+export interface AgentChipData {
+  label?: string;
+  state?: AgentNode['state'];
+  durationMs?: number | null;
+  agentId?: string;
+  failurePoint?: boolean;
+  /** Set ONLY on the trailing overflow tile: the count of instances NOT rendered as chips. */
+  more?: number;
+  [key: string]: unknown;
+}
+
+/**
+ * Build the degraded drawer's children: up to `size.cells` cells in a dense chip grid. When
+ * the fan overflows the cap, the LAST cell is a `+N more` overflow tile (`data.more` = the
+ * hidden remainder) and only the first `size.cells - 1` agents render as instance chips.
+ */
+function buildChipCells(
+  templateId: string,
+  drawerId: string,
+  agents: AgentNode[],
+  size: DrawerSize,
+  failureAgentIds: Set<string> | undefined,
+): Node[] {
+  const n = agents.length;
+  const overflow = n > size.cells; // a tile is needed iff more agents than rendered cells
+  const chipCount = overflow ? size.cells - 1 : Math.min(n, size.cells);
+  const cells: Node[] = [];
+  for (let i = 0; i < chipCount; i++) {
+    const agent = agents[i];
+    if (!agent) continue; // i < chipCount ≤ n, so this never fires — guards noUncheckedIndexedAccess
+    const pos = chipCellPosition(i, size.cols);
+    const data: AgentChipData = {
+      label: agent.label || agent.agentId || 'agent',
+      state: agent.state,
+      durationMs: agent.durationMs,
+      agentId: agent.agentId,
+      failurePoint: failureAgentIds?.has(agent.agentId) === true,
+    };
+    cells.push({
+      id: chipNodeId(templateId, agent.agentId, i),
+      type: 'agentChip',
+      parentId: drawerId,
+      position: pos,
+      data,
+      draggable: false,
+      selectable: false,
+    } as Node);
+  }
+  if (overflow) {
+    const pos = chipCellPosition(chipCount, size.cols);
+    const data: AgentChipData = { more: n - chipCount };
+    cells.push({
+      id: moreTileId(templateId),
+      type: 'agentChip',
+      parentId: drawerId,
+      position: pos,
+      data,
+      draggable: false,
+      selectable: false,
+    } as Node);
+  }
+  return cells;
 }
 
 /**
@@ -192,19 +323,23 @@ export function expandInstances(
       style: { width: size.width, height: size.height },
     };
 
-    // The grid agent cards, drawer-relative, WITHOUT extent:'parent'.
-    const cards: Node[] = agents.map((agent, i) => {
-      const pos = cardCellPosition(i, size.cols);
-      return {
-        id: cardNodeId(templateId, agent.agentId, i),
-        type: 'agentCard',
-        parentId: drawer.id,
-        position: pos,
-        data: agentToCardData(agent, failureAgentIds?.has(agent.agentId) === true),
-        draggable: false,
-        selectable: false,
-      } as Node;
-    });
+    // The grid children, drawer-relative, WITHOUT extent:'parent'. Small fans render full
+    // `agentCard` cells; large (degraded) fans render compact `agentChip` cells capped at
+    // CHIP_RENDER_CAP with a trailing `+N more` overflow tile.
+    const cards: Node[] = size.degraded
+      ? buildChipCells(templateId, drawer.id, agents, size, failureAgentIds)
+      : agents.map((agent, i) => {
+          const pos = cardCellPosition(i, size.cols);
+          return {
+            id: cardNodeId(templateId, agent.agentId, i),
+            type: 'agentCard',
+            parentId: drawer.id,
+            position: pos,
+            data: agentToCardData(agent, failureAgentIds?.has(agent.agentId) === true),
+            draggable: false,
+            selectable: false,
+          } as Node;
+        });
 
     const drawerH = size.height + DRAWER_GAP;
     pending.push({ templateId, laneId, cards, drawer, drawerH, templateBottomY });
@@ -268,19 +403,23 @@ function assertDev(nodes: Node[], pending: { drawer: Node; cards: Node[] }[]): v
   const env = (import.meta as unknown as { env?: { PROD?: boolean } }).env;
   if (env?.PROD === true) return;
 
-  // (1) card rect ⊆ drawer rect — cards are drawer-relative, so check 0 ≤ pos and
-  //     pos + cardSize ≤ drawerSize.
+  // (1) child rect ⊆ drawer rect — cells are drawer-relative, so check 0 ≤ pos and
+  //     pos + cellSize ≤ drawerSize. Chip cells use the compact CHIP_* footprint; full-card
+  //     cells use the CARD_* footprint (a degraded drawer is sized to chips, not cards).
   for (const { drawer, cards } of pending) {
     const ds = (drawer.style ?? {}) as { width?: number; height?: number };
     const dw = ds.width ?? 0;
     const dh = ds.height ?? 0;
     for (const c of cards) {
+      const isChip = c.type === 'agentChip';
+      const cw = isChip ? CHIP_W : CARD_W;
+      const ch = isChip ? CHIP_H : CARD_H;
       const x = c.position.x;
       const y = c.position.y;
-      const ok = x >= 0 && y >= 0 && x + CARD_W <= dw && y + CARD_H <= dh;
+      const ok = x >= 0 && y >= 0 && x + cw <= dw && y + ch <= dh;
       if (!ok) {
         throw new Error(
-          `expandInstances: card ${c.id} rect (${x},${y},${CARD_W}x${CARD_H}) escapes drawer ` +
+          `expandInstances: cell ${c.id} rect (${x},${y},${cw}x${ch}) escapes drawer ` +
             `${drawer.id} (${dw}x${dh})`,
         );
       }

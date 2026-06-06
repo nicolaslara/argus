@@ -239,7 +239,12 @@ export const DetailPanel = memo(function DetailPanel({
 }) {
   // Hooks must run unconditionally (before the early return). Derive from a possibly-null node.
   const dMaybe = (node?.data ?? {}) as Record<string, unknown>;
-  const isAgent = (node?.type ?? '') === 'agentCard';
+  // An EXECUTION instance: a full agentCard OR a compact agentChip (Ship #6 density degrade).
+  // Both carry `data.agentId`, so a clicked chip drills into the same transcript/result/activity
+  // as a card. The chip's `+N more` overflow tile carries no agentId → agentId resolves to null
+  // (str(undefined)) and the panel stays inert for it (there is no single agent to open).
+  const nodeType = node?.type ?? '';
+  const isAgent = nodeType === 'agentCard' || nodeType === 'agentChip';
   // A single-agent plan step has no separate instance card to click — drill into its ONE bound
   // agent's transcript activity straight from the plan node, so a failed single-agent step (e.g.
   // `implement`) surfaces its root-cause last-activity, not just static template detail.

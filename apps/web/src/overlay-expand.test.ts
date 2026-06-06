@@ -3,7 +3,13 @@ import type { Edge, Node } from '@xyflow/react';
 import type { AgentNode, Overlay, RunModel } from '@argus/contract';
 import type { GraphResult } from './mapping.ts';
 import { CARD_SHELL_WIDTH, CARD_SHELL_HEIGHT_EXEC } from './nodes/AgentCardShell.tsx';
-import { expandInstances, drawerSize, drawerCols, DRAWER_GAP } from './overlay-expand.ts';
+import {
+  expandInstances,
+  drawerSize,
+  drawerCols,
+  DRAWER_GAP,
+  CHIP_DEGRADE_THRESHOLD,
+} from './overlay-expand.ts';
 
 // STEP 2 — browser-free correctness of the pure drawer re-flow (run-view-merge-plan.md §2).
 // A SYNTHETIC painted graph + overlay with ONE fan-out template (N=7) bound to 7 agents,
@@ -18,6 +24,7 @@ const OTHER_MEMBER_ID = 'agent:design:2';
 
 const N = 7;
 const AGENT_IDS = Array.from({ length: N }, (_, i) => `a${i + 1}`);
+const agentIdsFor = (n: number): string[] => Array.from({ length: n }, (_, i) => `a${i + 1}`);
 
 // The template's lane-relative geometry (mirrors a painted plan agent card).
 const TEMPLATE_Y = 40;
@@ -51,7 +58,8 @@ function agentNode(over: Partial<AgentNode> & { agentId: string }): AgentNode {
   };
 }
 
-function makeGraph(): GraphResult {
+function makeGraph(agentIds: string[] = AGENT_IDS): GraphResult {
+  const count = agentIds.length;
   const nodes: Node[] = [
     // Lane 1 (the host lane) — parent BEFORE its children.
     {
@@ -70,10 +78,10 @@ function makeGraph(): GraphResult {
       position: { x: 30, y: TEMPLATE_Y },
       data: {
         bindStatus: 'complete',
-        bindAgentIds: AGENT_IDS,
-        bindSucceeded: N,
+        bindAgentIds: agentIds,
+        bindSucceeded: count,
         bindFailed: 0,
-        bindTotal: N,
+        bindTotal: count,
         painted: true,
       },
       style: { width: CARD_SHELL_WIDTH, height: TEMPLATE_H },
@@ -112,16 +120,17 @@ function makeGraph(): GraphResult {
   return { nodes, edges };
 }
 
-function makeOverlay(): Overlay {
+function makeOverlay(agentIds: string[] = AGENT_IDS): Overlay {
+  const count = agentIds.length;
   return {
     bindings: [
       {
         planNodeId: TEMPLATE_ID,
-        agentIds: AGENT_IDS,
+        agentIds,
         status: 'complete',
-        succeeded: N,
+        succeeded: count,
         failed: 0,
-        total: N,
+        total: count,
         confidence: 'medium',
         ambiguous: false,
       },
@@ -131,7 +140,7 @@ function makeOverlay(): Overlay {
   };
 }
 
-function makeRun(): RunModel {
+function makeRun(agentIds: string[] = AGENT_IDS): RunModel {
   return {
     ref: { projectPath: '', slug: 's', sessionId: 'x', runId: 'wf_x' },
     workflowName: 'x',
@@ -142,7 +151,7 @@ function makeRun(): RunModel {
     defaultModel: null,
     summary: '',
     phases: [{ index: 1, title: 'Research', detail: null }],
-    agents: AGENT_IDS.map((id) => agentNode({ agentId: id })),
+    agents: agentIds.map((id) => agentNode({ agentId: id })),
     edges: [],
     logs: [],
     partialFailure: { present: false, lines: [] },
@@ -246,5 +255,105 @@ describe('drawerSize / drawerCols — geometry', () => {
     const s = drawerSize(7);
     expect(s.cols).toBe(3);
     expect(s.rows).toBe(Math.ceil(7 / 3) + 1); // 3 card rows + 1 ghost = 4
+  });
+});
+
+// Ship #6 — DENSITY DEGRADE: above CHIP_DEGRADE_THRESHOLD an expanded fan collapses from full
+// cards to compact chips + a `+N more` overflow tile, so the drawer height stays BOUNDED.
+describe('expandInstances — density degrade to chips (N=50)', () => {
+  const BIG_N = 50;
+  const bigIds = agentIdsFor(BIG_N);
+  const graph = makeGraph(bigIds);
+  const overlay = makeOverlay(bigIds);
+  const run = makeRun(bigIds);
+  const result = expandInstances(graph, overlay, run, new Set([TEMPLATE_ID]), false);
+
+  const drawer = result.nodes.find((n) => n.type === 'instanceGroup');
+  const chips = result.nodes.filter((n) => n.type === 'agentChip');
+  const fullCards = result.nodes.filter((n) => n.type === 'agentCard');
+
+  it('emits chips (not full cards) + exactly one `+N more` overflow tile', () => {
+    expect(BIG_N).toBeGreaterThan(CHIP_DEGRADE_THRESHOLD);
+    expect(drawer).toBeDefined();
+    // Degraded: no full agentCard cells at all.
+    expect(fullCards.length).toBe(0);
+    expect(chips.length).toBeGreaterThan(0);
+    // Exactly one overflow tile, carrying the hidden remainder via data.more.
+    const tiles = chips.filter((c) => (c.data as { more?: number }).more != null);
+    expect(tiles.length).toBe(1);
+    const more = (tiles[0]!.data as { more: number }).more;
+    const realChips = chips.length - 1;
+    // The rendered chips + the hidden remainder account for every instance.
+    expect(realChips + more).toBe(BIG_N);
+    // The cap is honored: the rendered cell count is bounded well below N.
+    expect(chips.length).toBeLessThanOrEqual(24);
+    expect(chips.length).toBeLessThan(BIG_N);
+  });
+
+  it('real chips carry {label,state,durationMs,agentId}; the tile carries {more}', () => {
+    for (const c of chips) {
+      const d = c.data as { label?: string; state?: string; agentId?: string; more?: number };
+      if (d.more != null) continue; // the overflow tile
+      expect(typeof d.label).toBe('string');
+      expect(typeof d.state).toBe('string');
+      expect(typeof d.agentId).toBe('string');
+    }
+  });
+
+  it('the drawer height is BOUNDED — far smaller than 50 full-card rows', () => {
+    const degraded = drawerSize(BIG_N);
+    const drawerH = (drawer!.style as { height: number }).height;
+    expect(drawerH).toBe(degraded.height);
+    // What 50 FULL cards would have cost (the pre-degrade arithmetic): ceil(50/5)=10 card rows
+    // + 1 ghost, each CARD_SHELL_HEIGHT_EXEC tall. The degraded drawer must be a fraction of it.
+    const fullCols = drawerCols(BIG_N);
+    const fullRows = Math.ceil(BIG_N / fullCols) + 1;
+    const fullCardGridH = fullRows * CARD_SHELL_HEIGHT_EXEC; // lower bound on the un-degraded body
+    expect(drawerH).toBeLessThan(fullCardGridH / 2);
+  });
+
+  it('every chip rect is inside the drawer rect', () => {
+    const ds = drawer!.style as { width: number; height: number };
+    for (const c of chips) {
+      expect(c.position.x).toBeGreaterThanOrEqual(0);
+      expect(c.position.y).toBeGreaterThanOrEqual(0);
+      // Chips use the compact footprint, narrower than a card; they must fit the drawer box.
+      expect(c.position.x).toBeLessThanOrEqual(ds.width);
+      expect(c.position.y).toBeLessThanOrEqual(ds.height);
+    }
+  });
+
+  it('every child node index > its parent node index', () => {
+    const indexOf = new Map<string, number>();
+    result.nodes.forEach((n, i) => indexOf.set(n.id, i));
+    for (const n of result.nodes) {
+      if (typeof n.parentId === 'string') {
+        expect(indexOf.get(n.id)!).toBeGreaterThan(indexOf.get(n.parentId)!);
+      }
+    }
+  });
+
+  it('grows the host lane by exactly the (bounded) drawerH', () => {
+    const degraded = drawerSize(BIG_N);
+    const drawerH = degraded.height + DRAWER_GAP;
+    const lane = result.nodes.find((n) => n.id === LANE_ID)!;
+    expect((lane.style as { height: number }).height).toBe(400 + drawerH);
+  });
+});
+
+// A fan AT the threshold still renders full cards (the small-fan path is unchanged).
+describe('expandInstances — fan at/below threshold still renders full cards', () => {
+  const ids = agentIdsFor(CHIP_DEGRADE_THRESHOLD); // exactly the threshold → NOT degraded
+  const result = expandInstances(
+    makeGraph(ids),
+    makeOverlay(ids),
+    makeRun(ids),
+    new Set([TEMPLATE_ID]),
+    false,
+  );
+  it('emits full agentCard cells and no chips', () => {
+    expect(result.nodes.filter((n) => n.type === 'agentChip').length).toBe(0);
+    expect(result.nodes.filter((n) => n.type === 'agentCard').length).toBe(CHIP_DEGRADE_THRESHOLD);
+    expect(drawerSize(CHIP_DEGRADE_THRESHOLD).degraded).toBe(false);
   });
 });

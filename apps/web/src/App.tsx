@@ -49,6 +49,7 @@ import {
   UnparsedPlaceholder,
 } from './nodes/PlanNodes.tsx';
 import { InstanceGroup } from './nodes/InstanceGroup.tsx';
+import { AgentChip } from './nodes/AgentChip.tsx';
 import { Rail, type RailSection } from './shell/Rail.tsx';
 import { formatRelativeTime } from './shell/format.ts';
 import { DetailPanel } from './nodes/DetailPanel.tsx';
@@ -70,6 +71,9 @@ const nodeTypes: NodeTypes = {
   // The merged Run view's expand drawer (run-view-merge-plan.md §2). expandInstances emits
   // these as `type:'instanceGroup'` parented to the host phase lane.
   instanceGroup: InstanceGroup,
+  // Ship #6 density degrade: above the threshold a degraded drawer's cells are compact
+  // `agentChip` nodes (+ a `+N more` tile) instead of full agentCards.
+  agentChip: AgentChip,
 };
 
 // The merged Run view (run-view-merge-plan.md §1): TWO top-level views. `plan` is the
