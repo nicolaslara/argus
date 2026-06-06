@@ -5,13 +5,12 @@ import {
   Controls,
   MiniMap,
   BackgroundVariant,
-  type Node as FlowNode,
   type NodeTypes,
   type ReactFlowInstance,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { useQuery } from '@tanstack/react-query';
-import type { PlanModel, ProjectRef, RunSummary, WorkflowMeta } from '@argus/contract';
+import type { ProjectRef, RunSummary, WorkflowMeta } from '@argus/contract';
 import {
   fetchProjects,
   fetchProjectRuns,
@@ -21,29 +20,14 @@ import {
   fetchRunLive,
   fetchRunPlan,
 } from './api.ts';
-// runModelToGraph/mapping.ts are DEMOTED (not deleted, per run-view-merge-plan.md §4): the
-// merged Run view paints the plan template + expands instances, so App no longer renders the
-// standalone execution graph. mapping.ts survives as the instance-card builder (agentToCardData,
-// used by overlay-expand.ts) + the plan-less fallback engine; only its type is imported here.
-import type { GraphResult } from './mapping.ts';
-import { agentToCardData } from './mapping.ts';
-import { planMetaToGraph } from './plan-mapping.ts';
-import { planModelToGraph } from './plan-model-mapping.ts';
-import { buildOverlay } from './overlay.ts';
-import { paintOverlay } from './overlay-paint.ts';
-import { expandInstances } from './overlay-expand.ts';
-import { expandLoopDrawer } from './overlay-loop-expand.ts';
 import { pickPlanSource } from './plan-correspondence.ts';
-import { useLiveAgentFill } from './live-agent-fill.ts';
 import { ExpandContext, type LoopDrillMode } from './expand-context.ts';
 import { readLoopDrillMode, writeLoopDrillMode } from './loop-drill-setting.ts';
 import { migrateLoopDrill } from './loop-drill-migrate.ts';
-import {
-  overlayExplanations,
-  usePlanExplanations,
-  useRunExplanations,
-} from './explanations.ts';
-import { loadElkLayout } from './layout/index.ts';
+// The run/plan graph-build pipeline (elk layout, the morph paint+expand, the live-fill fetch,
+// the LLM caption polls) lives in ./hooks/useRunGraph.ts so App stays chrome + state. App owns
+// the run query + selection state; the hook turns those into the rendered graph.
+import { useRunGraph } from './hooks/useRunGraph.ts';
 import { computeFitSignature } from './fit-signature.ts';
 import {
   warningCountLabel,
@@ -105,8 +89,6 @@ const nodeTypes: NodeTypes = {
 // cards in-place (expandInstances). The old `overlay`/`execution` split is gone — Progress
 // and Execution were the same run at two zoom levels, joined now by a click, not a tab.
 type ViewMode = 'plan' | 'run';
-
-const EMPTY_GRAPH: GraphResult = { nodes: [], edges: [] };
 
 // STEP 3 (inline-expand): the readability budget for the one-time auto-expand seed. On a
 // run change we default-expand every fanned step so each subagent is visible — but bounded:
@@ -366,61 +348,31 @@ export function App() {
   const { plan: effectivePlan, usePerRun: usePerRunPlanForPlanView, focusedHasDeclaredWorkflow } =
     pickPlanSource({ view, summary, workflows, runPlan, declaredPlan: plan });
 
-  // --- AST-mode layout: when the PlanModel is rich (static-source), lay it out with
-  //     elkjs (lazily loaded). The P0 meta-only planMetaToGraph is the RUN-FREE FALLBACK
-  //     used on derivedFrom==='meta-only' OR any /plan fetch error. ---
-  const useAstMode = !!effectivePlan && effectivePlan.derivedFrom === 'static-source' && effectivePlan.nodes.length > 0;
-
-  const [astGraph, setAstGraph] = useState<GraphResult>(EMPTY_GRAPH);
-  const [astError, setAstError] = useState(false);
-  useEffect(() => {
-    if (view !== 'plan' || !useAstMode || !effectivePlan) {
-      setAstGraph(EMPTY_GRAPH);
-      setAstError(false);
-      return;
-    }
-    let cancelled = false;
-    setAstError(false);
-    (async () => {
-      try {
-        const elk = await loadElkLayout();
-        const graph = await planModelToGraph(effectivePlan as PlanModel, elk);
-        if (!cancelled) setAstGraph(graph);
-      } catch {
-        // Layout/elk failure → fall back to the meta-only graph (never a blank canvas).
-        if (!cancelled) {
-          setAstGraph(EMPTY_GRAPH);
-          setAstError(true);
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [view, useAstMode, effectivePlan]);
-
   const run = runQ.data;
 
-  // --- STEP 2 (live fill): eagerly fetch the per-agent transcript metrics a LIVE run's
-  //     journal lacks (dur/tok/tools/label), polled on the live tick, so the instance cards
-  //     show real numbers instead of em-dashes BEFORE you click each one. Returns a STABLE
-  //     empty map (and fetches nothing) for a finished run — their cards fill from the
-  //     finalized model and must stay byte-unchanged. Merged into the card build below
-  //     (expandInstances → agentToCardData); the layout arithmetic is unaffected. ---
-  const liveFill = useLiveAgentFill(
-    summary ? { slug: summary.ref.slug, sessionId: summary.ref.sessionId, runId: summary.ref.runId } : null,
+  // The run/plan graph-build pipeline lives in ./hooks/useRunGraph.ts: the Plan-AST + Run-morph
+  // elk layouts, the live-fill transcript fetch, the morph paint+expand, and the LLM caption
+  // polls. App owns the run query + selection state and passes them in; the hook returns the
+  // rendered graph, the open detail node (a table-row's synthetic card wins over a canvas id),
+  // the Plan⟷Execution `overlay` (App reads its binding counts for the header + reseeds the
+  // expand set from it on run-change, below), the planIsAst flag, and the layout-error flag.
+  const { graph, selectedNode, overlay, planIsAst, overlayError } = useRunGraph({
+    view,
+    effectivePlan,
+    runPlan,
     run,
-  );
-
-  // --- P2 MORPH layout: lay the run's plan out with the SAME elk pass + planModelToGraph
-  //     the Plan view uses (the canonical shared layout), then PAINT the run status onto
-  //     it (buildOverlay → paintOverlay). Painting is additive (data-only); toggling the
-  //     folded↔unrolled `unrolled` mode re-paints without relaying out. Drilling a node
-  //     never relayouts (paint is a data patch). ---
-  const overlay = useMemo(
-    () => (runPlan && run ? buildOverlay(runPlan, run) : null),
-    [runPlan, run],
-  );
+    summary,
+    usePerRunPlanForPlanView,
+    workflow,
+    project,
+    unrolled,
+    expandedNodeIds,
+    loopDrillMode,
+    loopDrawerRound,
+    tableAgentId,
+    hoveredAgentId,
+    selectedNodeId,
+  });
 
   // --- Merged Run view: RESET + SEED expandedNodeIds on run change (run-view-merge-plan.md
   //     §2 + STEP 3 inline-expand). The expand set is reset whenever the selected run identity
@@ -465,161 +417,6 @@ export function App() {
     setExpandedNodeIds(seed);
     seededRunKey.current = runIdentityKey;
   }, [runIdentityKey, overlay]);
-
-  const overlayLayoutReady = !!runPlan && runPlan.derivedFrom === 'static-source' && runPlan.nodes.length > 0;
-  const [overlayBaseGraph, setOverlayBaseGraph] = useState<GraphResult>(EMPTY_GRAPH);
-  const [overlayError, setOverlayError] = useState(false);
-  useEffect(() => {
-    if (view !== 'run' || !overlayLayoutReady || !runPlan) {
-      setOverlayBaseGraph(EMPTY_GRAPH);
-      setOverlayError(false);
-      return;
-    }
-    let cancelled = false;
-    setOverlayError(false);
-    (async () => {
-      try {
-        const elk = await loadElkLayout();
-        const graph = await planModelToGraph(runPlan as PlanModel, elk);
-        if (!cancelled) setOverlayBaseGraph(graph);
-      } catch {
-        if (!cancelled) {
-          setOverlayBaseGraph(EMPTY_GRAPH);
-          setOverlayError(true);
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [view, overlayLayoutReady, runPlan]);
-
-  // Paint (data-only), THEN expand any open fan-out drawers in-place. paintOverlay stays
-  // pure (no relayout); expandInstances is the ELK-free arithmetic re-flow layered on top
-  // (run-view-merge-plan.md §2). The folded↔unrolled toggle still only re-paints; a drawer
-  // open/close re-runs expandInstances off the same `expandedNodeIds` Set.
-  const overlayGraph = useMemo(() => {
-    if (view !== 'run' || overlayBaseGraph.nodes.length === 0 || !overlay || !run) return EMPTY_GRAPH;
-    // R8b: a live (incomplete) run paints "upcoming"/"running" instead of "planned·not-run".
-    const live = run.incomplete;
-    // Table cross-highlight (data-only): a COLLAPSED fan's template is marked here if its
-    // bindAgentIds aggregates the selected/hovered table agent (an EXPANDED fan marks the
-    // instance card in expandInstances instead). No relayout — just a node.data patch.
-    const painted = paintOverlay(
-      overlayBaseGraph,
-      overlay,
-      unrolled,
-      live,
-      tableAgentId,
-      hoveredAgentId,
-    );
-    // STEP 3: the dead/last-started agentIds → the failing INSTANCE card (in an expanded drawer)
-    // reads as the failure point; and a single-agent (non-fanned) step is marked on its painted
-    // PLAN node here, so a failed run never shows the failing step as a clean "done".
-    const failureAgentIds = deriveFailureInfo(run)?.failureAgentIds;
-    // STEP 2: thread the live transcript fill into the instance-card build. Empty for a finished
-    // run (so its cards stay byte-unchanged); for a live run it replaces a running agent's
-    // em-dashed dur/tok/tools/label with the real transcript-derived values.
-    let expanded = expandInstances(
-      painted,
-      overlay,
-      run,
-      expandedNodeIds,
-      live,
-      failureAgentIds,
-      liveFill,
-      tableAgentId,
-      hoveredAgentId,
-    );
-    // OPTION 2 (lane-drawer inside the loop): when the loop-drill setting is 'lane-drawer' AND a
-    // round drawer is open AND the loop is unrolled, draw that round's agents as cards inside the
-    // loop compound (the back-edge re-routes around them). In 'round-axis' mode (the default) this
-    // is a no-op — option 1's round-axis → DetailPanel drill is unchanged. The flat-fan
-    // lane-drawer above (expandInstances) is untouched in both modes.
-    if (loopDrillMode === 'lane-drawer' && unrolled && loopDrawerRound.size > 0) {
-      expanded = expandLoopDrawer(expanded, overlay, run, loopDrawerRound, failureAgentIds);
-    }
-    if (!failureAgentIds || failureAgentIds.size === 0) return expanded;
-    return {
-      ...expanded,
-      nodes: expanded.nodes.map((n) => {
-        const ids = (n.data as { bindAgentIds?: string[] } | undefined)?.bindAgentIds;
-        return Array.isArray(ids) && ids.some((id) => failureAgentIds.has(id))
-          ? { ...n, data: { ...n.data, failurePoint: true } }
-          : n;
-      }),
-    };
-  }, [view, overlayBaseGraph, overlay, unrolled, run, expandedNodeIds, loopDrillMode, loopDrawerRound, liveFill, tableAgentId, hoveredAgentId]);
-
-  const metaGraph = useMemo(() => {
-    if (view !== 'plan') return EMPTY_GRAPH;
-    // UIBUG-2: for an ad-hoc run's per-run plan there is NO declared workflow to fall back to —
-    // `workflow` here is the WRONG (default) workflow, so never meta-graph it.
-    if (usePerRunPlanForPlanView) return EMPTY_GRAPH;
-    return workflow ? planMetaToGraph(workflow) : EMPTY_GRAPH;
-  }, [view, workflow, usePerRunPlanForPlanView]);
-
-  // The AST plan is used when available AND elk succeeded; else the meta-only fallback.
-  const planIsAst = view === 'plan' && useAstMode && !astError && astGraph.nodes.length > 0;
-  const baseGraph: GraphResult =
-    view === 'run'
-      ? overlayGraph
-      : planIsAst
-        ? astGraph
-        : metaGraph;
-
-  // --- PX: poll per-node LLM captions in the background and swap them into the existing
-  //     subtitle/caption slots when ready. Annotation-only: topology is untouched. The
-  //     plan poll keys on the selected workflow file. The poll only runs in the Plan view;
-  //     the merged Run view paints onto the PLAN node ids (≠ agentIds), so run captions have
-  //     no join target there (the prior `overlay` mode never joined them either). When
-  //     `claude` is absent the batch is engine-unavailable/all-baseline and the overlay is a
-  //     no-op. ---
-  const planExplanations = usePlanExplanations(
-    project?.slug,
-    workflow?.file,
-    // UIBUG-2: an ad-hoc run's per-run plan has no `workflow.file` join key (the LLM caption
-    // poll keys on the declared workflow file) — disable the poll for it.
-    view === 'plan' && planIsAst && !usePerRunPlanForPlanView,
-  );
-  // Run-view PX captions are not joined (painted plan node ids ≠ agentIds); keep the hook
-  // call present (hooks must be unconditional) but inert.
-  useRunExplanations(
-    summary ? { slug: summary.ref.slug, sessionId: summary.ref.sessionId, runId: summary.ref.runId } : undefined,
-    false,
-  );
-  const graph: GraphResult = useMemo(() => {
-    if (planIsAst) return overlayExplanations(baseGraph, planExplanations);
-    // Run view: the base graph is already painted with run status + any expanded drawers;
-    // PX captions are not joined here (the painted plan node ids ≠ agentIds). meta-only
-    // plan: lanes carry their declared subtitle already.
-    return baseGraph;
-  }, [planIsAst, baseGraph, planExplanations]);
-
-  // "Table panel": a table-row selection resolves to a SYNTHETIC `agentCard` node built from the
-  // run's AgentNode (the same shape the canvas instance cards carry, via agentToCardData) so the
-  // DetailPanel's exec-agent path lights up — even when the agent's fan is collapsed on the
-  // canvas (so there is no graph node to click). It carries the failure-point flag so a dead
-  // agent reads consistently. Takes precedence over a canvas node selection below.
-  const tableSelectedNode = useMemo(() => {
-    if (!tableAgentId || !run) return null;
-    const agent = run.agents.find((a) => a.agentId === tableAgentId);
-    if (!agent) return null;
-    const failureAgentIds = deriveFailureInfo(run)?.failureAgentIds;
-    return {
-      id: `table-agent-${agent.agentId}`,
-      type: 'agentCard',
-      position: { x: 0, y: 0 },
-      data: agentToCardData(agent, failureAgentIds?.has(agent.agentId) === true, liveFill?.get(agent.agentId)),
-    } as FlowNode;
-  }, [tableAgentId, run, liveFill]);
-
-  // I1: resolve the open detail node against the live graph (null if it's no longer present).
-  // A table-row selection (synthetic node) wins over a stale/absent canvas node selection.
-  const selectedNode = useMemo(
-    () => tableSelectedNode ?? graph.nodes.find((n) => n.id === selectedNodeId) ?? null,
-    [tableSelectedNode, graph.nodes, selectedNodeId],
-  );
 
   // fitView (U1 cosmetic fix): the `fitView` PROP only fits on mount, so the async
   // Plan-AST graph (which replaces the meta-only graph after elk resolves) was never
