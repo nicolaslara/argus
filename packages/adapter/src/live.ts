@@ -221,7 +221,6 @@ function makeLivePreview(s: string | undefined): Preview | null {
 export interface LiveModelOptions {
   /** Persisted-script plan, used to recover labels/phases by start-order binding (F4). */
   plan?: PlanModel | null;
-  clientVersion?: string;
 }
 
 /**
@@ -324,7 +323,6 @@ export function buildLiveModel(
     warnings,
     format: ADAPTER_FORMAT_LIVE,
   };
-  if (opts.clientVersion !== undefined) model.clientVersion = opts.clientVersion;
   return model;
 }
 

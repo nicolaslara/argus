@@ -111,8 +111,6 @@ export interface RunModel {
   warnings: AdapterWarning[];
   /** ADAPTER_FORMAT pin. */
   format: string;
-  /** Lazy, best-effort. */
-  clientVersion?: string;
   // NOTE: script/scriptPath intentionally absent — lazy "view source" only.
 }
 

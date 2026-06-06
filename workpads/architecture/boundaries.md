@@ -105,8 +105,9 @@ resolveClientVersion(port, ref): Promise<string | undefined>; // LAZY, best-effo
   raw.
 - **`args`** JSON-parsed defensively with a raw-string fallback. `tokens` `0` vs
   `null` preserved.
-- **Format pin:** the adapter stamps `ADAPTER_FORMAT = 'cc-workflow/observed-2026-06-04'`.
-  `clientVersion` (observed `2.1.161`) is optional/lazy and never gates the snapshot.
+- **Format pin:** the adapter stamps `ADAPTER_FORMAT = 'cc-workflow/observed-2026-06-04'`
+  onto every model and reports it on `/health`. The pin records which on-disk format the
+  adapter was verified against; it never gates the snapshot.
 
 ---
 
@@ -170,7 +171,6 @@ interface RunModel {
   args: unknown;
   warnings: AdapterWarning[];
   format: string;                   // ADAPTER_FORMAT
-  clientVersion?: string;           // lazy/best-effort
   // script/scriptPath intentionally absent — lazy "view source" only
 }
 
@@ -319,7 +319,10 @@ GET  /health
 
 The on-disk format is undocumented and unversioned (the `$bunfs` paths confirm an
 internal build). Mitigations: the single adapter seam, zod `.passthrough()`/`.catch()`,
-the `ADAPTER_FORMAT` pin, the captured torn/killed/zero-token fixtures, and an
-**"untested format" badge** shown when the observed `clientVersion` differs from the
-one this `ADAPTER_FORMAT` was verified against (`2.1.161`). A format change is intended
-to be a one-file fix in `packages/adapter`.
+the `ADAPTER_FORMAT` pin (stamped on every model and reported on `/health`), and the
+captured torn/killed/zero-token fixtures. Format compatibility is managed by the
+adapter's defensive parsing, not by client-version signaling — a format change is
+intended to be a one-file fix in `packages/adapter` (re-pin `ADAPTER_FORMAT`, adjust the
+raw schemas). No "untested format" drift badge is shipped: it would require a per-client
+version signal the on-disk format does not reliably expose, so it would be an absent
+guarantee rather than a real one.

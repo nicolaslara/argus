@@ -175,13 +175,19 @@ the transcript-reader (the design-plan "LATER" stack) all shipped.
   tooltip; full list in the RunOverviewPanel warnings section) and a `⚠ {pct}% parsed` /
   `partial` badge in the plan-header when an AST plan came back degraded. Silent when clean.
   +18 tests (316 total).
-- **Decide `clientVersion`: wire the drift badge or delete the dead plumbing** · M · no route
-  sets it, so the "untested format" badge (boundaries §9) never appears — stop shipping an
-  absent guarantee.
-- **Widen the `node:fs`-free contract test** to `live.ts`/`plan.ts`/`discovery.ts` · S · today
-  it guards only `index.ts`+`raw.ts`, so a future `node:fs` import elsewhere passes silently.
-- **Code-split the elk chunk** (1.44 MB > Vite's 500 kB warning) · S · lazy-load the layout
-  engine.
+- **Decide `clientVersion`** — DONE (resolved 2026-06-06): deleted the dead plumbing. No route
+  ever set it and no web source read it, so the "untested format" badge (boundaries §9) could
+  never appear. Removed the optional `RunModel.clientVersion` field, the `AdapterContext` /
+  `LiveModelOptions` `clientVersion` options + their `!== undefined` guards, and rewrote
+  boundaries §9 to state format compatibility is managed by the adapter's defensive parsing +
+  the `ADAPTER_FORMAT` pin (reported on `/health`), not by client-version signaling. The `format`
+  pin is the real, end-to-end guarantee; the drift badge would have been an absent one.
+- **Widen the `node:fs`-free contract test** — ALREADY DONE (verified 2026-06-06). The test
+  (`adapter.test.ts:512-524`, arch-review #4) `readdirSync`s EVERY non-test adapter `*.ts` and
+  asserts none import `node:fs` — so live.ts/plan.ts/discovery.ts are already guarded.
+- **Code-split the elk chunk** — ALREADY DONE (verified 2026-06-06). `loadElkLayout`
+  (`layout/index.ts:37`) is an `await import('./elk.ts')` → elk is its own lazy chunk (the
+  1.44 MB `elk-*.js`), never in the main bundle. The build warning is advisory only.
 
 ### Product model (design-only, needs a call)
 - **Option B — drop the Plan/Run toggle, let selection drive it** (workflow → blueprint, run →

@@ -56,7 +56,7 @@ export { discoverRunningRunsReport } from './discovery.ts';
 /** Transcript path: per-agent activity (tokens/tools/timing/last-activity) from agent-<id>.jsonl. */
 export { agentActivityFromTranscript, agentActivityFromDir, ACTIVITY_TIMELINE_CAP } from './activity.ts';
 
-/** Observed-format pin. The "tested on" client version (best-effort) is resolved lazily. */
+/** Observed-format pin. Stamped onto every model + reported on /health (boundaries §9). */
 export const ADAPTER_FORMAT = 'cc-workflow/observed-2026-06-04' as const;
 
 /** Injected filesystem seam. The node implementation lives in apps/server. */
@@ -96,7 +96,6 @@ export function recoverProjectPath(scriptPath: string): string | null {
 
 export interface AdapterContext {
   ref: RunRef;
-  clientVersion?: string;
 }
 
 /**
@@ -259,7 +258,6 @@ export function parseFinalizedRun(raw: unknown, ctx: AdapterContext): RunModel {
     format: ADAPTER_FORMAT,
     // Full `result`, `script`, `scriptPath` intentionally NOT inlined (lazy only).
   };
-  if (ctx.clientVersion !== undefined) model.clientVersion = ctx.clientVersion;
   return model;
 }
 
