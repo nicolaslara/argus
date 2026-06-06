@@ -16,8 +16,8 @@ fullscreen graph of phases, agents, tokens, tools, and results.
 ![argus — the Run view: a workflow's plan painted with a run; fan-outs expanded into agent instance cards with result previews, plus the run's objective band](docs/screenshots/run-view.png)
 
 <p align="center">
-  <img src="docs/screenshots/plan-overview.png" width="49%" alt="Plan view — the dashed blueprint plus a run-history band of the workflow's runs (status · when · agents·duration)" />
-  <img src="docs/screenshots/loop-drill.png" width="49%" alt="a loop's round axis (r1·r2…) drilled — clicking a round opens that round's subagents in the detail panel" />
+  <img src="docs/screenshots/plan-overview.png" width="49%" alt="Plan view — a workflow's intended DAG parsed from its code: left→right phase lanes (Research → Design → Review → Synthesize) with dashed plan nodes and fan-out markers" />
+  <img src="docs/screenshots/loop-drill.png" width="49%" alt="a loop workflow's plan — the critique → decision → revise cycle with its dashed back-edge and an exit-loop branch (runs until the condition holds, max 3 rounds)" />
 </p>
 
 ## Status
@@ -90,14 +90,14 @@ the verbatim prompt, the ordered tool timeline, and the readable result, top to 
 
 ![transcript reader — one agent read top-to-bottom: prompt, tool timeline, result](docs/screenshots/transcript-reader.png)
 
-**Scan a whole run as a table — in execution order.** The bottom panel lists every agent
-with cost / time / tools / status columns, sortable and filterable. Flip it to the
-**execution-order DAG** view and the agents nest under their phase headers (`Explore·4`,
-`Judge·1`, `Refine·5`), parallel siblings indented together — a vertical read of the run's
-shape. Hovering a row cross-highlights the matching node on the graph above; clicking selects
-it in the detail panel even when its fan is collapsed.
+**The whole surface at once — scan the table, read any agent, never lose the graph.** The
+bottom panel lists every agent with cost / time / tools / status columns (sortable, filterable,
+plus an **execution-order DAG** view that nests agents under their phase headers with parallel
+siblings indented). Clicking a row opens that agent's full detail on the right — state, tokens,
+prompt, result, activity timeline — even when its fan is collapsed on the canvas; hovering
+cross-highlights its node on the graph above. Graph, table, and detail panel, one view.
 
-![agent table — the execution-order view: agents nested under phase headers (Explore·4, Judge·1, Refine·5), with a row hover cross-highlighting its node on the graph above](docs/screenshots/agent-table.png)
+![argus showing everything at once — the run graph with expanded agent fans, the sortable agent table along the bottom, and a selected agent's detail panel (state · tokens · prompt · result · activity) on the right](docs/screenshots/agent-table.png)
 
 ## How it works
 
