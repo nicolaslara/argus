@@ -11,12 +11,13 @@
 //   - path-escape guard (charset + resolve()-inside-claudeHome) before any FS read
 // /health is open (liveness; touches no filesystem) but still Host-checked.
 
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { createServer, type ServerResponse } from 'node:http';
 import { randomBytes } from 'node:crypto';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import { ADAPTER_FORMAT } from '@argus/adapter';
 import { NodeFileSystemPort } from './fs-port.ts';
+import { tokenOk, hostAllowed } from './auth.ts';
 import {
   handleProjects,
   handleProjectRuns,
@@ -77,22 +78,6 @@ function send(res: ServerResponse, status: number, body: unknown): void {
     'cache-control': 'no-store',
   });
   res.end(payload);
-}
-
-/** DNS-rebinding guard: Host must be exactly our bind, and any Origin must match. */
-function hostAllowed(req: IncomingMessage): boolean {
-  const host = req.headers.host ?? '';
-  if (!ALLOWED_HOSTS.has(host)) return false;
-  const origin = req.headers.origin;
-  if (origin && !ALLOWED_ORIGINS.has(origin)) return false;
-  return true;
-}
-
-function tokenOk(req: IncomingMessage, url: URL): boolean {
-  const auth = req.headers.authorization;
-  if (auth === `Bearer ${TOKEN}`) return true;
-  // EventSource cannot set headers → token may ride in the query string.
-  return url.searchParams.get('token') === TOKEN;
 }
 
 /** Decode a single path segment, rejecting anything that fails to decode cleanly. */
@@ -263,7 +248,7 @@ async function dispatchApi(url: URL): Promise<RouteResult | null> {
 const server = createServer((req, res) => {
   const url = new URL(req.url ?? '/', `http://${req.headers.host ?? HOST}`);
 
-  if (!hostAllowed(req)) {
+  if (!hostAllowed(req, ALLOWED_HOSTS, ALLOWED_ORIGINS)) {
     send(res, 403, { error: 'forbidden_host' });
     return;
   }
@@ -277,7 +262,7 @@ const server = createServer((req, res) => {
   // Everything else (the /api + future /stream) requires the per-launch token,
   // checked BEFORE any filesystem access (boundaries.md §4).
   if (url.pathname.startsWith('/api') || url.pathname.startsWith('/stream')) {
-    if (!tokenOk(req, url)) {
+    if (!tokenOk(req, url, TOKEN)) {
       send(res, 401, { error: 'unauthorized' });
       return;
     }

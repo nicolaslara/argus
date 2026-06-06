@@ -43,6 +43,7 @@ import {
   useRunExplanations,
 } from './explanations.ts';
 import { loadElkLayout } from './layout/index.ts';
+import { computeFitSignature } from './fit-signature.ts';
 import { AgentCardNode } from './nodes/AgentCard.tsx';
 import { PhaseLaneNode } from './nodes/PhaseLane.tsx';
 import {
@@ -470,8 +471,15 @@ export function App() {
 
   // The run model is needed by BOTH the execution view AND the P2 overlay (to build the
   // binding). Gate it on either.
+  // Live & inspection #2 (SUB-TASK C): the query key is STABLE across a live→finalized
+  // transition (no 'live'/'final' suffix). The queryFn still switches fetchers on liveness, so
+  // when a run finalizes the SAME cache slot is updated in-place — no new cache entry, so the
+  // overlay's structural fitSignature (which already excludes instance/drawer ids) doesn't see
+  // a fresh query and yank the viewport. The finalized model uses the SAME plan template as the
+  // live snapshot, so the in-place swap is structurally safe. The runId is still in the key, so
+  // switching runs (and the initial empty→populated fit) still re-fit correctly.
   const runQ = useQuery({
-    queryKey: ['run', summary?.ref.slug, summary?.ref.sessionId, summary?.ref.runId, isLiveRun ? 'live' : 'final'],
+    queryKey: ['run', summary?.ref.slug, summary?.ref.sessionId, summary?.ref.runId],
     queryFn: () => (isLiveRun ? fetchRunLive(summary!.ref) : fetchRunModel(summary!.ref)),
     enabled: !!summary && view === 'run',
     // L3: SSE pushes a refetch on every journal append; this slow poll is a safety net for
@@ -486,16 +494,58 @@ export function App() {
   const liveSlug = summary?.ref.slug;
   const liveSession = summary?.ref.sessionId;
   const liveRunId = summary?.ref.runId;
+  // Live & inspection #2 (SUB-TASK A): the live-stream connection state, surfaced as a small
+  // status chip so a dropped stream is never silent. 'connecting' is the brief pre-open gap;
+  // 'open' is healthy (no chip shown — the 4s poll backstop also covers it); 'reconnecting'
+  // is a transient drop where EventSource is retrying (amber); 'lost' is a prolonged outage
+  // where we've given up auto-recovering this socket (red — the poll backstop still runs).
+  // The chip is gated on isLiveRun, so a finished run never shows one.
+  type LiveConnectionState = 'connecting' | 'open' | 'reconnecting' | 'lost';
+  const [liveConnectionState, setLiveConnectionState] = useState<LiveConnectionState>('connecting');
   useEffect(() => {
-    if (!isLiveRun || !liveSlug || !liveSession || !liveRunId) return;
+    if (!isLiveRun || !liveSlug || !liveSession || !liveRunId) {
+      // Not a live run → no stream, no chip. Reset so a future live run starts clean.
+      setLiveConnectionState('connecting');
+      return;
+    }
     const url = `/api/runs/${encodeURIComponent(liveSlug)}/${encodeURIComponent(liveSession)}/${encodeURIComponent(liveRunId)}/stream`;
     const es = new EventSource(url);
+    setLiveConnectionState('connecting');
+    // After a brief outage, escalate the amber "reconnecting" chip to a red "lost" one so a
+    // long stall reads as paused (the slow poll backstop above keeps the data fresh meanwhile).
+    // Note: Last-Event-ID resumption is deferred — the server resends the full state on
+    // reconnect (each `changed` just triggers a refetch), so a missed id is harmless here.
+    let lostTimer: ReturnType<typeof setTimeout> | null = null;
+    const clearLostTimer = () => {
+      if (lostTimer) {
+        clearTimeout(lostTimer);
+        lostTimer = null;
+      }
+    };
     const onChanged = () => {
-      void queryClient.invalidateQueries({ queryKey: ['run', liveSlug, liveSession, liveRunId, 'live'] });
+      // SUB-TASK C: the run query key is now suffix-free (stable across live→final), so the
+      // SSE invalidation must target the same stable key.
+      void queryClient.invalidateQueries({ queryKey: ['run', liveSlug, liveSession, liveRunId] });
+    };
+    const onOpen = () => {
+      clearLostTimer();
+      setLiveConnectionState('open');
+    };
+    const onError = () => {
+      // EventSource auto-reconnects (server `retry: 3000`); reflect the transient drop as
+      // amber, then escalate to red "lost" if it stays down past the grace window.
+      setLiveConnectionState((prev) => (prev === 'lost' ? 'lost' : 'reconnecting'));
+      clearLostTimer();
+      lostTimer = setTimeout(() => setLiveConnectionState('lost'), 10_000);
     };
     es.addEventListener('changed', onChanged);
+    es.addEventListener('open', onOpen);
+    es.addEventListener('error', onError);
     return () => {
+      clearLostTimer();
       es.removeEventListener('changed', onChanged);
+      es.removeEventListener('open', onOpen);
+      es.removeEventListener('error', onError);
       es.close();
     };
   }, [isLiveRun, liveSlug, liveSession, liveRunId, queryClient]);
@@ -767,15 +817,13 @@ export function App() {
   // (`agentCard`) ids, so a live instance spawning / a ghost vanishing / a drawer
   // opening never re-triggers the structural fit and yanks the viewport. Expand churn is
   // handled by the SEPARATE one-shot fitBounds effect below.
+  // SUB-TASK C: the structural signature is computed by the pure `computeFitSignature` helper
+  // (unit-tested in fit-signature.test.ts). It includes the selected runId so switching runs
+  // re-fits (the chrome — objective/failure — changes per run); runId is stable DURING a run AND
+  // across a live→finalized swap (the run query key is now suffix-free), so neither a live tick
+  // nor finalize re-fits and yanks the viewport.
   const fitSignature = useMemo(
-    () =>
-      // include the selected runId so switching runs re-fits (the chrome — objective/failure —
-      // changes per run); runId is stable DURING a run, so a live tick still never re-fits.
-      `${view}:${summary?.ref.runId ?? ''}:` +
-      graph.nodes
-        .filter((n) => n.type !== 'instanceGroup' && n.type !== 'agentCard')
-        .map((n) => n.id)
-        .join(','),
+    () => computeFitSignature(view, summary?.ref.runId, graph.nodes),
     [view, summary?.ref.runId, graph.nodes],
   );
   useEffect(() => {
@@ -1165,6 +1213,24 @@ export function App() {
             <span className="run-now" title={`${nowRunning} run${nowRunning === 1 ? '' : 's'} in progress in this project`}>
               <span className="run-now-dot" aria-hidden="true" />
               {nowRunning} running
+            </span>
+          ) : null}
+          {/* Live & inspection #2 (SUB-TASK A): the live-stream connection chip. Only shown for
+              a LIVE run AND only when the stream is NOT healthy — a healthy 'open' (or the
+              brief 'connecting' gap) stays silent, so the chip is a pure alert: amber while
+              EventSource retries, red once a long outage means the live feed is paused. */}
+          {isLiveRun && (liveConnectionState === 'reconnecting' || liveConnectionState === 'lost') ? (
+            <span
+              className={`live-conn live-conn-${liveConnectionState}`}
+              role="status"
+              title={
+                liveConnectionState === 'reconnecting'
+                  ? 'the live stream dropped — reconnecting; the view still polls as a backstop'
+                  : 'the live stream is paused — the view falls back to a slow poll for updates'
+              }
+            >
+              <span className="live-conn-dot" aria-hidden="true" />
+              {liveConnectionState === 'reconnecting' ? 'reconnecting' : 'live paused'}
             </span>
           ) : null}
           {formatElapsed(run.durationMs) ? (

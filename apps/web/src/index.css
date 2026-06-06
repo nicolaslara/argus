@@ -358,6 +358,36 @@ body {
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
+/* Live & inspection #2 (SUB-TASK A): the live-stream connection chip. Pure alert chrome —
+   only rendered while a live stream is unhealthy. Amber = reconnecting (transient drop),
+   red = paused (prolonged outage; the slow poll backstop still runs). */
+.live-conn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid currentColor;
+}
+.live-conn-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.live-conn-reconnecting {
+  color: #e3b341; /* amber */
+  background: rgba(227, 179, 65, 0.1);
+}
+.live-conn-reconnecting .live-conn-dot {
+  animation: argus-pulse 1.2s ease-in-out infinite;
+}
+.live-conn-lost {
+  color: #f85149; /* red */
+  background: rgba(248, 81, 73, 0.12);
+}
 .run-failure-banner {
   position: relative; /* flows inside .run-chrome (was an absolute overlay) */
   max-width: 100%;

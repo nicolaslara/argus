@@ -133,12 +133,25 @@ the transcript-reader (the design-plan "LATER" stack) all shipped.
   graph cards — not only lazily in DetailPanel) · M · running instances still show em-dashes
   (`AgentCard.tsx`). *Caveat:* gated by transcript persistence (inspect I2 — `agent-<id>.jsonl`
   not always on disk); must degrade to the journal.
-- **Harden the SSE client** (`onerror`, client backoff, `Last-Event-ID` resume, a "connection
-  lost" surface) · M · `App.tsx` EventSource has none today.
-- **SSE / `handleStream` test coverage** · M · the live stream (watch teardown, debounce,
-  token-gating) has zero tests; cheapest slice = a `/stream` 401 test.
-- **No-jump finalize swap** · M · the `/live`→finalized `/run` flip should swap nodes in place
-  without a layout jump (live workpad L5).
+- **Harden the SSE client** — DONE 2026-06-06. `App.tsx`'s EventSource now tracks a
+  connection state (`connecting`/`open`/`reconnecting`/`lost`) via `onopen`/`onerror`; a calm
+  amber/red chip ("reconnecting" / "live paused") in the run-header surfaces a dropped stream
+  (the 4s poll backstops it; reverts silent when healthy). **`Last-Event-ID` resume DEFERRED**
+  on purpose: it only pays off WITH incremental `RunDelta` events — today a `changed` triggers
+  a full model refetch, so EventSource auto-reconnect (server `retry: 3000`) + refetch already
+  recovers fully. Build it together with `RunDelta` (below) when scale demands.
+- **SSE / `handleStream` test coverage** — DONE 2026-06-06. The token gate (`tokenOk`) +
+  DNS-rebinding gate (`hostAllowed`) were extracted to a pure `apps/server/src/auth.ts`
+  (index.ts ran `server.listen` on import → untestable); `auth.test.ts` (+11) covers the
+  `/stream` 401 cases incl. the EventSource `?token=` query-param path. `handleStream` already
+  had open/changed/teardown-on-close tests in `routes.live.test.ts`.
+- **No-jump finalize swap** — DONE 2026-06-06. The run query key is now suffix-free (dropped
+  the `live`/`final` segment) so a live→finalized transition updates the SAME cache slot in
+  place; the structural fit signature (extracted to a pure, unit-tested `fit-signature.ts`,
+  +7) excludes instance/drawer ids and keys on view+runId+plan-node-ids — all stable across the
+  swap — so finalize no longer re-fits/yanks the viewport. *Live-validation caveat:* unit-tested
+  + code-reviewed; the live SSE-chip + finalize-no-jump weren't yet caught on a real
+  live→final transition (timing/network-sensitive to script) — validate opportunistically.
 - **Agent transcript view** (full session timeline) · M · *blocked* by I2 data reality;
   candidate: capture transcripts live during a run to unblock.
 - **Incremental SSE deltas (`RunDelta`)** · L · today the client refetches the whole model on
