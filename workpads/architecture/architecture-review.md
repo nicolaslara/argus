@@ -138,10 +138,13 @@ adapter format-isolation, web↔contract-only all hold). Prioritized remaining w
   fresh array each render that rebuilt the map every render). Behavior-neutral (420 tests
   unchanged). NOTE: the PX plan-explanations poll was ALREADY gated (`enabled: view==='plan' &&…`)
   — no fix needed there.
-- [ ] **ARCH-5 — Test gaps (high/M).** Extract the web SSE connection state machine to a pure
-  tested helper (browser-only today); a server log-scrubbing test (no `$bunfs`/`/Users/` leaks);
-  widen path-traversal tests; test App.tsx pure helpers (deriveFailureInfo/pickFailurePoint/
-  formatArgs) + chromeAwareFitOptions.
+- [x] **ARCH-5 — Test gaps. DONE 2026-06-06.** Extracted 4 pure, unit-tested seams from App.tsx /
+  index.ts (behavior-preserving): `live-connection.ts` (the SSE `nextConnectionState` reducer —
+  the connecting/open/reconnecting/lost machine, browser-only before), `failure-info.ts`
+  (deriveFailureInfo/pickFailurePoint/formatArgs), `pad-from-insets.ts` (the chrome-fit padding
+  math), `error-redaction.ts` (`scrubError`). Added the redaction unit test + a full-stack
+  integration scrub test + widened path-traversal vectors (routes.test.ts). +81 tests (501 total).
+  App rewired to use the extractions (verified live: renders, objective formatArgs works).
 - [ ] **ARCH-6 — Robustness signals (med/S).** Discovery op failures are silently swallowed (no
   client signal); the full-journal read is unbounded (no pre-flight size cap); a closed SSE
   connection isn't surfaced server-side. Add honest signals/bounds.

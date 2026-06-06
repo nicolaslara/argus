@@ -3,9 +3,16 @@ import {
   handleProjectWorkflows,
   handleProjectPlan,
   handleRunPlan,
+  handleRunSnapshot,
+  handleAgentResult,
   isValidSegment,
+  isValidRunId,
+  isValidAgentId,
   isValidWorkflowFile,
+  safeRunJsonPath,
+  safeRunJournalPath,
   safeRunScriptPath,
+  safeWorkflowJsPath,
   type RouteDeps,
 } from './routes.ts';
 import type { FileSystemPort } from '@argus/adapter';
@@ -267,5 +274,193 @@ describe('handleRunPlan (P2 route — the PER-RUN persisted plan source)', () =>
     const res = await handleRunPlan(deps, SLUG, SESSION, 'wf_orphan');
     expect(res.status).toBe(404);
     expect(res.body).toEqual({ error: 'not_found' });
+  });
+});
+
+// ============================================================================
+// Path-traversal attack vectors (charset + resolve() guards). The route layer receives each
+// segment POST-decode (index.ts's decodeSegment runs decodeURIComponent ONCE before dispatch),
+// so the charset REs below are the authoritative guard on the decoded value. These harden the
+// existing single-traversal checks with: URL-encoded-then-decoded traversal, absolute paths,
+// null bytes, whitespace, non-ASCII, sibling-project escapes, double-encoding, and bad
+// workflow-file shapes — across isValidSegment / isValidRunId / isValidAgentId /
+// isValidWorkflowFile and every safe* path builder.
+// ============================================================================
+describe('path-traversal attack vectors (charset + resolve guards)', () => {
+  describe('isValidSegment', () => {
+    it('accepts the real slug / session / run shapes', () => {
+      expect(isValidSegment('-Users-nicolas-devel-modal-rust')).toBe(true);
+      expect(isValidSegment('session-aaaa-bbbb')).toBe(true);
+      expect(isValidSegment('wf_abc123')).toBe(true);
+    });
+
+    it('rejects dot-segments and parent traversal', () => {
+      expect(isValidSegment('..')).toBe(false);
+      expect(isValidSegment('.')).toBe(false);
+      expect(isValidSegment('..foo')).toBe(false); // a dot is not in the charset
+      expect(isValidSegment('a.b')).toBe(false);
+    });
+
+    it('rejects decoded URL-encoded traversal (%2e%2e / %2f → "..", "/" post-decode)', () => {
+      // index.ts decodes ONCE; the route sees the decoded value, which the charset RE blocks.
+      expect(isValidSegment(decodeURIComponent('%2e%2e'))).toBe(false); // ".."
+      expect(isValidSegment(decodeURIComponent('%2e%2e%2f'))).toBe(false); // "../"
+      expect(isValidSegment(decodeURIComponent('foo%2fbar'))).toBe(false); // "foo/bar"
+      expect(isValidSegment(decodeURIComponent('foo%5cbar'))).toBe(false); // "foo\bar"
+    });
+
+    it('rejects path separators and absolute paths', () => {
+      expect(isValidSegment('/etc/passwd')).toBe(false);
+      expect(isValidSegment('etc/passwd')).toBe(false);
+      expect(isValidSegment('\\windows\\system32')).toBe(false);
+      expect(isValidSegment('C:\\windows')).toBe(false);
+    });
+
+    it('rejects null bytes and control characters', () => {
+      expect(isValidSegment('foo\x00')).toBe(false);
+      expect(isValidSegment('\x00')).toBe(false);
+      expect(isValidSegment('foo\nbar')).toBe(false);
+      expect(isValidSegment('foo\tbar')).toBe(false);
+    });
+
+    it('rejects whitespace and non-ASCII', () => {
+      expect(isValidSegment('.. /etc')).toBe(false);
+      expect(isValidSegment('a b')).toBe(false);
+      expect(isValidSegment('café')).toBe(false); // é (decoded from %C3%A9) is outside the charset
+      expect(isValidSegment(decodeURIComponent('%C3%A9'))).toBe(false);
+    });
+
+    it('rejects empty and over-length segments', () => {
+      expect(isValidSegment('')).toBe(false);
+      expect(isValidSegment('a'.repeat(257))).toBe(false);
+      expect(isValidSegment('a'.repeat(256))).toBe(true);
+    });
+
+    it('double-encoding only decodes ONE layer; the residual %xx is still blocked', () => {
+      // %252e%252e → (one decode) → "%2e%2e" — the literal '%' is not in the charset.
+      expect(isValidSegment(decodeURIComponent('%252e%252e'))).toBe(false);
+    });
+  });
+
+  describe('isValidRunId', () => {
+    it('requires the wf_ prefix', () => {
+      expect(isValidRunId('wf_abc123')).toBe(true);
+      expect(isValidRunId('run_abc')).toBe(false);
+      expect(isValidRunId('abc')).toBe(false);
+      expect(isValidRunId('WF_abc')).toBe(false); // case-sensitive prefix
+    });
+
+    it('rejects wf_ with traversal / separators in the suffix', () => {
+      expect(isValidRunId('wf_../../etc')).toBe(false);
+      expect(isValidRunId('wf_/etc')).toBe(false);
+      expect(isValidRunId('wf_a.b')).toBe(false);
+    });
+
+    it('requires a non-empty suffix after wf_', () => {
+      expect(isValidRunId('wf_')).toBe(false);
+      expect(isValidRunId('wf_a')).toBe(true);
+    });
+  });
+
+  describe('isValidAgentId', () => {
+    it('accepts a hex-ish token, rejects traversal / separators / null bytes', () => {
+      expect(isValidAgentId('a403d457ffb0b3e01')).toBe(true);
+      expect(isValidAgentId('../../etc')).toBe(false);
+      expect(isValidAgentId('a/b')).toBe(false);
+      expect(isValidAgentId('a\x00')).toBe(false);
+      expect(isValidAgentId('')).toBe(false);
+      expect(isValidAgentId('a'.repeat(129))).toBe(false);
+    });
+  });
+
+  describe('isValidWorkflowFile', () => {
+    it('accepts a plain .js basename', () => {
+      expect(isValidWorkflowFile('plan-research.js')).toBe(true);
+      expect(isValidWorkflowFile('implement_v2.js')).toBe(true);
+    });
+
+    it('rejects embedded path separators', () => {
+      expect(isValidWorkflowFile('subdir/file.js')).toBe(false);
+      expect(isValidWorkflowFile('..\\file.js')).toBe(false);
+      expect(isValidWorkflowFile('/abs/file.js')).toBe(false);
+    });
+
+    it('rejects wrong / missing / double extensions', () => {
+      expect(isValidWorkflowFile('file')).toBe(false);
+      expect(isValidWorkflowFile('file.ts')).toBe(false);
+      expect(isValidWorkflowFile('file.js.bak')).toBe(false);
+      expect(isValidWorkflowFile('file.JS')).toBe(false); // case-sensitive .js
+      expect(isValidWorkflowFile('file.Js')).toBe(false);
+    });
+
+    it('rejects traversal and bare-dot names', () => {
+      expect(isValidWorkflowFile('../escape.js')).toBe(false);
+      expect(isValidWorkflowFile('..js')).toBe(false); // ".." is forbidden explicitly
+      expect(isValidWorkflowFile('.js')).toBe(false); // empty stem
+    });
+
+    it('rejects null bytes and over-length names', () => {
+      expect(isValidWorkflowFile('file\x00.js')).toBe(false);
+      expect(isValidWorkflowFile('a'.repeat(260) + '.js')).toBe(false);
+    });
+  });
+
+  describe('safe* path builders stay inside the home / workflows root', () => {
+    const HOME = '/home/.claude';
+    const OK_SLUG = '-Users-nicolas-devel-modal-rust';
+    const OK_SESSION = 'session-aaaa';
+    const OK_RUN = 'wf_runtest';
+
+    it('safeRunJsonPath: valid → inside home; traversal/bad segments → null', () => {
+      const ok = safeRunJsonPath(HOME, OK_SLUG, OK_SESSION, OK_RUN);
+      expect(ok).not.toBeNull();
+      expect(ok!.startsWith('/home/.claude/')).toBe(true);
+      expect(ok!.endsWith(`${OK_RUN}.json`)).toBe(true);
+      // Each segment rejected on bad charset (before any resolve()).
+      expect(safeRunJsonPath(HOME, '../etc', OK_SESSION, OK_RUN)).toBeNull();
+      expect(safeRunJsonPath(HOME, OK_SLUG, '../../etc', OK_RUN)).toBeNull();
+      expect(safeRunJsonPath(HOME, OK_SLUG, OK_SESSION, '../../etc')).toBeNull();
+      expect(safeRunJsonPath(HOME, OK_SLUG, OK_SESSION, 'notawf')).toBeNull();
+    });
+
+    it('safeRunJournalPath: valid → inside home; sibling-project escape → null', () => {
+      const ok = safeRunJournalPath(HOME, OK_SLUG, OK_SESSION, OK_RUN);
+      expect(ok).not.toBeNull();
+      expect(ok!.startsWith('/home/.claude/')).toBe(true);
+      expect(ok!.endsWith('/journal.jsonl')).toBe(true);
+      // A sibling-project slug with a traversal session never escapes the charset gate.
+      expect(safeRunJournalPath(HOME, '-Users-other-project', '../../../other', OK_RUN)).toBeNull();
+    });
+
+    it('safeRunScriptPath: a bad script basename is rejected even with valid segments', () => {
+      expect(safeRunScriptPath(HOME, OK_SLUG, OK_SESSION, OK_RUN, 'real.js')).not.toBeNull();
+      expect(safeRunScriptPath(HOME, OK_SLUG, OK_SESSION, OK_RUN, '../../escape.js')).toBeNull();
+      expect(safeRunScriptPath(HOME, OK_SLUG, OK_SESSION, OK_RUN, 'scripts/../../escape.js')).toBeNull();
+      expect(safeRunScriptPath(HOME, OK_SLUG, OK_SESSION, OK_RUN, 'evil.ts')).toBeNull();
+    });
+
+    it('safeWorkflowJsPath: stays inside <project>/.claude/workflows; traversal → null', () => {
+      const ok = safeWorkflowJsPath('/Users/x/project', 'plan-research.js');
+      expect(ok).toBe('/Users/x/project/.claude/workflows/plan-research.js');
+      expect(safeWorkflowJsPath('/Users/x/project', '../../escape.js')).toBeNull();
+      expect(safeWorkflowJsPath('/Users/x/project', 'sub/escape.js')).toBeNull();
+      expect(safeWorkflowJsPath('/Users/x/project', 'evil.ts')).toBeNull();
+    });
+  });
+
+  describe('full-dispatch: bad segments are 400 BEFORE any FS access', () => {
+    const deps: RouteDeps = { port: makeFakePort(), claudeHome: CLAUDE_HOME };
+
+    it('handleRunSnapshot rejects an absolute-path-like / traversal runId with 400', async () => {
+      expect((await handleRunSnapshot(deps, SLUG, SESSION, '../../etc')).status).toBe(400);
+      expect((await handleRunSnapshot(deps, SLUG, SESSION, 'notawf')).status).toBe(400);
+      expect((await handleRunSnapshot(deps, '../etc', SESSION, RUN_ID)).status).toBe(400);
+    });
+
+    it('handleAgentResult rejects a traversal agentId with 400', async () => {
+      expect((await handleAgentResult(deps, SLUG, SESSION, RUN_ID, '../../etc')).status).toBe(400);
+      expect((await handleAgentResult(deps, SLUG, SESSION, RUN_ID, 'a/b')).status).toBe(400);
+      expect((await handleAgentResult(deps, SLUG, SESSION, '../../etc', 'agent1')).status).toBe(400);
+    });
   });
 });

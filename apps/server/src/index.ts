@@ -38,6 +38,7 @@ import {
 } from './routes.ts';
 import { ExplanationEngine, explanationsCacheDir } from './explain.ts';
 import { SubUiEngine, subUiCacheDir } from './subui.ts';
+import { scrubError } from './error-redaction.ts';
 
 const HOST = '127.0.0.1';
 const PORT = Number(process.env.ARGUS_PORT ?? 4317);
@@ -290,9 +291,11 @@ const server = createServer((req, res) => {
         }
         send(res, result.status, result.body);
       })
-      .catch(() => {
-        // Defensive: never leak a stack/path. Coded error only (redaction policy).
-        send(res, 500, { error: 'internal_error' });
+      .catch((err) => {
+        // Defensive: never leak a stack/path/token. The coded-body invariant lives in the pure
+        // scrubError seam (error-redaction.ts), which is unit-tested against path/stack/token/
+        // $bunfs-bearing errors so a future drift can't silently start echoing the message.
+        send(res, 500, scrubError(err));
       });
     return;
   }
