@@ -154,11 +154,14 @@ adapter format-isolation, web↔contract-only all hold). Prioritized remaining w
   (TODO left in code): the lazy full-result read is also unbounded, but a head-cap there could miss
   a later agent's result — it needs a scan-to-match (heavier, marginal value), so left for later.
 - [ ] **ARCH-7 — remaining items, triaged 2026-06-06 (need your call / gated / dropped):**
-  - **App.tsx decomposition (M) — NEEDS YOUR CALL.** Already shrank 1419→1360 lines this session
-    (extracted failure-info, live-connection, pad-from-insets, fit-signature, plan-correspondence,
-    loop-drill-migrate, degradation-signal). Further (extract a `useLiveStream` hook for the SSE
-    effect, a selection hook) is real but it's the CENTRAL component + an effect extraction — I
-    held off doing it unsupervised; how to slice it is a structural choice worth your input.
+  - **App.tsx decomposition — PASS 1 DONE 2026-06-06 (approved: smaller files for LLMs).** Extracted
+    6 cohesive files — `defaults.ts`, `fit/chrome-fit.ts`, `run-view/FailureBanner.tsx` +
+    `RunObjective.tsx`, `hooks/useLiveStream.ts` (the SSE effect), `hooks/useChromeFit.ts` (the 4
+    fitView effects) — behavior-preserving (verifier diffed each as logic-identical; validated live:
+    renders + fits + table toggle). App.tsx **1361 → 1148** lines; +9 tests (519). PASS 2 (deferred):
+    the `useRunGraph` hook (the overlay/graph memos, ~200 lines, 15+ deps) — too coupled for one safe
+    pass; do it focused next. (Earlier this session also extracted failure-info/live-connection/
+    pad-from-insets/fit-signature/plan-correspondence/loop-drill-migrate/degradation-signal.)
   - **Large-graph 200+ node safeguard (L) — GATED.** Speculative (no run approaches 200 nodes; the
     chip-degrade + table already help at scale). Gate on a real large run.
   - **Remove dead `runModelToGraph` export (S) — DROPPED.** Not dead: a DELIBERATE plan-less

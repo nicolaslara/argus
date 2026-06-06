@@ -8,10 +8,9 @@ import {
   type Node as FlowNode,
   type NodeTypes,
   type ReactFlowInstance,
-  type FitViewOptions,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import type { PlanModel, ProjectRef, RunSummary, WorkflowMeta } from '@argus/contract';
 import {
   fetchProjects,
@@ -72,13 +71,13 @@ import { DetailPanel } from './nodes/DetailPanel.tsx';
 import { RunOverviewPanel } from './nodes/RunOverviewPanel.tsx';
 import { RunHistory } from './nodes/RunHistory.tsx';
 import { AgentTablePanel } from './tables/AgentTablePanel.tsx';
-import { deriveFailureInfo, formatArgs, type FailureInfo } from './failure-info.ts';
-import { padFromInsets } from './pad-from-insets.ts';
-import {
-  nextConnectionState,
-  INITIAL_LIVE_CONNECTION_STATE,
-  type LiveConnectionState,
-} from './live-connection.ts';
+import { deriveFailureInfo } from './failure-info.ts';
+import { defaultProject, defaultRun, defaultWorkflow } from './defaults.ts';
+import { chromeAwareFitOptions } from './fit/chrome-fit.ts';
+import { FailureBanner } from './run-view/FailureBanner.tsx';
+import { RunObjective } from './run-view/RunObjective.tsx';
+import { useLiveStream } from './hooks/useLiveStream.ts';
+import { useChromeFit } from './hooks/useChromeFit.ts';
 
 // Stable identity (a fresh object each render would make React Flow warn + re-mount).
 // Execution-view types (M3, unchanged) + the P1b Plan-AST types — one shared registry.
@@ -116,137 +115,19 @@ const EMPTY_GRAPH: GraphResult = { nodes: [], edges: [] };
 // from exploding the canvas while still surfacing the small/medium fans by default.
 const EXPAND_BUDGET = 24;
 
-/**
- * No-overlap invariant: the floating top-left chrome (the run-header chip, the run-chrome
- * column = objective band + failure banner, and the Plan run-history band) sits ABSOLUTE over
- * a full-bleed React Flow canvas, so a fit-viewed graph would otherwise land UNDERNEATH it.
- * We RESERVE the chrome's footprint as per-side fitView padding (React Flow v12 `Padding`),
- * MEASURED from the live DOM so it adapts to a tall failure banner / a long objective / the
- * Plan band — the graph then fits into the clear region (below the top chrome, right of the
- * left band). `top`/`left` only; right/bottom get a small fixed gutter.
- */
-function chromeAwareFitOptions(extra?: Partial<FitViewOptions>): FitViewOptions {
-  let top = 0;
-  let left = 0;
-  let bottom = 0;
-  const main = typeof document !== 'undefined' ? document.querySelector('.argus-main') : null;
-  if (main) {
-    const m = main.getBoundingClientRect();
-    // top chrome (the header chip + the objective/failure column) → reserve their bottom edge.
-    for (const sel of ['.run-header', '.run-chrome']) {
-      const el = document.querySelector(sel);
-      if (el) top = Math.max(top, el.getBoundingClientRect().bottom - m.top);
-    }
-    // the tall left band (Plan run-history) → reserve its right edge.
-    const band = document.querySelector('.plan-run-history');
-    if (band) left = Math.max(left, band.getBoundingClientRect().right - m.left);
-    // the collapsible bottom AGENT TABLE (Table panel) → reserve its top edge so a fit-viewed
-    // graph never lands underneath it (keeps the no-overlap invariant when the table is open).
-    const table = document.querySelector('.agent-table-panel');
-    if (table) bottom = Math.max(bottom, m.bottom - table.getBoundingClientRect().top);
-  }
-  return {
-    // The padding MATH lives in ./pad-from-insets.ts (pure, unit-tested); App only MEASURES.
-    padding: padFromInsets({ top, left, bottom }),
-    duration: 240,
-    maxZoom: 2.6,
-    ...extra,
-  };
-}
+// The chrome-aware fitView options (the no-overlap invariant: reserve the floating chrome's
+// MEASURED footprint as per-side fitView padding so a fit-viewed graph never lands underneath
+// it) live in ./fit/chrome-fit.ts. App only calls it (from the Controls fit button + the
+// useChromeFit effects); the inset → React-Flow-Padding math lives in ./pad-from-insets.ts.
 
 // The persisted loop-drill MODE setting (loop-drill-gallery.html opt1 vs opt2) is held in App
 // state and mirrored to localStorage so the choice sticks across reloads. 'round-axis' (option 1)
 // is the default + the fully-working baseline; 'lane-drawer' (option 2) is the recursive in-loop
 // drawer. The pure read/write/normalize seam lives in ./loop-drill-setting.ts (so it is unit-
 // testable without the React app); a missing/unknown/unavailable store degrades to the default.
-
-/** Dogfood DEFAULT (M4: overridable): prefer modal-rust; else the first project. */
-function defaultProject(projects: ProjectRef[] | undefined): ProjectRef | undefined {
-  if (!projects || projects.length === 0) return undefined;
-  return projects.find((p) => p.projectPath.includes('modal-rust')) ?? projects[0];
-}
-
-/** Execution DEFAULT (M4: overridable): the richest run (the 14-agent plan-research run). */
-function defaultRun(runs: RunSummary[] | undefined): RunSummary | undefined {
-  if (!runs || runs.length === 0) return undefined;
-  return [...runs].sort((a, b) => b.agentCount - a.agentCount)[0];
-}
-
-/** Plan DEFAULT (M4: overridable): plan-research; else the first declared workflow. */
-function defaultWorkflow(workflows: WorkflowMeta[] | undefined): WorkflowMeta | undefined {
-  if (!workflows || workflows.length === 0) return undefined;
-  return workflows.find((w) => w.name.includes('plan-research')) ?? workflows[0];
-}
-
-/**
- * STEP 3 — the calm, collapsible failure banner. Lives in the Run-view chrome (below the
- * run-header, never in the sidebar). Shows the failure reason + elapsed-to-failure + the
- * failing step/agent; a 'Details ▾' disclosure reveals run.error.internalDetail (the raw
- * stack) BEHIND A CLICK — never raw by default. Renders nothing when the run did not fail.
- */
-function FailureBanner({ info }: { info: FailureInfo }) {
-  const [open, setOpen] = useState(false);
-  const elapsed = formatElapsed(info.elapsedMs);
-  return (
-    <div className="run-failure-banner" role="alert">
-      <div className="run-failure-head">
-        <span className="run-failure-glyph" aria-hidden="true">⛔</span>
-        <span className="run-failure-title">run failed</span>
-        {info.failingLabel ? (
-          <span className="run-failure-at" title="the step/agent that ended without a terminal result">
-            at <code>{info.failingLabel}</code>
-          </span>
-        ) : null}
-        {elapsed ? <span className="run-failure-elapsed">after {elapsed}</span> : null}
-      </div>
-      <div className="run-failure-msg">{info.message}</div>
-      {info.internalDetail ? (
-        <div className="run-failure-details">
-          <button
-            type="button"
-            className="run-failure-disclosure"
-            aria-expanded={open}
-            onClick={() => setOpen((v) => !v)}
-            title="reveal the raw error detail (advanced)"
-          >
-            Details {open ? '▴' : '▾'}
-          </button>
-          {open ? <pre className="run-failure-stack">{info.internalDetail}</pre> : null}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-/** The Run-view OBJECTIVE band: the workflow's purpose + a readable "called on <args>" line
- * (with a raw-JSON toggle). Surfaced as text in the MAIN view (not the sidebar). Renders
- * nothing when there is neither an objective nor args. */
-function RunObjective({ objective, args }: { objective: string | null; args: unknown }) {
-  const [raw, setRaw] = useState(false);
-  const argsText = formatArgs(args);
-  const hasStructuredArgs = args != null && typeof args === 'object';
-  if (!objective && !argsText) return null;
-  return (
-    <div className="run-objective">
-      {objective ? <div className="run-objective-purpose">{objective}</div> : null}
-      {argsText ? (
-        <div className="run-objective-args">
-          <span className="run-objective-k">called on</span>
-          {raw && hasStructuredArgs ? (
-            <pre className="run-objective-raw">{JSON.stringify(args, null, 2)}</pre>
-          ) : (
-            <span className="run-objective-v">{argsText}</span>
-          )}
-          {hasStructuredArgs ? (
-            <button type="button" className="run-objective-toggle" onClick={() => setRaw((r) => !r)}>
-              {raw ? 'readable' : '{ } raw'}
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-    </div>
-  );
-}
+//
+// The dogfood DEFAULT pickers (defaultProject/defaultRun/defaultWorkflow) live in ./defaults.ts;
+// the Run-view chrome components (FailureBanner, RunObjective) live in ./run-view/.
 
 export function App() {
   const [view, setView] = useState<ViewMode>('run');
@@ -425,7 +306,6 @@ export function App() {
   // L3: subscribe to the run's SSE stream while it's live — a journal append pushes a
   // `changed` event → invalidate the live model immediately (no poll lag). EventSource
   // auto-reconnects (the server sends `retry:`), giving the gate's "clean reconnect".
-  const queryClient = useQueryClient();
   const liveSlug = summary?.ref.slug;
   const liveSession = summary?.ref.sessionId;
   const liveRunId = summary?.ref.runId;
@@ -435,59 +315,15 @@ export function App() {
   // is a transient drop where EventSource is retrying (amber); 'lost' is a prolonged outage
   // where we've given up auto-recovering this socket (red — the poll backstop still runs).
   // The chip is gated on isLiveRun, so a finished run never shows one.
-  // The (prev, event) → next transition is the pure ./live-connection.ts reducer (unit-tested
-  // without a browser); this effect owns the EventSource + the 10s lost-escalation TIMER + the
-  // React state cell, and feeds events through the reducer.
-  const [liveConnectionState, setLiveConnectionState] =
-    useState<LiveConnectionState>(INITIAL_LIVE_CONNECTION_STATE);
-  useEffect(() => {
-    if (!isLiveRun || !liveSlug || !liveSession || !liveRunId) {
-      // Not a live run → no stream, no chip. Reset so a future live run starts clean.
-      setLiveConnectionState((prev) => nextConnectionState(prev, 'reset'));
-      return;
-    }
-    const url = `/api/runs/${encodeURIComponent(liveSlug)}/${encodeURIComponent(liveSession)}/${encodeURIComponent(liveRunId)}/stream`;
-    const es = new EventSource(url);
-    setLiveConnectionState((prev) => nextConnectionState(prev, 'reset'));
-    // After a brief outage, escalate the amber "reconnecting" chip to a red "lost" one so a
-    // long stall reads as paused (the slow poll backstop above keeps the data fresh meanwhile).
-    // Note: Last-Event-ID resumption is deferred — the server resends the full state on
-    // reconnect (each `changed` just triggers a refetch), so a missed id is harmless here.
-    let lostTimer: ReturnType<typeof setTimeout> | null = null;
-    const clearLostTimer = () => {
-      if (lostTimer) {
-        clearTimeout(lostTimer);
-        lostTimer = null;
-      }
-    };
-    const onChanged = () => {
-      // SUB-TASK C: the run query key is now suffix-free (stable across live→final), so the
-      // SSE invalidation must target the same stable key.
-      void queryClient.invalidateQueries({ queryKey: ['run', liveSlug, liveSession, liveRunId] });
-    };
-    const onOpen = () => {
-      clearLostTimer();
-      setLiveConnectionState((prev) => nextConnectionState(prev, 'open'));
-    };
-    const onError = () => {
-      // EventSource auto-reconnects (server `retry: 3000`); reflect the transient drop as
-      // amber, then escalate to red "lost" if it stays down past the grace window. The reducer
-      // keeps 'lost' sticky; the timer (App-owned) is what promotes amber → red.
-      setLiveConnectionState((prev) => nextConnectionState(prev, 'error'));
-      clearLostTimer();
-      lostTimer = setTimeout(() => setLiveConnectionState('lost'), 10_000);
-    };
-    es.addEventListener('changed', onChanged);
-    es.addEventListener('open', onOpen);
-    es.addEventListener('error', onError);
-    return () => {
-      clearLostTimer();
-      es.removeEventListener('changed', onChanged);
-      es.removeEventListener('open', onOpen);
-      es.removeEventListener('error', onError);
-      es.close();
-    };
-  }, [isLiveRun, liveSlug, liveSession, liveRunId, queryClient]);
+  // The EventSource + the 10s lost-escalation TIMER + the React state cell are owned by the
+  // ./hooks/useLiveStream.ts hook (the pure (prev, event) → next reducer lives in
+  // ./live-connection.ts, unit-tested without a browser); App just reads the connection state.
+  const liveConnectionState = useLiveStream({
+    isLiveRun,
+    slug: liveSlug,
+    session: liveSession,
+    runId: liveRunId,
+  });
 
   // --- Workflows for the selected project (run-free Plan source). Loaded whenever a
   //     project is known so the rail's Plan-workflow list is reachable from BOTH views;
@@ -806,67 +642,19 @@ export function App() {
     () => computeFitSignature(view, summary?.ref.runId, graph.nodes),
     [view, summary?.ref.runId, graph.nodes],
   );
-  useEffect(() => {
-    if (graph.nodes.length === 0) return;
-    const inst = rfRef.current;
-    if (!inst) return;
-    // M5 empty-band fix: the Plan/Run DAG is wide-but-short, so a uniform 0.12 padding +
-    // the default maxZoom=2 fit it to WIDTH and left a tall empty band. Give both views a
-    // tighter padding AND a higher maxZoom so the graph is allowed to zoom up and FILL the
-    // canvas (paired with the taller elk lanes above).
-    // Defer one frame so React Flow has measured the new nodes AND the chrome before fitting,
-    // then reserve the chrome footprint so the graph never lands under it (no overlap).
-    const raf = requestAnimationFrame(() => inst.fitView(chromeAwareFitOptions()));
-    return () => cancelAnimationFrame(raf);
-    // Intentionally keyed ONLY on the frozen plan-id signature (which encodes `view`); a
-    // graph.nodes churn from instance/ghost/drawer changes must NOT re-fit (see the
-    // one-shot expand fitBounds effect below).
-  }, [fitSignature]);
-
-  // One-shot EXPAND fit: when a node id ENTERS expandedNodeIds (a membership transition, not
-  // a per-paint tick), gently fit the freshly-grown graph ONCE so the new drawer is brought
-  // into view — never on subsequent live re-paints (run-view-merge-plan.md §2). Keyed on a
-  // size-only signature of the expanded set so toggling open fires it; collapsing does not
-  // need a special fit (the structural plan-id signature is unchanged across expand/collapse).
-  const prevExpandCount = useRef(0);
-  useEffect(() => {
-    const inst = rfRef.current;
-    const count = expandedNodeIds.size;
-    const grew = count > prevExpandCount.current;
-    prevExpandCount.current = count;
-    if (!grew || !inst || graph.nodes.length === 0) return;
-    const raf = requestAnimationFrame(() => inst.fitView(chromeAwareFitOptions()));
-    return () => cancelAnimationFrame(raf);
-    // Fire only on the expand-set transition (graph.nodes intentionally excluded so a live
-    // re-paint never re-fits).
-  }, [expandedNodeIds]);
-
-  // OPTION 2 one-shot fit: when a loop's round drawer OPENS (its size grows), gently fit the
-  // grown loop region into view once — the loop container just got taller, so the back-edge +
-  // the new cards should be brought into frame. Keyed on the open-drawer count so opening fires
-  // it and closing does not (the structural plan-id signature is unchanged across the toggle).
-  const prevLoopDrawerCount = useRef(0);
-  useEffect(() => {
-    const inst = rfRef.current;
-    const count = loopDrawerRound.size;
-    const grew = count > prevLoopDrawerCount.current;
-    prevLoopDrawerCount.current = count;
-    if (!grew || !inst || graph.nodes.length === 0) return;
-    const raf = requestAnimationFrame(() => inst.fitView(chromeAwareFitOptions()));
-    return () => cancelAnimationFrame(raf);
-  }, [loopDrawerRound]);
-
-  // "Table panel" one-shot fit: opening/closing the bottom AGENT TABLE changes the clear region
-  // (its footprint is reserved as fitView bottom padding), so re-fit ONCE on the toggle so the
-  // graph reflows above it (never lands underneath). Defer a frame so the panel has mounted/
-  // unmounted and is measurable before we read its top edge in chromeAwareFitOptions.
-  useEffect(() => {
-    const inst = rfRef.current;
-    if (!inst || graph.nodes.length === 0) return;
-    const raf = requestAnimationFrame(() => inst.fitView(chromeAwareFitOptions()));
-    return () => cancelAnimationFrame(raf);
-    // Keyed only on the toggle (not graph.nodes) so a live re-paint never re-fits.
-  }, [tableOpen]);
+  // The four canvas FIT effects (the structural plan-id refit + the one-shot expand / loop-drawer
+  // / table-toggle fits) live in ./hooks/useChromeFit.ts. Each stays an INDEPENDENT effect keyed
+  // on its OWN distinct trigger (fitSignature → expandedNodeIds → loopDrawerRound → tableOpen), so
+  // a live re-paint (which churns graph.nodes) never re-fits and yanks the viewport. Deps threaded
+  // in explicitly; the hook reads only graph.nodes.length as the guard.
+  useChromeFit({
+    rfRef,
+    fitSignature,
+    expandedNodeIds,
+    loopDrawerRound,
+    tableOpen,
+    graphNodes: graph.nodes,
+  });
 
   // --- M4 selection handlers (mutate the shared state, not the canvas). ---
   // Picking a project re-scopes everything: clear the dependent run + workflow choice
