@@ -88,3 +88,80 @@ describe('groupRuns — Workflow lens names every distinct workflow (no "(other 
     expect(adHoc!.runs).toHaveLength(1); // only the finished one
   });
 });
+
+describe('groupRuns — PINNED workflows float to the top of the Workflow lens', () => {
+  it('floats a pinned declared workflow above a more-recent declared-with-runs', () => {
+    // recent (top by recency) vs older-but-pinned: pinned wins.
+    const runs = [run('recent-flow', { startTime: 9_000 }), run('old-flow', { startTime: 5_000 })];
+    const declared = [wf('recent-flow'), wf('old-flow')];
+
+    const nodes = groupRuns(runs, declared, 'workflow', new Set(['old-flow']));
+    expect(nodes.map((n) => n.name)).toEqual(['old-flow', 'recent-flow']);
+  });
+
+  it('floats a pinned EMPTY declared workflow above a declared-with-runs', () => {
+    const runs = [run('busy-flow', { startTime: 9_000 })];
+    const declared = [wf('busy-flow'), wf('empty-flow')]; // empty-flow has zero runs
+
+    const nodes = groupRuns(runs, declared, 'workflow', new Set(['empty-flow']));
+    // pinned (even though empty) is first; busy-flow follows.
+    expect(nodes.map((n) => n.name)).toEqual(['empty-flow', 'busy-flow']);
+  });
+
+  it('floats a pinned AD-HOC workflow above declared workflows', () => {
+    const runs = [run('declared-flow', { startTime: 9_000 }), run('ad-hoc-flow', { startTime: 5_000 })];
+    const declared = [wf('declared-flow')]; // ad-hoc-flow is NOT declared
+
+    const nodes = groupRuns(runs, declared, 'workflow', new Set(['ad-hoc-flow']));
+    expect(nodes[0]!.name).toBe('ad-hoc-flow');
+    expect(nodes[0]!.workflow).toBeNull();
+  });
+
+  it('sorts multiple pinned workflows by recency among themselves (newest-first)', () => {
+    const runs = [run('pin-old', { startTime: 5_000 }), run('pin-new', { startTime: 9_000 }), run('unpinned', { startTime: 7_000 })];
+    const declared = [wf('pin-old'), wf('pin-new'), wf('unpinned')];
+
+    const nodes = groupRuns(runs, declared, 'workflow', new Set(['pin-old', 'pin-new']));
+    // both pinned (recency among themselves) before the unpinned one.
+    expect(nodes.map((n) => n.name)).toEqual(['pin-new', 'pin-old', 'unpinned']);
+  });
+
+  it('ranks the full ladder: pinned → declared-with-runs → declared-empty → ad-hoc', () => {
+    const runs = [
+      run('withruns', { startTime: 9_000 }),
+      run('pinned', { startTime: 1_000 }),
+      run('adhoc', { startTime: 8_000 }),
+    ];
+    const declared = [wf('pinned'), wf('withruns'), wf('empty')]; // empty has zero runs; adhoc undeclared
+
+    const nodes = groupRuns(runs, declared, 'workflow', new Set(['pinned']));
+    expect(nodes.map((n) => n.name)).toEqual(['pinned', 'withruns', 'empty', 'adhoc']);
+  });
+
+  it('falls back to the normal recency sort when the pinned set is empty', () => {
+    const runs = [run('a', { startTime: 5_000 }), run('b', { startTime: 9_000 })];
+    const declared = [wf('a'), wf('b')];
+    // no pinned arg → default empty Set → unchanged baseline order (b newer, so first).
+    expect(groupRuns(runs, declared, 'workflow').map((n) => n.name)).toEqual(['b', 'a']);
+  });
+
+  it('IGNORES the pinned set in the Time lens (buckets are not per-workflow)', () => {
+    const runs = [run('flow-x'), run('flow-y')];
+    const declared = [wf('flow-x'), wf('flow-y')];
+    const withPin = groupRuns(runs, declared, 'time', new Set(['flow-y']));
+    const noPin = groupRuns(runs, declared, 'time');
+    // Time buckets are identical with or without a pin — pinning has no effect off the Workflow lens.
+    expect(withPin.map((n) => n.key)).toEqual(noPin.map((n) => n.key));
+    // and the bucket keys are time:* (never a wf folder lifted by a pin).
+    expect(withPin.every((n) => n.key.startsWith('time:'))).toBe(true);
+  });
+
+  it('IGNORES the pinned set in the Status lens', () => {
+    const runs = [run('flow-x', { status: 'failed' }), run('flow-y', { status: 'completed' })];
+    const declared = [wf('flow-x'), wf('flow-y')];
+    const withPin = groupRuns(runs, declared, 'status', new Set(['flow-y']));
+    const noPin = groupRuns(runs, declared, 'status');
+    expect(withPin.map((n) => n.key)).toEqual(noPin.map((n) => n.key));
+    expect(withPin.every((n) => n.key.startsWith('status:'))).toBe(true);
+  });
+});

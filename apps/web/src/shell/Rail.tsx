@@ -19,6 +19,7 @@ import { memo, useCallback, useMemo, useState } from 'react';
 import type { ProjectRef, RunSummary, WorkflowMeta } from '@argus/contract';
 import type { LoopDrillMode } from '../expand-context.ts';
 import { readGroupBy, writeGroupBy } from '../group-by-setting.ts';
+import { readPinnedWorkflows, writePinnedWorkflows, togglePinned } from '../pinned-setting.ts';
 import { filterTree } from '../filter-runs.ts';
 import { formatDuration, formatRelativeTime, isStale, statusGlyph } from './format.ts';
 
@@ -113,7 +114,16 @@ const RECENT_CAP = 5;
  * terminal status) so a running→completed transition can't move a row between buckets mid-poll.
  * All branches emit the same TreeNode[] shape so WorkflowTreeNode / RunRow render unchanged.
  */
-export function groupRuns(runs: RunSummary[], workflows: WorkflowMeta[], groupBy: RailGroupBy): TreeNode[] {
+export function groupRuns(
+  runs: RunSummary[],
+  workflows: WorkflowMeta[],
+  groupBy: RailGroupBy,
+  // PINNED workflows float to the TOP of the Workflow lens regardless of recency (so active work
+  // stays reachable as run counts grow). ONLY the Workflow lens reads this — the Time/Status
+  // lenses bucket runs from many workflows, so a per-workflow pin has no meaning there and is
+  // ignored. Defaults to empty (the zero-regression baseline: recency sort wins).
+  pinned: ReadonlySet<string> = new Set(),
+): TreeNode[] {
   const finished = runs.filter((r) => r.status !== 'running');
 
   // --- 'workflow' (default): one folder per DISTINCT workflowName. Declared workflows are folders
@@ -141,20 +151,23 @@ export function groupRuns(runs: RunSummary[], workflows: WorkflowMeta[], groupBy
       const sorted = runsNewestFirst(rs);
       nodes.push({ key: `wf:${name}`, name: name || '(unnamed)', workflow: null, runs: sorted, orderKey: maxStart(sorted) });
     }
-    // (3) sort: declared-with-runs first (most-recent on top), then declared-empty (by name),
-    //     then ad-hoc folders (by recency, newest-first). Keyed on immutable startTime/name.
+    // (3) sort: PINNED first (above every tier, kept on top regardless of recency), then
+    //     declared-with-runs (most-recent on top), then declared-empty (by name), then ad-hoc
+    //     folders (by recency, newest-first). Keyed on immutable startTime/name + the pin flag.
     const rank = (n: TreeNode): number => {
+      if (pinned.has(n.name)) return 0; // pinned — floats to the top of the lens
       const adHoc = n.workflow === null;
-      if (!adHoc && n.runs.length > 0) return 0; // declared, with runs
-      if (!adHoc) return 1; // declared, empty
-      return 2; // ad-hoc
+      if (!adHoc && n.runs.length > 0) return 1; // declared, with runs
+      if (!adHoc) return 2; // declared, empty
+      return 3; // ad-hoc
     };
     nodes.sort((a, b) => {
       const ra = rank(a);
       const rb = rank(b);
       if (ra !== rb) return ra - rb;
-      // declared-empty: alphabetical (no runs → no recency); everything else: recency, newest-first.
-      if (ra === 1) return a.name.localeCompare(b.name);
+      // declared-empty: alphabetical (no runs → no recency); everything else (incl. pinned among
+      // themselves): recency, newest-first, with name as a stable tiebreak.
+      if (ra === 2) return a.name.localeCompare(b.name);
       return b.orderKey - a.orderKey || a.name.localeCompare(b.name);
     });
     return nodes;
@@ -245,6 +258,19 @@ export const Rail = memo(function Rail(props: RailProps) {
     writeGroupBy(g);
   }, []);
 
+  // PINNED workflows — a personal "keep this on top" choice, persisted the same way as groupBy
+  // (read on init, written on change; non-fatal if the store is missing/disabled). Only the
+  // Workflow lens consumes it. The toggle is a PURE helper (returns a fresh Set) so the groupRuns
+  // memo re-runs and the tree re-sorts on a pin/unpin.
+  const [pinnedWorkflows, setPinnedWorkflowsState] = useState<Set<string>>(() => readPinnedWorkflows());
+  const onTogglePinned = useCallback((workflowName: string) => {
+    setPinnedWorkflowsState((prev) => {
+      const next = togglePinned(workflowName, prev);
+      writePinnedWorkflows(next);
+      return next;
+    });
+  }, []);
+
   // The explorer FILTER lens — an ephemeral substring query over workflow name + status.
   // Unlike groupBy this is exploratory (not a habit), so it is NOT persisted: it resets on
   // reload. It composes with — never replaces — the group-by lens.
@@ -257,7 +283,10 @@ export const Rail = memo(function Rail(props: RailProps) {
   // --- split + group + filter (memoized; order keyed on immutable startTime so the 2.5s live
   //     poll never reshuffles the tree) ---------------------------------------------------
   const liveRuns = useMemo(() => runsNewestFirst(runs.filter((r) => r.status === 'running')), [runs]);
-  const grouped = useMemo<TreeNode[]>(() => groupRuns(runs, workflows, groupBy), [runs, workflows, groupBy]);
+  const grouped = useMemo<TreeNode[]>(
+    () => groupRuns(runs, workflows, groupBy, pinnedWorkflows),
+    [runs, workflows, groupBy, pinnedWorkflows],
+  );
   // The filter runs AFTER grouping so it composes orthogonally with the lens; live runs are
   // NEVER filtered (they're the ACTIVITY stream — always visible in the pinned LiveGroup).
   const tree = useMemo<TreeNode[]>(() => filterTree(grouped, filterQuery), [grouped, filterQuery]);
@@ -381,6 +410,9 @@ export const Rail = memo(function Rail(props: RailProps) {
                     onSelectRun={onSelectRun}
                     showWorkflowName={showWorkflowName}
                     referenceNow={referenceNow}
+                    isPinned={groupBy === 'workflow' && pinnedWorkflows.has(node.name)}
+                    onTogglePinned={onTogglePinned}
+                    showPinButton={groupBy === 'workflow' && node.kind !== 'bucket'}
                   />
                 ))
               )}
@@ -590,6 +622,9 @@ const WorkflowTreeNode = memo(function WorkflowTreeNode({
   onSelectRun,
   showWorkflowName,
   referenceNow,
+  isPinned,
+  onTogglePinned,
+  showPinButton,
 }: {
   node: TreeNode;
   open: boolean;
@@ -600,6 +635,11 @@ const WorkflowTreeNode = memo(function WorkflowTreeNode({
   onSelectRun: (r: RunSummary) => void;
   showWorkflowName: boolean;
   referenceNow: number; // injected so age-dim + recency-fold are deterministic/testable
+  // PIN affordance — only the Workflow lens passes showPinButton=true (Time/Status buckets have no
+  // per-workflow pin). isPinned drives the filled/outline star; onTogglePinned flips it by name.
+  isPinned: boolean;
+  onTogglePinned: (workflowName: string) => void;
+  showPinButton: boolean;
 }) {
   const hasChildren = node.runs.length > 0;
   const isBucket = node.kind === 'bucket'; // a Time/Status grouping header (label toggles)
@@ -641,6 +681,24 @@ const WorkflowTreeNode = memo(function WorkflowTreeNode({
           <span className="rail-tree-name">{node.name}</span>
           <span className="rail-tree-count">{node.runs.length || '—'}</span>
         </button>
+        {/* The pin toggle — Workflow lens only, on every workflow folder (declared + ad-hoc). A calm
+            outline star ☆ that fills to ★ when pinned; stopPropagation so it never toggles the
+            folder. The .is-pinned class keeps the filled star visible even without hover. */}
+        {showPinButton ? (
+          <button
+            type="button"
+            className={`rail-pin${isPinned ? ' is-pinned' : ''}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onTogglePinned(node.name);
+            }}
+            aria-label={isPinned ? 'unpin workflow' : 'pin workflow'}
+            aria-pressed={isPinned}
+            title={isPinned ? 'Unpin — sort by recency' : 'Pin — keep at top'}
+          >
+            <span className="rail-pin-icon" aria-hidden="true">{isPinned ? '★' : '☆'}</span>
+          </button>
+        ) : null}
       </div>
       {open && hasChildren ? (
         <ul className="rail-list rail-indent">

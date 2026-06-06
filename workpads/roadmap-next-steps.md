@@ -130,7 +130,12 @@ the transcript-reader (the design-plan "LATER" stack) all shipped.
   with pure `filterRuns`/`filterTree` (substring over workflow name + status) that runs AFTER
   grouping so it composes with all three lenses; live runs are never filtered. Validated: "failed"
   narrows ~33 folders → the 3 with failed runs. Age token deferred (name+status covers the need).
-- **Pinned / favorite workflows** · S · keep active work on top regardless of recency.
+- **Pinned / favorite workflows** — DONE 2026-06-06. A pure `pinned-setting.ts` seam
+  (key `argus.pinnedWorkflows`, read/write/toggle/normalize, degrades gracefully) + a calm
+  ☆/★ pin toggle on each Workflow-lens folder head; pinned workflows sort to the TOP (above
+  the declared/ad-hoc/recency rank), pinned-among-themselves by recency. Workflow lens only
+  (Time/Status untouched). Validated live: pinning `argus-view-unification` jumped it to the
+  top (★) + persisted to localStorage; unpinning restored the normal sort. +20 tests (358).
 
 ### Live & inspection
 - **Eager live-card fill for RUNNING agents** (dur/tok/tools/label from the transcript, on the

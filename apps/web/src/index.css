@@ -1475,6 +1475,34 @@ body {
   color: var(--argus-dim);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
+/* The pin/star toggle on a workflow folder head (Workflow lens only). Calm: the outline star is
+   hidden until you hover the row (or focus it for keyboard reach); once PINNED it stays visible in
+   gold so the "kept on top" state reads at a glance without adding a second persistent glyph. */
+.rail-pin {
+  appearance: none;
+  background: transparent;
+  border: none;
+  color: var(--argus-dim);
+  flex: none;
+  width: 20px;
+  padding: 4px 0;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 160ms ease, color 160ms ease;
+}
+.rail-tree-head:hover .rail-pin,
+.rail-pin:focus-visible {
+  opacity: 1;
+}
+.rail-pin:hover {
+  color: var(--argus-fg);
+}
+.rail-pin.is-pinned {
+  opacity: 1;
+  color: #e3b341; /* a calm gold — the only persistent "on top" cue */
+}
 /* a finished run row nested under its workflow: status glyph + inline meta (no name). */
 .rail-run-meta-inline {
   padding-left: 0;
