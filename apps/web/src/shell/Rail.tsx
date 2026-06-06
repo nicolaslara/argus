@@ -64,15 +64,17 @@ function runsNewestFirst(runs: RunSummary[]): RunSummary[] {
   return [...runs].sort((a, b) => (b.startTime ?? -Infinity) - (a.startTime ?? -Infinity));
 }
 
-/** A workflow node = a declared workflow (or an orphan bucket) + its finished runs. */
-interface TreeNode {
+/** A tree node = a workflow folder (declared OR ad-hoc-by-name) or a Time/Status bucket. */
+export interface TreeNode {
   key: string;
   name: string; // display label
-  workflow: WorkflowMeta | null; // null = the orphan bucket (or a non-workflow time/status bucket)
+  // The declared WorkflowMeta (→ clicking the folder opens its Plan). null = an AD-HOC workflow
+  // folder (a distinct workflowName with no declared workflow → no Plan) or a Time/Status bucket.
+  workflow: WorkflowMeta | null;
   runs: RunSummary[]; // finished runs, newest-first
   orderKey: number; // max(startTime) of its runs — immutable, for a frozen sort
   // 'bucket' = a Time/Status grouping header (whole label toggles open/closed); undefined for
-  // workflow folders and the orphan bucket (so the Workflow lens stays byte-for-byte unchanged).
+  // workflow folders (declared or ad-hoc) where the label opens the Plan / toggles the folder.
   kind?: 'bucket';
 }
 
@@ -88,10 +90,13 @@ function maxStart(rs: RunSummary[]): number {
  * terminal status) so a running→completed transition can't move a row between buckets mid-poll.
  * All branches emit the same TreeNode[] shape so WorkflowTreeNode / RunRow render unchanged.
  */
-function groupRuns(runs: RunSummary[], workflows: WorkflowMeta[], groupBy: RailGroupBy): TreeNode[] {
+export function groupRuns(runs: RunSummary[], workflows: WorkflowMeta[], groupBy: RailGroupBy): TreeNode[] {
   const finished = runs.filter((r) => r.status !== 'running');
 
-  // --- 'workflow' (default): the EXISTING tree memo, moved verbatim (zero behavior change). ---
+  // --- 'workflow' (default): one folder per DISTINCT workflowName. Declared workflows are folders
+  //     even with 0 runs; every ad-hoc/inline workflowName (a run whose workflowName is NOT a
+  //     declared workflow) becomes its OWN named folder too — so a run is findable by its name in
+  //     the Workflow lens just as it is in Time/Status (no opaque "(other runs)" catch-all). ---
   if (groupBy === 'workflow') {
     const wfNames = new Set(workflows.map((w) => w.name));
     const byName = new Map<string, RunSummary[]>();
@@ -100,22 +105,33 @@ function groupRuns(runs: RunSummary[], workflows: WorkflowMeta[], groupBy: RailG
       if (list) list.push(r);
       else byName.set(r.workflowName, [r]);
     }
-    // one node per declared workflow (even with 0 runs) + an orphan bucket for unjoinable runs.
+    // (1) one node per declared workflow (even with 0 runs), keyed on its file.
     const nodes: TreeNode[] = workflows.map((w) => {
       const rs = runsNewestFirst(byName.get(w.name) ?? []);
       return { key: `wf:${w.file}`, name: w.name, workflow: w, runs: rs, orderKey: maxStart(rs) };
     });
-    const orphans = finished.filter((r) => !wfNames.has(r.workflowName));
-    if (orphans.length > 0) {
-      nodes.push({ key: 'orphans', name: '(other runs)', workflow: null, runs: runsNewestFirst(orphans), orderKey: maxStart(orphans) });
+    // (2) one node per AD-HOC workflowName (not a declared workflow), keyed on the name itself so
+    //     it's stable + distinct from the file-keyed declared folders. workflow:null = no Plan to
+    //     open (the folder still toggles to reveal its runs, same as a declared folder).
+    for (const [name, rs] of byName) {
+      if (wfNames.has(name)) continue;
+      const sorted = runsNewestFirst(rs);
+      nodes.push({ key: `wf:${name}`, name: name || '(unnamed)', workflow: null, runs: sorted, orderKey: maxStart(sorted) });
     }
-    // workflows WITH runs first (most-recent on top); empty declared workflows after; orphans last.
+    // (3) sort: declared-with-runs first (most-recent on top), then declared-empty (by name),
+    //     then ad-hoc folders (by recency, newest-first). Keyed on immutable startTime/name.
+    const rank = (n: TreeNode): number => {
+      const adHoc = n.workflow === null;
+      if (!adHoc && n.runs.length > 0) return 0; // declared, with runs
+      if (!adHoc) return 1; // declared, empty
+      return 2; // ad-hoc
+    };
     nodes.sort((a, b) => {
-      if (a.key === 'orphans') return 1;
-      if (b.key === 'orphans') return -1;
-      const ar = a.runs.length > 0 ? 1 : 0;
-      const br = b.runs.length > 0 ? 1 : 0;
-      if (ar !== br) return br - ar;
+      const ra = rank(a);
+      const rb = rank(b);
+      if (ra !== rb) return ra - rb;
+      // declared-empty: alphabetical (no runs → no recency); everything else: recency, newest-first.
+      if (ra === 1) return a.name.localeCompare(b.name);
       return b.orderKey - a.orderKey || a.name.localeCompare(b.name);
     });
     return nodes;
@@ -492,8 +508,12 @@ const WorkflowTreeNode = memo(function WorkflowTreeNode({
   showWorkflowName: boolean;
 }) {
   const hasChildren = node.runs.length > 0;
-  const isOrphan = node.workflow === null;
   const isBucket = node.kind === 'bucket'; // a Time/Status grouping header (label toggles)
+  // An ad-hoc workflow folder (workflowName with no declared workflow): no Plan to open, so its
+  // label TOGGLES the folder (revealing its named runs) — the same affordance as a Time/Status
+  // bucket. Only a label with nothing to do at all (no Plan AND no children) stays disabled.
+  const isAdHocWorkflow = node.workflow === null && !isBucket;
+  const labelInert = isAdHocWorkflow && !hasChildren;
   return (
     <div className="rail-treenode" role="treeitem" aria-expanded={open}>
       <div className={`rail-tree-head${isSelectedWorkflow ? ' is-active' : ''}`}>
@@ -511,9 +531,9 @@ const WorkflowTreeNode = memo(function WorkflowTreeNode({
           className="rail-tree-label"
           onClick={() => (node.workflow ? onSelectWorkflow(node.workflow) : onToggle())}
           title={node.workflow?.description || node.name}
-          disabled={isOrphan && !isBucket}
+          disabled={labelInert}
         >
-          <span className="rail-tree-kind" aria-hidden="true">{isBucket ? '▤' : isOrphan ? '◷' : '◇'}</span>
+          <span className="rail-tree-kind" aria-hidden="true">{isBucket ? '▤' : isAdHocWorkflow ? '◷' : '◇'}</span>
           <span className="rail-tree-name">{node.name}</span>
           <span className="rail-tree-count">{node.runs.length || '—'}</span>
         </button>

@@ -100,6 +100,12 @@ body {
   pointer-events: none;
   z-index: 4; /* below the rail (10) so the expanded panel cleanly covers it */
 }
+/* When the run-selector dropdown is OPEN, lift the whole run-header stacking context above the
+   later-in-DOM .run-chrome (objective band + failure banner, also z-4) so the drawer's items are
+   not painted behind them. Still below the rail (10). Reverts to z-4 when closed (no layout shift). */
+.run-header:has(.run-selector-chip.is-open) {
+  z-index: 8;
+}
 .run-header-name {
   font-weight: 600;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;

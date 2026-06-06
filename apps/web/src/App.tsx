@@ -36,6 +36,7 @@ import { pickPlanSource } from './plan-correspondence.ts';
 import { useLiveAgentFill } from './live-agent-fill.ts';
 import { ExpandContext, type LoopDrillMode } from './expand-context.ts';
 import { readLoopDrillMode, writeLoopDrillMode } from './loop-drill-setting.ts';
+import { migrateLoopDrill } from './loop-drill-migrate.ts';
 import {
   overlayExplanations,
   usePlanExplanations,
@@ -340,10 +341,8 @@ export function App() {
   // 'round-axis' (option 1, default) vs 'lane-drawer' (option 2). Initialized from
   // localStorage so a reload restores the choice; the setter persists every change.
   const [loopDrillMode, setLoopDrillModeState] = useState<LoopDrillMode>(() => readLoopDrillMode());
-  const setLoopDrillMode = useCallback((mode: LoopDrillMode) => {
-    setLoopDrillModeState(mode);
-    writeLoopDrillMode(mode);
-  }, []);
+  // The MIGRATING setter (setLoopDrillMode) is defined below, AFTER the loop-drill state it has to
+  // carry across the switch (selectedRound / loopDrawerRound) is declared.
   const [selectedProjectPath, setSelectedProjectPath] = useState<string | null>(null);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [selectedWorkflowName, setSelectedWorkflowName] = useState<string | null>(null);
@@ -406,6 +405,28 @@ export function App() {
     setSelectedRound(round);
     setOverviewOpen(false); // the loop's round detail takes precedence over the run overview
   }, []);
+
+  // The MODE setter, made RESPONSIVE: flipping the loop-drill setting while a round is open carries
+  // that open round into the new mode's presentation (round-axis DetailPanel scope ⟷ lane-drawer
+  // in-canvas drawer) instead of stranding it. The pure migration lives in ./loop-drill-migrate.ts;
+  // here we just feed it the current drill state (via refs, so the setter stays stable) and apply
+  // the result. Always persists the new mode (a missing/disabled store is non-fatal).
+  const drillStateRef = useRef({ selectedNodeId, selectedRound, loopDrawerRound });
+  drillStateRef.current = { selectedNodeId, selectedRound, loopDrawerRound };
+  const setLoopDrillMode = useCallback((mode: LoopDrillMode) => {
+    const from = loopDrillModeRef.current;
+    if (from !== mode) {
+      const next = migrateLoopDrill(from, mode, drillStateRef.current);
+      setSelectedNodeId(next.selectedNodeId);
+      setSelectedRound(next.selectedRound);
+      setLoopDrawerRound(new Map(next.loopDrawerRound));
+      // A round carried into the in-canvas drawer (or panel) takes precedence over the run overview.
+      if (next.selectedRound != null || next.loopDrawerRound.size > 0) setOverviewOpen(false);
+    }
+    setLoopDrillModeState(mode);
+    writeLoopDrillMode(mode);
+  }, []);
+
   // Stable provider value (new only when the expanded set / mode / open drawer changes) so
   // PlanAgentNode carets read a fresh `expanded` but a stable `toggle` / `selectRound`.
   const expandContextValue = useMemo(

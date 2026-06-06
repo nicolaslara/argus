@@ -100,6 +100,21 @@ the transcript-reader (the design-plan "LATER" stack) all shipped.
   has no drillable loop, so it no longer reads as broken. Manual-validation workflows (loop ran
   >1 round): `argus-view-unification`, `argus-sidebar-redesign`, `capo-workpad-execute`.
 
+- [x] **UIBUG-5/6/7 — three UI issues fixed via a workflow 2026-06-06.**
+  (5) **Run-selector dropdown rendered behind the objective band + failure banner** — `.run-selector-drawer`
+  (z-6) was trapped in `.run-header`'s z-4 stacking context, beaten by later-in-DOM `.run-chrome` (z-4).
+  Fix: `.run-header:has(.run-selector-chip.is-open){z-index:8}` lifts it only while open (still < rail's 10).
+  Verified: all hit-test samples down the open drawer land on drawer content.
+  (6) **Workflow rail tab hid ad-hoc workflows in an opaque "(other runs)" bucket** while Time/Status named
+  every run. Fix: `groupRuns` Workflow lens now emits one named folder per distinct workflowName (declared
+  first, then ad-hoc by recency); the catch-all is gone; ad-hoc folders toggle. Verified: every workflow
+  (argus-view-unification, argus-sidebar-redesign, …) is now a named, findable group; no "(other runs)".
+  (7) **Loop-drill toggle gave no feedback when flipped** — it only governed a round-pill click, so flipping
+  the mode stranded an open round. Fix: a pure `migrateLoopDrill` helper carries the open round across the
+  switch (round-axis DetailPanel ⟷ lane-drawer in-loop drawer), wired into the mode setter. Verified live on
+  the 3-round argus-view-unification loop: flipping round-axis→lane-drawer auto-opened r2's cards in the loop
+  with no re-click. +12 tests (280 total). Found + fixed by a 3-phase workflow (diagnose×3 → implement → verify).
+
 ## Next steps by theme
 
 ### Navigation & scale
