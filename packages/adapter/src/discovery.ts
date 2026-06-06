@@ -382,14 +382,56 @@ export async function discoverRunsReport(
 // --- running-run detection (L1) ---------------------------------------------
 
 /**
+ * How long a live run's journal may go QUIET before we treat it as stale (crashed/
+ * abandoned) and stop surfacing it. A real workflow can be silent for several minutes —
+ * a single long Opus generation, a heavy file read, a slow loop condition — without being
+ * dead, so the classifier's 5-min default was dropping STILL-RUNNING runs from the rail
+ * mid-run. 30 min gives generous headroom for any real quiet stretch while still reaping a
+ * run that's been abandoned for half an hour. (File-first: the journal mtime is the only
+ * liveness signal we have; this is the heuristic cutoff, not a guarantee.)
+ */
+export const RUNNING_STALE_AFTER_MS = 30 * 60_000;
+
+/**
+ * Recover a running run's workflow NAME from its persisted per-run script basename
+ * (`<name>-<runId>.js` under `<session>/workflows/scripts/`), mirroring how the live route
+ * and the finalized model resolve it. The journal itself carries NO workflow name (only
+ * agent started/result events), so without this a running run lands in the rail with an
+ * empty name — which (a) detaches it from its workflow group and (b) makes the Plan view
+ * fall back to the wrong (default) workflow when the live run is selected. Returns '' when
+ * no script is persisted (graceful: the run still surfaces, just unnamed). The script base
+ * is a single dir entry (no slashes), so the stripped name is safe to use as a group key.
+ */
+async function recoverRunningWorkflowName(
+  port: RunningDetectPort,
+  slugPath: string,
+  sessionId: string,
+  runId: string,
+): Promise<string> {
+  const scriptsDir = join(slugPath, sessionId, 'workflows', 'scripts');
+  let entries: Array<{ name: string; isDir: boolean }>;
+  try {
+    entries = await port.listDir(scriptsDir);
+  } catch {
+    return ''; // no scripts dir for this session is normal (not every run persists a script).
+  }
+  const suffix = `-${runId}.js`;
+  const hit = entries.find((e) => !e.isDir && e.name.endsWith(suffix) && e.name.length > suffix.length);
+  return hit ? hit.name.slice(0, -suffix.length) : '';
+}
+
+/**
  * Detect IN-PROGRESS runs for a project by scanning, in each session, the live journal
  * tree `subagents/workflows/<runId>/journal.jsonl` for runs that have NO finalized
  * `workflows/<runId>.json` yet (F1: the finalized json is written once, at finalize, so
  * its absence + a fresh journal ⇒ the run is still going). Liveness is classified by
- * {@link classifyRunLiveness}; only `running` runs are emitted (a `stale` journal that
- * never finalized — a likely crash — is omitted). HEADER-cheap: per run it does one
- * `exists` (finalized json) + one `stat` (journal mtime); it does NOT read the journal
- * body (agent counts come later, when the client loads the live model). NEVER throws.
+ * {@link classifyRunLiveness} with the generous {@link RUNNING_STALE_AFTER_MS} cutoff; only
+ * `running` runs are emitted (a journal quiet for >30 min that never finalized — a likely
+ * crash — is omitted). Each running run's `workflowName` is recovered from its persisted
+ * script basename so it groups + corresponds to its workflow exactly like a finished run
+ * (see {@link recoverRunningWorkflowName}). HEADER-cheap: per run one `exists` (finalized
+ * json) + one `stat` (journal mtime) + one `listDir` (scripts dir); it does NOT read the
+ * journal body (agent counts come later, when the client loads the live model). NEVER throws.
  *
  * `nowMs` is injected (the adapter reads no clock). Runs are scoped to `project.slug`
  * and emitted with `ref.projectPath = project.projectPath` (grouped with the project's
@@ -440,13 +482,18 @@ export async function discoverRunningRunsReport(
         finalizedExists,
         journalMtimeMs: st.mtimeMs,
         nowMs,
+        staleAfterMs: RUNNING_STALE_AFTER_MS,
       });
       if (liveness !== 'running') continue;
+
+      // Recover the workflow name from the persisted script so the live run groups under +
+      // corresponds to its workflow like a finished run (the journal has no name of its own).
+      const workflowName = await recoverRunningWorkflowName(port, slugPath, sessionId, runId);
 
       const ref: RunRef = { projectPath: project.projectPath, slug: project.slug, sessionId, runId };
       items.push({
         ref,
-        workflowName: '',
+        workflowName,
         status: 'running',
         agentCount: 0,
         durationMs: null,

@@ -329,6 +329,35 @@ describe('discoverRunningRunsReport (L1 detection)', () => {
     expect(items[0]!.startTime).toBe(now - 2000); // best-effort "last active" = journal mtime.
   });
 
+  it("recovers a running run's workflowName from its persisted script basename", async () => {
+    const port = new StatPort();
+    port.set(`${base}/sess-x/subagents/workflows/wf_x/journal.jsonl`, journalText, now - 2000);
+    // `<name>-<runId>.js` under workflows/scripts/ — the live route resolves it the same way.
+    port.set(`${base}/sess-x/workflows/scripts/my-live-flow-wf_x.js`, 'export const meta = {}', now - 2000);
+    const { items } = await discoverRunningRunsReport(port, HOME, project, now);
+    expect(items).toHaveLength(1);
+    expect(items[0]!.workflowName).toBe('my-live-flow'); // was '' before the fix → broke Plan correspondence
+  });
+
+  it("emits '' workflowName (not a throw) when no per-run script is persisted", async () => {
+    const port = new StatPort();
+    port.set(`${base}/sess-noscript/subagents/workflows/wf_ns/journal.jsonl`, journalText, now - 2000);
+    const { items } = await discoverRunningRunsReport(port, HOME, project, now);
+    expect(items).toHaveLength(1);
+    expect(items[0]!.workflowName).toBe('');
+  });
+
+  it('keeps a still-running run quiet for 10 min (the old 5-min cutoff dropped it); omits one quiet 40 min', async () => {
+    const port = new StatPort();
+    // 10 min quiet — a real long agent — must STILL surface (RUNNING_STALE_AFTER_MS = 30 min).
+    port.set(`${base}/sess-quiet/subagents/workflows/wf_quiet/journal.jsonl`, journalText, now - 10 * 60_000);
+    // 40 min quiet — past the 30-min cutoff — omitted as likely-crashed.
+    port.set(`${base}/sess-dead/subagents/workflows/wf_dead/journal.jsonl`, journalText, now - 40 * 60_000);
+    const { items } = await discoverRunningRunsReport(port, HOME, project, now);
+    expect(items.map((r) => r.ref.runId)).toEqual(['wf_quiet']);
+    expect(items[0]!.status).toBe('running');
+  });
+
   it('a missing slug dir yields a coded reason, never a throw', async () => {
     const port = new StatPort();
     const { items, reasons } = await discoverRunningRunsReport(port, HOME, project, now);
