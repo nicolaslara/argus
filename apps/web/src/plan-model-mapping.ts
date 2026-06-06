@@ -423,18 +423,38 @@ export async function planModelToGraph(plan: PlanModel, elkLayout: ElkPlanLayout
     t === 'phaseLane' ? 0 : t === 'planLoop' ? 1 : t === 'instanceGroup' ? 2 : t === 'agentCard' ? 3 : 2;
   nodes.sort((a, b) => rank(a.type) - rank(b.type));
 
-  const edges: Edge[] = plan.edges.map((e) => {
-    const decision = plan.nodes.find((n) => n.id === e.from && n.kind === 'decision');
-    const sourceHandle =
-      e.kind === 'optional' && decision ? (e.label === 'false' ? 'false' : 'true') : undefined;
-    return {
-      id: e.id,
-      source: e.from,
-      target: e.to,
-      sourceHandle,
-      ...edgeStyle(e),
-    };
-  });
+  // Drop the redundant loop-container → first-body-child 'flow' edge: parentId containment
+  // already signals loop ENTRY, and React Flow would otherwise draw it from the loop's right
+  // handle to the left-most interior child — a solid line sweeping straight across the body
+  // (UIBUG-3). This predicate matches ONLY that entry edge: the post-loop continuation
+  // (loop → next sibling) has loopOf.get(target) === undefined, so it is kept.
+  const edges: Edge[] = plan.edges
+    .filter((e) => !(e.kind === 'flow' && loopIds.has(e.from) && loopOf.get(e.to) === e.from))
+    .map((e) => {
+      const decision = plan.nodes.find((n) => n.id === e.from && n.kind === 'decision');
+      const sourceHandle =
+        e.kind === 'optional' && decision ? (e.label === 'false' ? 'false' : 'true') : undefined;
+      // Loop-back (back-edge) → dock at the loop container's BOTTOM handle and bow around the
+      // body (mirrors the run-overlay's re-route in overlay-loop-expand.ts). A decision-ending
+      // body leaves its BOTTOM (`false`) vertex and bows wider; otherwise the source keeps its
+      // default right handle. edgeStyle('loop-back') is type:'smoothstep', which pathOptions needs.
+      const isLoopBack = e.kind === 'loop-back' && loopIds.has(e.to);
+      const loopBackHandles = isLoopBack
+        ? {
+            targetHandle: 'loop-bottom',
+            ...(decision ? { sourceHandle: 'false' } : null),
+            pathOptions: { offset: decision ? 34 : 24, borderRadius: 14 },
+          }
+        : null;
+      return {
+        id: e.id,
+        source: e.from,
+        target: e.to,
+        sourceHandle,
+        ...edgeStyle(e),
+        ...(loopBackHandles ?? {}),
+      };
+    });
 
   return { nodes, edges };
 }

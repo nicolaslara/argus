@@ -355,6 +355,10 @@ export const LoopContainer = memo(function LoopContainer({ id, data }: { id: str
     <div className={`plan-loop ${confidenceClass(data.confidence)}${showAxis ? ' plan-loop-unrolled' : ''}`}>
       <Handle type="target" position={Position.Left} style={hidden} />
       <Handle type="source" position={Position.Right} style={hidden} />
+      {/* UIBUG-3: an explicit BOTTOM target the dashed loop-back edge docks at, so it bows
+          below/around the body instead of cutting straight across it. The id-less Left target
+          stays the default for other inbound edges; this one is addressed only by id. */}
+      <Handle id="loop-bottom" type="target" position={Position.Bottom} style={hidden} />
       <div className="plan-loop-header">
         <span className="plan-loop-glyph" aria-hidden="true">
           ↻

@@ -62,6 +62,32 @@ the transcript-reader (the design-plan "LATER" stack) all shipped.
   toggle Plan → the SAME 4 phases (Fetch hook · Merge · Tests · Gate) render as a clean
   blueprint, header names the run's own workflow (Playwright) + a regression test.
 
+- [x] **UIBUG-3 — Plan-view loop edges route straight THROUGH the body nodes. FIXED 2026-06-06.**
+  Two-part fix in `plan-model-mapping.ts` (+ a `loop-bottom` target handle on `LoopContainer`):
+  (A) drop the redundant loop-container→first-body-child `flow` edge (parentId containment
+  already signals entry; the post-loop continuation is kept — filter is precise); (B) dock the
+  dashed loop-back at the loop's new bottom handle with a bowed `pathOptions.offset` (24, or 34 +
+  source `false` vertex when the body ends in a decision — mirrors the run-overlay re-route).
+  Verified live: on `argus-view-unification` the solid cross-body line is GONE (`e-flow-8`
+  absent, 0 crossers, loop-back bows below the loop) and on `argus-refine-plan` (decision-ending
+  body) 0 crossers + loop-back below. +4 unit tests (first to drive the real `planModelToGraph`).
+  Found by a 4-phase workflow (diagnose×3 → synthesize → implement → verify). Below is the spec.
+
+  ORIGINAL: On a
+  `while`-loop-with-`break` (e.g. `argus-view-unification` Refine phase), the loop renders
+  critique → `condition?` → (true→exit loop)/(false→revise), but TWO edges cut straight
+  across the body: the SOLID `flow` edge `loop→firstChild` (`e-flow-8`, the loop-entry, from
+  `plan.ts walkLoop` doing `flowTo(loopId)` then the first body node's `flowTo`) and the
+  DASHED `loop-back` edge `lastBody→loop`. ROOT CAUSE: elk only computes node PLACEMENTS
+  (`plan-model-mapping.ts:259` "elk needs only the topology"); React Flow draws each edge
+  from the source's default (east/right) handle to the target's (west/left) handle — so an
+  edge from the wrapping loop CONTAINER to its left-most child sweeps right→left across the
+  whole body. **Fix direction:** suppress/retarget the container→first-child entry edge
+  (containment already shows entry) and dock the loop-back through a gutter (bottom/left
+  handles) so it bows around the body (cf. the run-overlay `overlay-loop-expand.ts`
+  LOOP_GUTTER re-route). Must not regress refine-plan's loop, decisions outside loops, or the
+  run-overlay loop drawer. Surfaced by the UIBUG-2 fix (ad-hoc runs now show their own plan).
+
 ## Next steps by theme
 
 ### Navigation & scale
