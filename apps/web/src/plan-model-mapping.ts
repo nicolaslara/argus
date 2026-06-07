@@ -98,6 +98,18 @@ function geomFor(node: PlanNode): KindGeom {
 const LOOP_FALLBACK_W = 360;
 const LOOP_FALLBACK_H = 120;
 
+/**
+ * Presentation-only: render a templated label's holes as `⟨expr⟩` instead of raw JS `${expr}`
+ * (e.g. `critique:${l.key}:r${round}` → `critique:⟨l.key⟩:r⟨round⟩`). A loop/fan-out body agent's
+ * label IS a template (it varies per round/item), but showing the literal `${…}` syntax reads like
+ * a bug; the angle-bracket form keeps the parameter visible + the separators parseable without the
+ * code noise. The adapter's `labelTemplate.raw` stays the faithful template; this is render-side.
+ */
+function prettyHoles(raw: string | null | undefined): string | null {
+  if (raw == null) return null;
+  return raw.replace(/\$\{([^}]*)\}/g, '⟨$1⟩');
+}
+
 function dataFor(node: PlanNode, laneTitle: string | null): Record<string, unknown> {
   // I1: every plan node carries its `kind` + resolved `phaseTitle` on node.data so the
   // detail panel can project them with no extra fetch (the node components ignore both —
@@ -114,7 +126,7 @@ function dataFor(node: PlanNode, laneTitle: string | null): Record<string, unkno
       const d: PlanAgentData = {
         ...base,
         title: node.title,
-        labelRaw: node.labelTemplate?.raw ?? null,
+        labelRaw: prettyHoles(node.labelTemplate?.raw) ?? null,
         subtitle: node.annotation.subtitle,
         agentType: node.agentType,
         typed: node.annotation.typed,
