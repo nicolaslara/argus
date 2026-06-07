@@ -181,3 +181,48 @@ adapter format-isolation, web↔contract-only all hold). Prioritized remaining w
   `agent-table.png` (the execution-order DAG view — Explore·4 / Judge·1 / Refine·5 nested under phase
   headers — with a row→graph cross-highlight) plus a third "A look around" README item describing the
   table panel. failure-inspector.png + transcript-reader.png kept (those features unchanged).
+  - **Re-shot 2026-06-07 (review):** the first batch framed poorly (plan-overview tiny, loop-drill
+    cropped, agent-table on the wrong run). Re-captured + visually verified each: plan-overview = a
+    legible 4-phase blueprint; loop-drill = a loop workflow's plan in context (no failure-banner
+    noise); agent-table = the panoptic graph+table+detail-panel shot. Saved a "verify screenshots
+    before adding" rule to memory.
+
+## 8. Autonomous audit v2 (2026-06-07) — triaged + actioned
+
+A second 5-lens adversarial audit (correctness · boundary/dead-code · test-gaps · perf · decomp):
+14 confirmed, 4 refuted, 6 dropped-as-feature. Each finding re-verified against the code (the audit
+mislabels — see AV1/AV4). Outcomes:
+
+- [x] **AV3 — overlayExplanations untested.** +7 tests (`explanations.test.ts`): empty-map identity,
+  agentId/node.id join, field patch, topology preserved, non-match skipped.
+- [x] **AV6 — elk `planLayout` untested.** +9 tests (`layout/elk.test.ts`): partition gate, nested-
+  coord flatten, header pad, root exclusion. (Timeout path needs a source seam — noted, not tested.)
+- [x] **AV7 — raw.ts defensive parsers tested only indirectly.** +30 tests (`raw.test.ts`):
+  makePreview boundaries, agentFailedInLogs regex/token edges, deriveAgentState (incl. dead-run
+  override), leaksInternalPath, findFailureLogLines.
+- [x] **AV8 — live-fill target selection untested.** Extracted pure `pickLiveFillTargets()` from
+  `useLiveAgentFill` + 8 tests (priority, MAX_LIVE_FILL cap, needsFill).
+- [x] **AV11 — useChromeFit loop-drawer fit keyed on the Map ref.** Now keys on `.size` (primitive);
+  behavior-identical (the `grew` guard already no-ops on swaps).
+- [x] **AV13 — plan.ts 1241 lines.** Extracted the pure AST layer → `ast-helpers.ts` (AnyNode/isNode
+  + shape-readers + label/condition/loop classifiers). plan.ts → 982. Behavior-preserving, one-
+  directional import (no cycle); the audit underrated the coupling so the WHOLE self-contained layer
+  moved together. +54 tests total this round (522 → 576).
+- [~] **AV1 — REJECTED.** Dropping `graph.nodes` from the `selectedNode` memo dep would return a STALE
+  node on every live tick (breaks I1 "resolve against the live graph"); the recompute is correct + the
+  `.find` is cheap. The audit optimized away a behavior.
+- [ ] **AV4 — `runModelToGraph` is genuinely UNCALLED (decision).** The audit's "dead" half is right;
+  "add tests" is wrong (don't test dead code). Real choice: WIRE it as the plan-less Run-view fallback
+  (would also fix a scriptless live run rendering a blank Run view) OR remove it. Needs a product call.
+- [ ] **AV2 — `leaksInternalPath` is an UNWIRED safety helper (decision).** Detects `$bunfs` internal-
+  path leaks but is never called. Wire it as a defense-in-depth guard on emitted text, or remove — not
+  blindly deleting a security helper.
+- [ ] **AV5 / AV9 — DEFERRED.** Unit-testing `useRunGraph` / `useChromeFit` / `useLiveStream` directly
+  is high-mock-cost, low-value: they're thin glue over already-tested pure seams + Playwright-verified.
+- [ ] **AV10 — DEFERRED (known).** `/result` unbounded journal read is an existing `TODO(ARCH-6 gap #2)`;
+  output is capped, a correct fix needs scan-to-match. Low real risk.
+- [ ] **AV12 — SKIPPED (marginal).** `deriveFailureInfo` runs 3×/recompute; deduping it means threading
+  state through the freshly-extracted useRunGraph for negligible savings — not worth perturbing it.
+- [ ] **AV14 — DEFERRED.** The audit itself says defer (32-line loop-cap module within scope).
+- Observed during triage (not in audit): the Run-view morph renders raw `${round}`/`${l.key}` template
+  labels inside a loop body — likely a real legibility rough edge worth a future look.
