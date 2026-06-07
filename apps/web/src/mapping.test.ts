@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import type { AgentNode } from '@argus/contract';
-import { agentToCardData } from './mapping.ts';
+import type { AgentNode, RunModel } from '@argus/contract';
+import { agentToCardData, runModelToGraph } from './mapping.ts';
 import type { LiveFill } from './live-agent-fill.ts';
 
 // STEP 2 (failure-and-live-inspector §4 "Live + finished agent card") — browser-free proof of
@@ -113,5 +113,64 @@ describe('agentToCardData — live transcript fill', () => {
     const agent = agentNode({ agentId: 'a5', label: 'journal-label' });
     const data = agentToCardData(agent, false, { label: 'fill-label' });
     expect(data.label).toBe('journal-label');
+  });
+});
+
+// AV4: runModelToGraph is the PLAN-LESS Run-view fallback (now wired in useRunGraph for scriptless
+// runs). It groups agents by phase into lanes straight from the RunModel — no plan, no elk.
+describe('runModelToGraph — plan-less fallback (agents grouped by phase)', () => {
+  const phase = (index: number, title: string) => ({ index, title, detail: null });
+  function model(agents: AgentNode[], phases: ReturnType<typeof phase>[]): RunModel {
+    return {
+      ref: { projectPath: '', slug: 's', sessionId: 'sess', runId: 'wf_x' },
+      workflowName: 'wf',
+      status: 'completed',
+      incomplete: false,
+      startTime: null,
+      durationMs: null,
+      defaultModel: null,
+      summary: '',
+      phases,
+      agents,
+      edges: [],
+      logs: [],
+      partialFailure: { present: false, lines: [] },
+      error: null,
+      args: null,
+      warnings: [],
+      format: 'test',
+    };
+  }
+
+  it('emits one phaseLane per phase + an agentCard per resolved agent, parented to its lane', () => {
+    const g = runModelToGraph(
+      model(
+        [
+          agentNode({ agentId: 'a', phaseIndex: 1, index: 0 }),
+          agentNode({ agentId: 'b', phaseIndex: 1, index: 1 }),
+          agentNode({ agentId: 'c', phaseIndex: 2, index: 2 }),
+        ],
+        [phase(1, 'P1'), phase(2, 'P2')],
+      ),
+    );
+    const lanes = g.nodes.filter((n) => n.type === 'phaseLane');
+    const cards = g.nodes.filter((n) => n.type === 'agentCard');
+    expect(lanes).toHaveLength(2);
+    expect(cards).toHaveLength(3);
+    const laneIds = new Set(lanes.map((n) => n.id));
+    expect(cards.every((c) => !!c.parentId && laneIds.has(c.parentId))).toBe(true);
+  });
+
+  it('drops an agent whose phaseIndex has no matching phase (belt-and-suspenders)', () => {
+    const g = runModelToGraph(
+      model(
+        [
+          agentNode({ agentId: 'a', phaseIndex: 1, index: 0 }),
+          agentNode({ agentId: 'ghost', phaseIndex: 99, index: 1 }),
+        ],
+        [phase(1, 'P1')],
+      ),
+    );
+    expect(g.nodes.filter((n) => n.type === 'agentCard')).toHaveLength(1);
   });
 });

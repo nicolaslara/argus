@@ -39,7 +39,7 @@ import type {
   WorkflowMeta,
 } from '@argus/contract';
 import type { GraphResult } from '../mapping.ts';
-import { agentToCardData } from '../mapping.ts';
+import { agentToCardData, runModelToGraph } from '../mapping.ts';
 import { planMetaToGraph } from '../plan-mapping.ts';
 import { planModelToGraph } from '../plan-model-mapping.ts';
 import { buildOverlay } from '../overlay.ts';
@@ -61,6 +61,9 @@ export interface UseRunGraphArgs {
   effectivePlan: PlanModel | null | undefined;
   /** The selected run's per-run PlanModel (the Run-view morph template). */
   runPlan: PlanModel | null | undefined;
+  /** True while the per-run plan query is still in flight — gates the plan-less fallback so a
+   *  scripted run doesn't flash the agents-by-phase fallback before its plan resolves. */
+  runPlanPending: boolean;
   /** The selected run model (App owns the query; undefined while it loads). */
   run: RunModel | undefined;
   /** The focused run summary (carries the ref used for the live-fill + caption fetches). */
@@ -108,6 +111,7 @@ export function useRunGraph({
   view,
   effectivePlan,
   runPlan,
+  runPlanPending,
   run,
   summary,
   usePerRunPlanForPlanView,
@@ -268,11 +272,26 @@ export function useRunGraph({
     return workflow ? planMetaToGraph(workflow) : EMPTY_GRAPH;
   }, [view, workflow, usePerRunPlanForPlanView]);
 
+  // Plan-less RUN fallback (AV4): a run whose per-run plan resolved to nothing the morph can paint
+  // — a SCRIPTLESS run (no persisted `.js`, so no static-source plan), a meta-only plan, or an elk
+  // failure — has no template to morph onto. Render its agents grouped by phase straight from the
+  // RunModel (runModelToGraph, hand-rolled jitter-free layout, NO elk) so the Run view shows the run
+  // instead of a blank canvas. Gated on the plan query having SETTLED (!runPlanPending) so a scripted
+  // run never flashes this fallback while its plan loads; while elk is merely PENDING for a real plan
+  // (overlayLayoutReady && !overlayError) we wait rather than fall back.
+  const runFallbackGraph = useMemo(() => {
+    if (view !== 'run' || !run || runPlanPending) return EMPTY_GRAPH;
+    if (overlayLayoutReady && !overlayError) return EMPTY_GRAPH; // a real plan is laying out — wait for it
+    return runModelToGraph(run);
+  }, [view, run, runPlanPending, overlayLayoutReady, overlayError]);
+
   // The AST plan is used when available AND elk succeeded; else the meta-only fallback.
   const planIsAst = view === 'plan' && useAstMode && !astError && astGraph.nodes.length > 0;
   const baseGraph: GraphResult =
     view === 'run'
-      ? overlayGraph
+      ? overlayGraph.nodes.length > 0
+        ? overlayGraph
+        : runFallbackGraph
       : planIsAst
         ? astGraph
         : metaGraph;

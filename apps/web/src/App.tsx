@@ -360,6 +360,7 @@ export function App() {
     view,
     effectivePlan,
     runPlan,
+    runPlanPending: runPlanQ.isPending,
     run,
     summary,
     usePerRunPlanForPlanView,
@@ -498,7 +499,11 @@ export function App() {
       ? usePerRunPlanForPlanView
         ? !!runPlan
         : !!workflow
-      : !!run && !!runPlan;
+      : // Run view: content once the run is loaded AND its plan query has SETTLED — with a plan we
+        // morph, without one (a scriptless run) useRunGraph falls back to agents-by-phase, so a
+        // missing per-run plan is no longer a blank canvas. While the plan is still pending we keep
+        // the empty-state "loading…" rather than flashing the fallback.
+        !!run && !runPlanQ.isPending;
 
   // Header: in AST mode show the real node/edge counts + coverage + the derivation tag.
   // UIBUG-2: read the EFFECTIVE plan so the header count matches what the Plan view renders
