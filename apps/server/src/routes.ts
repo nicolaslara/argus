@@ -17,6 +17,8 @@
 import { resolve, sep } from 'node:path';
 import {
   redactInternalPaths,
+  classifyFailureText,
+  transcriptTail,
   agentActivityFromDir,
   agentResultFromJournal,
   discoverProjects,
@@ -651,6 +653,33 @@ export async function handleAgentActivity(
   const activity = await agentActivityFromDir(deps.port, runDir, agentId);
   if (activity === null) return err(404, 'not_found');
   return { status: 200, body: { activity } };
+}
+
+/**
+ * GET /api/runs/:slug/:session/:runId/failure-cause?agentId=<id> -> { cause: AgentFailureCause | null }.
+ * The ACCURATE failure cause for a failed run's proximate agent: read its `agent-<id>.jsonl`
+ * transcript tail and classify the terminal error (a dropped socket / usage limit / overload =
+ * INFRA, vs a StructuredOutput schema rejection = a real MODEL fault). The run model's
+ * `error.message` only ever says "completed without calling StructuredOutput", which is ~96%
+ * misleading — this lets the banner show the real cause. Absent transcript → cause:null (the UI
+ * falls back to the model's cleaned message); NEVER 500s.
+ */
+export async function handleFailureCause(
+  deps: RouteDeps,
+  slug: string,
+  session: string,
+  runId: string,
+  agentId: string,
+): Promise<RouteResult> {
+  const runDir = safeRunDir(deps.claudeHome, slug, session, runId);
+  if (runDir === null || !isValidAgentId(agentId)) return err(400, 'bad_request');
+  let text: string;
+  try {
+    text = await deps.port.readFile(`${runDir}${sep}agent-${agentId}.jsonl`);
+  } catch {
+    return { status: 200, body: { cause: null } }; // no transcript persisted → no accurate cause
+  }
+  return { status: 200, body: { cause: classifyFailureText(transcriptTail(text)) } };
 }
 
 /**

@@ -50,13 +50,27 @@ export function deriveFailureInfo(run: RunModel | undefined): FailureInfo | null
   );
 
   return {
-    message: run.error?.message ?? 'this run ended in failure',
+    message: run.error?.message ? cleanFailureMessage(run.error.message) : 'this run ended in failure',
     internalDetail: run.error?.internalDetail ?? null,
     failingLabel: point ? point.label || point.agentId : null,
     failingAgentId: point?.agentId ?? null,
     elapsedMs: run.durationMs,
     failureAgentIds,
   };
+}
+
+/**
+ * Reduce a raw run-error string to the human banner line: keep only the FIRST line (the message,
+ * not the stack), strip a leading `Error:`, and scrub any internal `/$bunfs/…cli.js` path that
+ * leaked into the message. The raw stack stays available behind the banner's Details disclosure
+ * (run.error.internalDetail). Defensive: never throws; returns a trimmed string.
+ */
+export function cleanFailureMessage(msg: string): string {
+  const firstLine = msg.split('\n')[0] ?? msg;
+  return firstLine
+    .replace(/\/\$bunfs\/\S*/g, '[internal]')
+    .replace(/^Error:\s*/, '')
+    .trim();
 }
 
 /** The proximate failure point: the dead agent with the latest start (else the last listed). */

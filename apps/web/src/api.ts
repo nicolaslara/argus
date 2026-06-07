@@ -8,6 +8,7 @@
 
 import type {
   AgentActivity,
+  AgentFailureCause,
   ExplanationBatch,
   PlanModel,
   ProjectRef,
@@ -116,6 +117,22 @@ export function fetchAgentActivity(
   return getJson<{ activity: AgentActivity }>(
     `/api/runs/${encodeURIComponent(slug)}/${encodeURIComponent(sessionId)}/${encodeURIComponent(runId)}/activity?agentId=${encodeURIComponent(agentId)}`,
   ).then((r) => r.activity);
+}
+
+/**
+ * The ACCURATE failure cause for a failed run's proximate agent — classified from its transcript
+ * tail (infra socket/limit/overload vs a real schema-validation fault). Lazy: fetched only when a
+ * run failed. Returns null when no transcript / no known signature (the banner falls back to the
+ * run's cleaned error message). Never throws on a missing transcript (the server returns cause:null).
+ */
+export function fetchFailureCause(
+  ref: Pick<RunRef, 'slug' | 'sessionId' | 'runId'>,
+  agentId: string,
+): Promise<AgentFailureCause | null> {
+  const { slug, sessionId, runId } = ref;
+  return getJson<{ cause: AgentFailureCause | null }>(
+    `/api/runs/${encodeURIComponent(slug)}/${encodeURIComponent(sessionId)}/${encodeURIComponent(runId)}/failure-cause?agentId=${encodeURIComponent(agentId)}`,
+  ).then((r) => r.cause);
 }
 
 /** I4: a Claude-generated plain-language "what this run did" panel (whole-run digest, lazy). */

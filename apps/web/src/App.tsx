@@ -19,6 +19,7 @@ import {
   fetchRunModel,
   fetchRunLive,
   fetchRunPlan,
+  fetchFailureCause,
 } from './api.ts';
 import { pickPlanSource } from './plan-correspondence.ts';
 import { ExpandContext, type LoopDrillMode } from './expand-context.ts';
@@ -529,6 +530,16 @@ export function App() {
   // STEP 3: the failure banner content (null unless the selected run failed). Drives both the
   // Run-view banner and the per-instance failure-point ring (the dead agentIds).
   const failureInfo = useMemo(() => (view === 'run' ? deriveFailureInfo(run) : null), [view, run]);
+  // The ACCURATE failure cause: lazily classify the failing agent's transcript tail (infra
+  // socket/limit/overload vs a real schema-validation fault) so the banner shows the true reason
+  // instead of the misleading "completed without calling StructuredOutput". Only for a failed run
+  // with a resolved proximate agent; null (banner falls back to the cleaned message) otherwise.
+  const failureCauseQ = useQuery({
+    queryKey: ['failure-cause', summary?.ref.slug, summary?.ref.sessionId, summary?.ref.runId, failureInfo?.failingAgentId],
+    queryFn: () => fetchFailureCause(summary!.ref, failureInfo!.failingAgentId!),
+    enabled: !!summary && !!failureInfo?.failingAgentId,
+    staleTime: Infinity, // a finished run's transcript is immutable
+  });
   // Canvas-views chrome: the project-wide "what's alive" count (NOW strip) + the selected run's
   // human-readable objective (the workflow's stated purpose) for the objective band.
   const nowRunning = useMemo(() => runs.filter((r) => r.status === 'running').length, [runs]);
@@ -870,7 +881,7 @@ export function App() {
       {view === 'run' && run ? (
         <div className="run-chrome">
           <RunObjective objective={runObjective} args={run.args} />
-          {failureInfo ? <FailureBanner info={failureInfo} /> : null}
+          {failureInfo ? <FailureBanner info={failureInfo} cause={failureCauseQ.data ?? null} /> : null}
         </div>
       ) : null}
 

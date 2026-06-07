@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { AgentNode, AgentState, RunModel, RunStatus } from '@argus/contract';
-import { deriveFailureInfo, pickFailurePoint, formatArgs } from './failure-info.ts';
+import { deriveFailureInfo, pickFailurePoint, formatArgs, cleanFailureMessage } from './failure-info.ts';
 
 // STEP 3 — the run failure analysis (extracted from App.tsx). Three independent pure
 // helpers: deriveFailureInfo (banner content + red-ring agentIds), pickFailurePoint (the
@@ -230,5 +230,24 @@ describe('formatArgs', () => {
     const out = formatArgs({ a: 1, b: 2, c: 3, d: 4, e: 5, f: 6 })!;
     expect(out).toBe('a: 1 · b: 2 · c: 3 · d: 4 · e: 5');
     expect(out.includes('f:')).toBe(false);
+  });
+});
+
+describe('cleanFailureMessage', () => {
+  it('keeps only the first line (drops the stack), strips Error: + the $bunfs path', () => {
+    const raw =
+      'Error: agent({schema}): subagent completed without calling StructuredOutput (after 2 in-conversation nudges)\n' +
+      '    at b (/$bunfs/root/src/entrypoints/cli.js:3602:2694)\n' +
+      '    at processTicksAndRejections (native:7:39)';
+    expect(cleanFailureMessage(raw)).toBe(
+      'agent({schema}): subagent completed without calling StructuredOutput (after 2 in-conversation nudges)',
+    );
+  });
+  it('scrubs a $bunfs path that sits inline on the first line', () => {
+    expect(cleanFailureMessage('boom at /$bunfs/root/cli.js:1:2 here')).toBe('boom at [internal] here');
+  });
+  it('leaves a clean single-line message untouched (minus a leading Error:)', () => {
+    expect(cleanFailureMessage('Error: something went wrong')).toBe('something went wrong');
+    expect(cleanFailureMessage('plain failure')).toBe('plain failure');
   });
 });

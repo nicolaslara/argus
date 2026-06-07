@@ -54,6 +54,8 @@ export {
 } from './live.ts';
 export type { JournalEvent, ParsedJournal, RunLiveness, LivenessInput, LiveModelOptions } from './live.ts';
 export { discoverRunningRunsReport } from './discovery.ts';
+/** Failure-cause classification (infra socket/limit/overload vs a genuine schema-validation fault). */
+export { classifyFailureText, transcriptTail } from './failure-classify.ts';
 
 /** Transcript path: per-agent activity (tokens/tools/timing/last-activity) from agent-<id>.jsonl. */
 export { agentActivityFromTranscript, agentActivityFromDir, ACTIVITY_TIMELINE_CAP } from './activity.ts';

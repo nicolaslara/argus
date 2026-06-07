@@ -469,11 +469,52 @@ body {
   margin-left: auto;
   font-variant-numeric: tabular-nums;
 }
+/* The classified, accurate cause (leads the banner; the raw report is demoted below it). */
+.run-failure-cause {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 13px;
+  line-height: 1.4;
+  margin-top: 2px;
+}
+.run-failure-cause-tag {
+  flex: none;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+}
+/* INFRA = an environment failure, not the model: amber, calm. */
+.run-failure-cause-infra .run-failure-cause-tag,
+.run-failure-cause-infra .run-failure-cause-label {
+  color: var(--argus-warn, #d8a657);
+}
+/* MODEL = a genuine workflow/schema fault: red. */
+.run-failure-cause-model .run-failure-cause-tag,
+.run-failure-cause-model .run-failure-cause-label {
+  color: var(--argus-danger, #e06c75);
+}
+.run-failure-cause-label {
+  font-weight: 600;
+}
+.run-failure-cause-detail {
+  color: var(--argus-dim);
+}
 .run-failure-msg {
   font-size: 13px;
   line-height: 1.45;
   color: var(--argus-fg);
   word-break: break-word;
+}
+/* When a classified cause leads, the raw report is demoted to a quiet secondary line. */
+.run-failure-cause + .run-failure-msg {
+  font-size: 12px;
+  color: var(--argus-dim);
 }
 .run-failure-details {
   margin-top: 2px;

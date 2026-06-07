@@ -49,6 +49,21 @@ export interface RunError {
   internalDetail?: string;
 }
 
+/**
+ * The ACCURATE cause of a failed agent, classified from its transcript tail (the run model's
+ * `error.message` only ever says "completed without calling StructuredOutput" — which is ~96%
+ * misleading, since the real cause is a transient infra drop). `mode` separates INFRA failures
+ * (a dropped socket / usage limit / overloaded API — retryable, not the model's fault) from a
+ * genuine MODEL failure (a StructuredOutput payload the schema rejected). `kind` is the specific
+ * signature; `label` is banner-ready; `detail` carries the extra (a reset time, a schema field).
+ */
+export interface AgentFailureCause {
+  mode: 'infra' | 'model' | 'unknown';
+  kind: 'socket' | 'session-limit' | 'overloaded' | 'schema-validation' | 'unknown';
+  label: string;
+  detail: string | null;
+}
+
 /** Codes, never raw text/paths. */
 export interface AdapterWarning {
   code: string;

@@ -30,6 +30,7 @@ import {
   handleRunLive,
   handleAgentResult,
   handleAgentActivity,
+  handleFailureCause,
   handleSubUi,
   handleDescribe,
   handleStream,
@@ -202,6 +203,19 @@ async function dispatchApi(url: URL): Promise<RouteResult | null> {
       return { status: 400, body: { error: 'bad_request' } };
     }
     return handleAgentActivity(deps, slug, session, runId, agentId);
+  }
+
+  // GET /api/runs/:slug/:session/:runId/failure-cause?agentId=<id> (the accurate failure cause).
+  const runFailureCauseMatch = /^\/api\/runs\/([^/]+)\/([^/]+)\/([^/]+)\/failure-cause$/.exec(pathname);
+  if (runFailureCauseMatch) {
+    const slug = decodeSegment(runFailureCauseMatch[1]!);
+    const session = decodeSegment(runFailureCauseMatch[2]!);
+    const runId = decodeSegment(runFailureCauseMatch[3]!);
+    const agentId = url.searchParams.get('agentId') ?? '';
+    if (slug === null || session === null || runId === null) {
+      return { status: 400, body: { error: 'bad_request' } };
+    }
+    return handleFailureCause(deps, slug, session, runId, agentId);
   }
 
   // GET /api/runs/:slug/:session/:runId/live (L2: the partial live journal snapshot).
