@@ -43,6 +43,35 @@ export { PREVIEW_TRUNCATED_RAW_LEN, PREVIEW_EMIT_CAP } from './raw.ts';
 /** Re-export the internal-path redactor so the server can guard the lazy full-result emit too. */
 export { redactInternalPaths } from './raw.ts';
 
+/**
+ * Narrative redaction SEAM: the single text→text chokepoint every emitted narrative path
+ * routes through (noop identity today; a one-line strategy swap installs a real redactor later
+ * with zero call-site changes). See `./redact.ts`.
+ */
+export { redact, setRedactionStrategy, resetRedactionStrategy, noopRedactionStrategy } from './redact.ts';
+export type { RedactionStrategy } from './redact.ts';
+
+/**
+ * Session Narrative ("Story" view) engine: defensive transcript scan + real-prompt
+ * segmentation (single-pass O(n)) + head/tail-bounded, redact()-routed previews. The ONLY
+ * module that knows the raw `<sessionId>.jsonl` transcript shape. See `./transcript.ts`.
+ */
+export {
+  scanTranscript,
+  projectText,
+  isRealUserPrompt,
+  extractWorkflowSpawns,
+  boundedPreview,
+  segmentTranscript,
+  buildSessionNarrative,
+  loadSessionNarrative,
+  NARRATIVE_FORMAT_ENGINE,
+  MAX_LINE_BYTES,
+  RESPONSE_HEADTAIL,
+  PROMPT_HEADTAIL,
+} from './transcript.ts';
+export type { ScannedTranscript, ProjectedText, SegmentOptions } from './transcript.ts';
+
 /** Live path (L1/L2): journal parsing, running-run detection, partial live RunModel. */
 export {
   parseJournal,

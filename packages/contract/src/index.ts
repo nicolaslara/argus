@@ -560,3 +560,26 @@ export interface RunDelta {
   kind: 'agent-upsert' | 'agent-state' | 'log' | 'finalize';
   payload: unknown;
 }
+
+// ============================================================================
+// Session Narrative ("Story" view) — the project → sessions-on-a-timeline →
+// per-session topic blocks → (lazy) full turns model. Built by the adapter's
+// transcript segmenter from `<sessionId>.jsonl`; the web imports ONLY these types.
+// Shapes + invariants live in ./narrative.ts (workpads/narrative/knowledge.md).
+// ============================================================================
+export { NARRATIVE_FORMAT } from './narrative.ts';
+export type {
+  RecordRange,
+  TimeRange,
+  WorkflowSpawn,
+  GitCommitRef,
+  NarrativeSummary,
+  CutReason,
+  NarrativeBlock,
+  SessionNarrative,
+  SessionSummary,
+  ProjectSessions,
+  TurnRole,
+  TurnToolCall,
+  Turn,
+} from './narrative.ts';
