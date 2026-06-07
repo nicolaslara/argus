@@ -4,6 +4,36 @@ Canonical decisions for the **Session Narrative** feature: a third top-level "St
 view that follows one Claude Code session as a vertical timeline of **topic blocks**
 you can **watch** (one-line summary + badges) or **click into** (full turns).
 
+> ## ⟐ Refinements (user direction, 2026-06-07) — SUPERSEDE the earlier framing below
+> These override the corresponding earlier sections; a full rewrite folds them in once the
+> `narrative-design-options` workflow (`wf_66e1d338-f2b`) lands its build comparisons.
+>
+> 1. **Privacy is NOT a gate.** argus is a full-access LOCAL tool. The old "M0.5 hard privacy
+>    gate" is replaced by a **reusable `redact()` utility SEAM**: every emitted text path
+>    (previews, click-in turns, future LLM input) flows through ONE `redact(text)` — a **noop
+>    (identity) today**, **pluggable later** (a simple pw/API-key regex redactor, or a diff/
+>    entropy scanner). The value now is the SEAM PLACEMENT so adding a real redactor later is a
+>    one-line swap. Nothing is blocked on it.
+> 2. **Segmentation is INCREMENTAL · CACHED · HEURISTIC (never LLM-on-bulk).** A single-pass
+>    **O(n)** scan with a **cursor at the last-processed record** — only NEW tail records get
+>    processed as a session grows; already-segmented ranges are **cached by record-index range**
+>    (a sidecar index file now; a DB is a future option). Split heuristic is deterministic
+>    (anchor on real-user-prompt boundaries; **bound long responses to head+tail** so we never
+>    hold/emit a whole giant response). An LLM **never** sees the 60 MB — only bounded per-block
+>    input, opt-in (a future milestone). Escape hatch if the single pass is slow: a faster
+>    language (Rust) or a simpler heuristic — not loading less-correctly.
+> 3. **A session = ONE `<sessionId>.jsonl`** (confirmed) — but sessions are **grouped under a
+>    PROJECT** and the Story view gets a **project-level session-timeline**: each session as a
+>    **start→end span** (first/last record timestamp) + stats (records · workflows spawned ·
+>    commits). Click a span → that session's per-session block narrative. New top level:
+>    **project → sessions-on-a-timeline → per-session blocks.** (NOT stitched into one
+>    mega-session — shown together with their real time spans. Resolves open-question "what is a
+>    session".) Needs a cheap `discoverSessions(slug)` (head/tail timestamp per file) + a
+>    `SessionSummary`/`ProjectSessions` contract type.
+> 4. **Git commits matched by TIMESTAMP (+ optionally message).** Correlate the repo's REAL
+>    `git log` (author time + subject) to blocks/sessions by time-window + message match — more
+>    reliable than transcript-stdout SHAs (all commits here are `git commit -q`). Refines M2.
+
 Grounded by the `explore-session-narrative` workflow (run `wf_4e4d6d47-f83`,
 2026-06-07): 5 parallel research agents → 1 design → 3 adversarial reviews → synthesis.
 The reviewers inspected the **real** 64–67 MB transcript and overturned two of the
@@ -135,3 +165,42 @@ JSONL records, 9,720 timestamped.
 ## Open questions (for the user — see tasks.md)
 
 Carried verbatim into `tasks.md` Notes; they gate M2+ and the segmentation grain.
+
+---
+
+## Design options & recommended build stack (2026-06-07)
+
+From the `narrative-design-options` workflow (`wf_66e1d338-f2b`): 5 build dimensions, each with
+2–4 comparable options (pros/cons/effort/risk). (Its synth agent returned a placeholder payload —
+a known StructuredOutput failure mode — so the stack below was synthesized in the main loop from
+the real per-dimension option sets.) **Picks:**
+
+| Dimension | Options compared | **Pick** | Why |
+|---|---|---|---|
+| **Segmentation engine** | A real-prompt-only · **B real-prompt + head/tail-bounding** · C +secondary sub-splitters · D SQLite cache | **B** [S/low] | Incremental O(n) cursor scan + sidecar index; head/tail bounding means we never hold/emit the 2 MB response; A's simplicity, future-safe. (C's strategy flag and D's DB are deferred.) |
+| **Story-view rendering** | **A DOM vertical spine** · B React Flow time-lane · C hybrid | **A** [S/low] | A timeline is a linear vertical read; reuse the `.agent-shell` dark cards; no ELK/canvas overhead; fastest to the proof. |
+| **Data flow / locus** | **A server pre-compute + disk cache** · B client parses 67 MB · C incremental-since-cursor | **A**, with **C** as the escape hatch [M/low] | Simplest endpoint, mirrors the `explain.ts` cache seam; B (67 MB to the browser) is a non-starter. Because segmentation (B above) is already cursor-incremental, the cache refresh on append re-scans only the tail — C's benefit without C's upfront cost. |
+| **Redaction seam** | **A dedicated `adapter/redact.ts` + RedactionStrategy** · B extend `redactInternalPaths` w/ drivers · C thread via AdapterContext | **A** [M/low] | One text→text chokepoint, mirrors `error-redaction.ts`'s `scrubError`; **noop today**, a regex/diff redactor is a one-line strategy swap later; keeps `makePreview` pure (no param threading like B/C). |
+| **Summaries** (future, opt-in) | **a flat per-block** · b hierarchical · c on-demand-only | **a** [M/med] | Identical to `explain.ts` (lowest risk); bounded head+tail input; cache key = boundary projection so reload/append re-summarizes only changed blocks; eager background warming. |
+
+**Recommended stack = B · A · A(+C) · A · a**, plus the two structural additions from user
+direction (see the Refinements blockquote at the top): a **project session-timeline** top level,
+and **git-commit matching by timestamp (+ message)** against the repo's real `git log`.
+
+### The `redact()` seam (the spec)
+`packages/adapter/src/redact.ts` exports `redact(text: string): string` (+ a `RedactionStrategy`
+interface). **Today it is the identity function (noop)** — nothing is gated. EVERY emitted text
+path routes through it: `promptPreview`, `responsePreview`, click-in turn text, and (future) the
+bounded input to `claude -p`. Later, swap the strategy for a regex redactor (`sk-`/`ghp_`/`AKIA`/
+`bearer`/`token=`/`.env` patterns + `/Users/<home> → ~`) or a diff/entropy scanner — a one-line
+change at the seam, no re-threading. Mirrors the existing single-chokepoint `error-redaction.ts`.
+
+### The incremental segmentation (the spec)
+Single-pass **O(n)** scan of the JSONL via `FileSystemPort`; a **cursor** (`lastProcessedLine`) in a
+**sidecar index** (`.argus/narrative/<sessionId>/index.json`) keyed by record-line ranges
+`{startLine,endLine,contentHash,timeRange,recordCount}`. Cut points = **real-user-prompt boundaries**
+(filter synthetic `isMeta`/`<command`/`Caveat`/tool_result carriers). Long assistant responses are
+**bounded to head+tail** (e.g. 8 KB each) in the preview — never held in full. On append: re-scan
+from the cursor to EOF, invalidate only the final (now-longer) block, emit only new blocks. 256 KB
+per-line cap before `JSON.parse`; `tool_result.content` allowlisted to text (images dropped). DB
+(SQLite) is a deferred option only if the sidecar gets slow on huge/very-many sessions.
