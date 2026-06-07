@@ -118,3 +118,28 @@ the research findings on connection strategy.
 
 **Gate.** A decision-ready design matrix + spike plan. Does **not** change the
 proven read-only path; any write/drive capability is an explicit user opt-in.
+
+---
+
+## narrative (feature)
+
+**Objective.** A third top-level **"Story"** view: follow one Claude Code session as a
+vertical timeline of **topic blocks** you can **watch** (one-line summary + badges) or
+**click into** (full turns) — with workflow runs, git commits, and file changes in context.
+Reuses the adapter/`FileSystemPort` boundary, the `explain.ts` content-addressed local-LLM
+cache, and `recoverProjectPath`/`RunRef` linkage. Plan synthesized 2026-06-07 by the
+`explore-session-narrative` workflow (research → design → adversarial review → synthesis),
+grounded in the real ~67 MB session transcript.
+
+Smallest-first PROOF: **M0** (adapter `transcript.ts` + real-prompt segmentation, zero LLM) →
+**M0.5** (secret/home-path redactor — HARD GATE) → **M1** (Story toggle + watch + click-in).
+Then STOP for user judgment; M2 (git) / M3 (run-correlation) / M4 (opt-in local-LLM summaries)
+are deferred-additive; M5 (architectural diffs) is cut.
+
+**Load list.** Base set + `architecture/boundaries.md` + narrative workpad files
+(`tasks.md` / `knowledge.md` / `references.md`).
+
+**Gate.** Before building, the user confirms the open questions in `narrative/tasks.md`
+(segmentation grain; one-session vs stitched; opt-in summarization consent; git-badge bar).
+Stays READ-ONLY; conversation content is summarized only by the user's OWN local `claude`,
+cached locally, never off-machine; previews/turns pass a real redactor before any wire/LLM hop.

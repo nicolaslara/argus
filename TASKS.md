@@ -73,6 +73,16 @@ transcript, I4 describe-via-Claude). See the per-workpad `tasks.md`.
   `claude --resume <sessionId>` now; embedded edit via the Agent SDK `canUseTool` diff
   gate) + a default-OFF spike (X4) + a 5-layer write-safety model — explicitly NOT changing
   the read path (a separate, flagged server seam). No build authorized; design artifact only.
+- [ ] **narrative** *(feature)* — PLAN SYNTHESIZED 2026-06-07 (`explore-session-narrative` /
+  `wf_4e4d6d47-f83`: research → design → adversarial review → synthesis, grounded in the real
+  ~67 MB session transcript). A third top-level **"Story"** view: one session as a timeline of
+  topic blocks you can **watch** or **click into**, with workflow runs / git commits / file
+  changes in context. Roadmap in `workpads/narrative/tasks.md`: **M0** (adapter `transcript.ts` +
+  real-prompt segmentation, zero LLM) → **M0.5** (secret/home-path redactor, HARD GATE) → **M1**
+  (Story toggle + watch + click-in) = the shippable PROOF; then STOP for user judgment. M2 (git) /
+  M3 (run-correlation) / M4 (opt-in local-LLM summaries) deferred-additive; M5 cut. **GATE before
+  building:** user answers the 5 open questions in the workpad. Read-only; conversation summarized
+  only by the user's own local `claude`, never off-machine.
 
 ## Notes
 
