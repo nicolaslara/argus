@@ -13,7 +13,12 @@ build stack + the redaction/segmentation specs are in `knowledge.md`.
 
 ## Roadmap (smallest-provable-first; STOP at the M0–M1 proof for user judgment)
 
-- [ ] **M0 — Engine: incremental transcript parse + real-prompt segmentation + the `redact()` seam.**
+- [x] **M0 — Engine: transcript parse + real-prompt segmentation + the `redact()` seam. DONE 2026-06-07**
+  (`build-narrative-m0` / `wf_f8969b40-ba1`, gate-verified in the main loop; commit `92b1997`).
+  Real-data smoke on the actual 65.8 MB / 13,430-record session: **126 blocks** (≈ ~120 real prompts),
+  parse+segment **1.8 s**, heap 241 MB. +31 tests (625 total); typecheck + lint clean; no-`node:fs`
+  invariant holds. (Incremental cursor/sidecar-cache resume is deferred to when M1's server needs it;
+  M0 proves the single-pass segmentation + the seam + the image-drop/synthetic-filter correctness.)
   *Proves:* we can parse the real ~67 MB transcript defensively, segment it incrementally (O(n),
   cursor-cached) into real-prompt blocks, and list a project's sessions with time spans — facts only,
   zero LLM, zero off-machine.
