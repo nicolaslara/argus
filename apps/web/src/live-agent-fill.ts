@@ -70,9 +70,26 @@ function toLiveFill(a: AgentActivity): LiveFill {
  * only via the transcript) OR it is missing dur/tok (the journal didn't record them). A
  * finished agent that already carries dur AND tok is left alone (the model is the truth).
  */
-function needsFill(a: AgentNode): boolean {
+export function needsFill(a: AgentNode): boolean {
   if (a.state === 'running' || a.state === 'queued') return true;
   return a.durationMs == null || a.tokens == null;
+}
+
+/**
+ * The bounded, PRIORITIZED set of agentIds to eager-fetch this tick: the agents that
+ * {@link needsFill}, with in-flight (running/queued) ones FIRST — they're the cards showing
+ * em-dashes right now — then the still-missing-metric tail, capped at `cap` so a huge live fan
+ * stays bounded. Pure (no React) so it's unit-testable; the hook just memoizes it on the run.
+ */
+export function pickLiveFillTargets(agents: AgentNode[], cap = MAX_LIVE_FILL): string[] {
+  const inFlight: string[] = [];
+  const rest: string[] = [];
+  for (const a of agents) {
+    if (!needsFill(a)) continue;
+    if (a.state === 'running' || a.state === 'queued') inFlight.push(a.agentId);
+    else rest.push(a.agentId);
+  }
+  return [...inFlight, ...rest].slice(0, cap);
 }
 
 const EMPTY_FILL: Map<string, LiveFill> = new Map();
@@ -100,14 +117,7 @@ export function useLiveAgentFill(
   // RIGHT NOW; the still-missing-metric tail follows within the cap.
   const targetIds = useMemo(() => {
     if (!isLive || !run) return [] as string[];
-    const inFlight: string[] = [];
-    const rest: string[] = [];
-    for (const a of run.agents) {
-      if (!needsFill(a)) continue;
-      if (a.state === 'running' || a.state === 'queued') inFlight.push(a.agentId);
-      else rest.push(a.agentId);
-    }
-    return [...inFlight, ...rest].slice(0, MAX_LIVE_FILL);
+    return pickLiveFillTargets(run.agents);
   }, [isLive, run]);
 
   const slug = runRef?.slug;

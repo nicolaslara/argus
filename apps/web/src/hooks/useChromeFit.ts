@@ -90,7 +90,9 @@ export function useChromeFit({
     if (!grew || !inst || graphNodes.length === 0) return;
     const raf = requestAnimationFrame(() => inst.fitView(chromeAwareFitOptions()));
     return () => cancelAnimationFrame(raf);
-  }, [loopDrawerRound]);
+    // Key on the primitive .size, not the Map reference: the effect only fits on GROWTH (the
+    // `grew` guard no-ops on a same-size swap/close anyway), so this just skips a dead re-run.
+  }, [loopDrawerRound.size]);
 
   // "Table panel" one-shot fit: opening/closing the bottom AGENT TABLE changes the clear region
   // (its footprint is reserved as fitView bottom padding), so re-fit ONCE on the toggle so the
