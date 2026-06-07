@@ -36,10 +36,12 @@ build stack + the redaction/segmentation specs are in `knowledge.md`.
   narrative; click a block → read its full turns — end-to-end, server-cached, zero spend.
   *Build:* `GET /api/projects/:slug/sessions` (the spans) + `GET /api/.../narrative` (Stage-1
   `SessionNarrative`, server pre-computes + disk-caches like `explain.ts`; token+host+path guarded) +
-  lazy `GET /api/.../turns?block=`. `ViewMode` gains `'session'`; a third **"Story"** toggle swaps the
-  canvas for `apps/web/src/session/` — a **session-timeline** (sessions as start→end spans + stats) and,
-  on select, a **DOM vertical spine** of block cards (reuse `.agent-shell` CSS); a card click lazily
-  loads that block's turns into a text view. Deep-link `?view=session&session=<id>&block=<id>`.
+  lazy `GET /api/.../turns?block=`. **Story is a SEPARATE top-level PAGE** (`apps/web/src/session/`,
+  its own route + a Workflows↔Story top switch) — NOT a third `ViewMode` toggle on the run canvas;
+  it has a wholly different layout. It shows a **session-timeline** (sessions as start→end spans +
+  stats) and, on select, a **DOM vertical spine** of block cards (reuse `.agent-shell` CSS); a card
+  click lazily loads that block's turns into a text view. Block badges: **clickable commits**
+  (→ diff/GitHub) + a **compact, expandable tool-activity** count. Deep-link `?session=<id>&block=<id>`.
   *Acceptance:* the project's sessions render as spans on real data; selecting one shows its ~120 blocks;
   click-in shows real turns; an un-tokened/foreign-Origin call 401s before any FS read.
 
@@ -57,10 +59,12 @@ build stack + the redaction/segmentation specs are in `knowledge.md`.
   correlate to `wf_*.json` by cached-script basename + `startTime` window; null on ambiguity.
   *Acceptance:* ≥1 block deep-links into its spawned Run view; zero mis-links.
 
-- [ ] **M4 — Opt-in local-LLM summaries (flat per-block, NarrativeEngine).** *(deferred-additive, default OFF)*
-  *Build:* mirror `ExplanationEngine`; one bounded **head+tail** call per block; cache key =
-  `sha256(boundary projection + SEGMENT_PROMPT_VERSION)`; eager background warming behind a consent
-  toggle. *Acceptance:* reload = cache hit; `claude`-absent degrades to the Stage-1 baseline.
+- [ ] **M4 — Local-LLM summaries (flat per-block, NarrativeEngine).** *(deferred-additive; ON by default; small model)*
+  *Build:* mirror `ExplanationEngine` but a **small/fast model**; one call per block on **head+tail**
+  input only (the prompt + top/bottom of a long answer — minimize what's sent); cache key =
+  `sha256(boundary projection + SEGMENT_PROMPT_VERSION)`; eager background warming, **on by default**
+  (privacy is not a gate). *Acceptance:* reload = cache hit; input is bounded head+tail (verified);
+  `claude`-absent degrades to the Stage-1 baseline.
 
 - [x] ~~M5 — architectural diffs~~ **CUT** (needs its own opt-in + cache; out of scope).
 - [x] ~~M0.5 privacy redactor HARD GATE~~ **REFRAMED** — privacy is not a gate (full-access local tool);
@@ -78,8 +82,12 @@ build stack + the redaction/segmentation specs are in `knowledge.md`.
    iterate to coarser topic-merging with the LLM layer (M4) later. (User: "we can do this iteratively.")
 2. **What is "a session"** — ✅ RESOLVED: one `<sessionId>.jsonl`, **grouped under a project** and shown
    on a **session-timeline** (start→end spans); not stitched into one mega-session.
-3. **Summarization consent (M4)** — *open, reframed:* privacy is no longer the driver; it's now a
-   **cost/UX** choice — default-OFF opt-in vs on-by-default like `explain.ts`. (Summaries cost ~$0.12/session.)
-4. **Git linkage** — ✅ RESOLVED: match commits to the repo's real `git log` by **timestamp (+ message)**.
-5. **Watch-view badge priority** — *open:* which badges lead the card (spawned-workflow link · commits ·
-   files/subsystems · tool-activity counts)? Drives the M0 segmenter's computed fields + the card layout.
+3. **Summaries (M4)** — ✅ RESOLVED: additive (not first); when added, **on by default**, a **small
+   model**, cached, input = **head+tail only** (the prompt + top/bottom of a long answer).
+4. **Git linkage** — ✅ RESOLVED: match commits to the repo's real `git log` by **timestamp (+ message)**;
+   commit badges are **clickable → see the commit/diff**.
+5. **Badges** — ✅ RESOLVED: **clickable commits are the priority**; **tool-activity** kept **compact +
+   expandable**. (Workflow-spawn link → opens the run in the Workflows page.)
+
+**All 5 resolved.** IA also locked: the **Story view is a separate top-level page**, not a `ViewMode`
+toggle on the run canvas. The plan is fully pinned; M0 is buildable on the maintainer's go-ahead.

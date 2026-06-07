@@ -32,7 +32,17 @@ you can **watch** (one-line summary + badges) or **click into** (full turns).
 >    `SessionSummary`/`ProjectSessions` contract type.
 > 4. **Git commits matched by TIMESTAMP (+ optionally message).** Correlate the repo's REAL
 >    `git log` (author time + subject) to blocks/sessions by time-window + message match — more
->    reliable than transcript-stdout SHAs (all commits here are `git commit -q`). Refines M2.
+>    reliable than transcript-stdout SHAs (all commits here are `git commit -q`). Commit badges are
+>    **clickable → open the commit/diff**. Refines M2.
+> 5. **The Story view is a SEPARATE top-level PAGE**, not a third `ViewMode` toggle on the run canvas.
+>    Its own route + a Workflows↔Story top switch; a wholly different layout (project session-timeline
+>    + block spine, not a graph). A spawned-workflow badge deep-links BACK into the Workflows page's
+>    Run view. (Supersedes the earlier "ViewMode gains 'session' toggle" framing.)
+> 6. **Summaries (M4) are ON by default** (privacy is not a gate) — but a **small/fast model**, **cached**
+>    (boundary-keyed), and fed **minimal input**: only the block's head+tail (the prompt + top/bottom of a
+>    long answer). (Supersedes the earlier "default OFF / explicit opt-in" framing.)
+> 7. **Badge priority:** **clickable commits first** (the headline ask), then a **compact + expandable
+>    tool-activity** count; the workflow-spawn link opens the run. Drives the M0 segmenter's computed fields.
 
 Grounded by the `explore-session-narrative` workflow (run `wf_4e4d6d47-f83`,
 2026-06-07): 5 parallel research agents → 1 design → 3 adversarial reviews → synthesis.
