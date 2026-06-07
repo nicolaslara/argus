@@ -211,12 +211,14 @@ mislabels — see AV1/AV4). Outcomes:
 - [~] **AV1 — REJECTED.** Dropping `graph.nodes` from the `selectedNode` memo dep would return a STALE
   node on every live tick (breaks I1 "resolve against the live graph"); the recompute is correct + the
   `.find` is cheap. The audit optimized away a behavior.
-- [ ] **AV4 — `runModelToGraph` is genuinely UNCALLED (decision).** The audit's "dead" half is right;
-  "add tests" is wrong (don't test dead code). Real choice: WIRE it as the plan-less Run-view fallback
-  (would also fix a scriptless live run rendering a blank Run view) OR remove it. Needs a product call.
-- [ ] **AV2 — `leaksInternalPath` is an UNWIRED safety helper (decision).** Detects `$bunfs` internal-
-  path leaks but is never called. Wire it as a defense-in-depth guard on emitted text, or remove — not
-  blindly deleting a security helper.
+- [x] **AV4 — WIRED 2026-06-07 (approved).** `runModelToGraph` is now the plan-less Run-view fallback in
+  useRunGraph: a scriptless run (no static-source plan), a meta-only plan, or an elk failure renders its
+  agents grouped by phase instead of a blank canvas. Gated on the plan query settling (no flash) +
+  (!overlayLayoutReady || overlayError). App.hasContent updated. +2 tests. No longer dead code.
+- [x] **AV2 — WIRED 2026-06-07 (approved).** `leaksInternalPath` now gates `redactInternalPaths` (new),
+  applied at the two agent-authored-text emit surfaces — makePreview (every preview) + the lazy
+  full-result endpoint — scrubbing `$bunfs` paths to `[internal]`. Clean text byte-unchanged; errors
+  left to sanitizeError's internalDetail split. +4 tests.
 - [ ] **AV5 / AV9 — DEFERRED.** Unit-testing `useRunGraph` / `useChromeFit` / `useLiveStream` directly
   is high-mock-cost, low-value: they're thin glue over already-tested pure seams + Playwright-verified.
 - [ ] **AV10 — DEFERRED (known).** `/result` unbounded journal read is an existing `TODO(ARCH-6 gap #2)`;
@@ -224,5 +226,7 @@ mislabels — see AV1/AV4). Outcomes:
 - [ ] **AV12 — SKIPPED (marginal).** `deriveFailureInfo` runs 3×/recompute; deduping it means threading
   state through the freshly-extracted useRunGraph for negligible savings — not worth perturbing it.
 - [ ] **AV14 — DEFERRED.** The audit itself says defer (32-line loop-cap module within scope).
-- Observed during triage (not in audit): the Run-view morph renders raw `${round}`/`${l.key}` template
-  labels inside a loop body — likely a real legibility rough edge worth a future look.
+- [x] **Template-label legibility — FIXED 2026-06-07 (approved).** Observed during triage (not in audit):
+  the morph rendered raw `${round}`/`${l.key}` template labels in loop/fan-out bodies. plan-model-mapping
+  now presents holes as `⟨expr⟩` (e.g. `critique:⟨l.key⟩:r⟨round⟩`); render-side only, the adapter's
+  `labelTemplate.raw` stays faithful. Verified live: 0 nodes still show `${…}`.
