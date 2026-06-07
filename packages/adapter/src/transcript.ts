@@ -29,6 +29,10 @@ import type {
   WorkflowSpawn,
   TimeRange,
   CutReason,
+  SessionSummary,
+  Turn,
+  TurnRole,
+  TurnToolCall,
 } from '@argus/contract';
 import { NARRATIVE_FORMAT } from '@argus/contract';
 import { redact } from './redact.ts';
@@ -656,4 +660,219 @@ export async function loadSessionNarrative(
 ): Promise<SessionNarrative> {
   const text = await port.readFile(transcriptPath);
   return buildSessionNarrative(text, sessionId, opts);
+}
+
+// --- session discovery (the project session-timeline source) ----------------
+
+/** A transcript filename suffix; the basename minus this is the sessionId. */
+const TRANSCRIPT_EXT = '.jsonl';
+
+/**
+ * Derive a {@link SessionSummary} from already-scanned records for ONE session, WITHOUT
+ * re-segmenting (knowledge.md refinement 3 — the timeline must render without a full
+ * per-block pass). Computes the first→last record timestamp span, the raw record count,
+ * a cheap Workflow-spawn tally (one extractWorkflowSpawns pass — no segmentation), and a
+ * commitCount of 0 (M2 correlates real commits). `projectPath` is recovered from the first
+ * record carrying a cwd (authoritative); else null. PURE; never throws.
+ */
+export function summarizeScannedSession(
+  scanned: ScannedTranscript,
+  sessionId: string,
+): SessionSummary {
+  let timeStart: string | null = null;
+  let timeEnd: string | null = null;
+  let projectPath: string | null = null;
+  let workflowSpawnCount = 0;
+
+  for (const r of scanned.records) {
+    if (r.timestamp !== null) {
+      timeStart = earliest(timeStart, r.timestamp);
+      timeEnd = latest(timeEnd, r.timestamp);
+    }
+    if (projectPath === null && r.cwd !== null) {
+      projectPath = recoverProjectPath(r.cwd) ?? r.cwd;
+    }
+    // Cheap spawn tally: extractWorkflowSpawns is a no-op for non-assistant / non-Workflow
+    // records, so this stays an O(records) scan, NOT a segmentation pass.
+    workflowSpawnCount += extractWorkflowSpawns(r).length;
+  }
+
+  return {
+    sessionId,
+    projectPath,
+    timeRange: { start: timeStart, end: timeEnd },
+    recordCount: scanned.totalLines,
+    workflowSpawnCount,
+    // M0/M1 emit 0; M2 correlates the repo's real git log by timestamp (+ message).
+    commitCount: 0,
+  };
+}
+
+/**
+ * Discover the SESSIONS of one project — the source rows for the Story view's project
+ * session-timeline (knowledge.md refinement 3). Lists `<claudeHome>/projects/<slug>/*.jsonl`
+ * SIBLING transcript files (a `.jsonl` directly under the slug dir, NOT the `<sessionId>/`
+ * subdir), and for EACH cheaply derives a {@link SessionSummary} (start→end span + counts).
+ *
+ * COST NOTE: the FileSystemPort has only `readFile()` (no range/tail read — knowledge.md
+ * decision 5), so deriving the timestamp span + counts costs ONE whole readFile + scan per
+ * file. That is acceptable for M1 (the timeline is fetched on demand, not per-frame) but is
+ * the obvious place to add a sidecar index / range-read later if a project has many large
+ * sessions. We do NOT segment here (no per-block pass) — only a single defensive scan.
+ *
+ * `slug` is the on-disk dir name (path-building only — the server path-escape-guards the dir
+ * before calling). `projectPath` (optional) is the caller's authoritative recovered cwd; when
+ * a session's records carry no cwd it backfills the summary's projectPath. A per-file read
+ * error skips THAT file (never fatal); the result is sorted NEWEST-FIRST by `timeRange.end`
+ * (nulls last). All disk via the injected port (no node:fs). Never throws on parse.
+ */
+export async function discoverSessions(
+  port: FileSystemPort,
+  claudeHome: string,
+  slug: string,
+  projectPath?: string,
+): Promise<SessionSummary[]> {
+  const dir = joinPath(claudeHome, 'projects', slug);
+  let entries: Array<{ name: string; isDir: boolean }>;
+  try {
+    entries = await port.listDir(dir);
+  } catch {
+    return []; // absent / unreadable slug dir → no sessions (never fatal)
+  }
+
+  const summaries: SessionSummary[] = [];
+  for (const e of entries) {
+    // SIBLING `.jsonl` files only — skip dirs (incl. the `<sessionId>/` run subdir).
+    if (e.isDir) continue;
+    if (!e.name.endsWith(TRANSCRIPT_EXT)) continue;
+    const sessionId = e.name.slice(0, -TRANSCRIPT_EXT.length);
+    if (sessionId.length === 0) continue;
+
+    let text: string;
+    try {
+      text = await port.readFile(joinPath(dir, e.name));
+    } catch {
+      continue; // a vanished/locked file is skipped, never fatal
+    }
+    const summary = summarizeScannedSession(scanTranscript(text), sessionId);
+    // Backfill the caller's authoritative projectPath when the session itself carries none.
+    if (summary.projectPath === null && projectPath !== undefined) {
+      summary.projectPath = projectPath;
+    }
+    summaries.push(summary);
+  }
+
+  // Newest-first by end of span (nulls last) — the timeline reads most-recent-on-top.
+  summaries.sort((a, b) => compareEndDesc(a.timeRange.end, b.timeRange.end));
+  return summaries;
+}
+
+/** Sort comparator: newest `timeRange.end` first; a null end sorts last. */
+function compareEndDesc(a: string | null, b: string | null): number {
+  if (a === b) return 0;
+  if (a === null) return 1;
+  if (b === null) return -1;
+  return a < b ? 1 : -1;
+}
+
+/**
+ * Join path segments with `/` WITHOUT importing node:path (the adapter stays pure; the tree
+ * is POSIX-ish under `~/.claude/projects` and we never resolve `..`). Mirrors discovery.ts's
+ * local join. The SERVER resolve()-escape-guards the real path before any port read.
+ */
+function joinPath(...parts: string[]): string {
+  return parts
+    .map((p, i) => (i === 0 ? p.replace(/\/+$/, '') : p.replace(/^\/+|\/+$/g, '')))
+    .filter((p) => p.length > 0)
+    .join('/');
+}
+
+// --- lazy per-block turns (the click-in view) -------------------------------
+
+/**
+ * The byte budget for a single {@link Turn}'s `textPreview`. Click-in turns are read one at
+ * a time and shown in a text view, so they get a generous-but-bounded head+tail (reusing the
+ * same boundedPreview machinery as the block previews) — never a whole multi-MB body.
+ */
+export const TURN_TEXT_HEADTAIL = 4 * 1024;
+
+/** A short, redacted digest of one tool_use's args (never the raw args object). */
+const TURN_ARGS_DIGEST_LEN = 100;
+
+/**
+ * Project an assistant record's `tool_use` blocks into {@link TurnToolCall}s — `name` plus a
+ * SHORT, redact()-routed `briefArgs` digest (never the raw input object; keeps the wire small
+ * + secret-free, mirroring WorkflowSpawn.argsDigest). A user record carries no tool_use blocks.
+ * Defensive: a block with no usable name is skipped. NEVER throws.
+ */
+function projectToolCalls(r: RawRecord): TurnToolCall[] {
+  if (!Array.isArray(r.content)) return [];
+  const out: TurnToolCall[] = [];
+  for (const b of r.content) {
+    if (asString(b.type) !== 'tool_use') continue;
+    const name = asString(b.name);
+    if (name === null || name.length === 0) continue;
+    out.push({ name, briefArgs: briefArgs(b.input) });
+  }
+  return out;
+}
+
+/** A short, redacted args digest for a Turn tool call (never the raw object). */
+function briefArgs(input: unknown): string {
+  if (input === undefined || input === null) return '';
+  const s = typeof input === 'string' ? input : safeStringify(input);
+  const bounded = s.length > TURN_ARGS_DIGEST_LEN ? s.slice(0, TURN_ARGS_DIGEST_LEN) : s;
+  return redact(bounded);
+}
+
+/**
+ * Load the full {@link Turn}s of ONE block — the lazy click-in view (knowledge.md data model;
+ * the M1 `/turns?block=` endpoint). The caller reads the `<sessionId>.jsonl` THROUGH the port
+ * and passes the block's `recordRange`; we scan, slice the records in `[start..end]` (inclusive,
+ * clamped to the record array), and project each user/assistant record to a Turn:
+ *   - `textPreview`: the record's projected text (image/tool_reference blocks dropped), bounded
+ *     to head+tail and redact()-routed (so a click-in NEVER emits a whole body or an image byte);
+ *   - `toolCalls`: the record's tool_use blocks as {name, briefArgs} (redacted digest).
+ * Non-user/assistant records (system / attachment / mode / …) are NOT turns and are skipped.
+ * `promptId` falls back to '' when the record omits one. Disk-only via the port (no node:fs);
+ * a read failure propagates (the route maps it to 404). NEVER throws on parse.
+ */
+export async function loadBlockTurns(
+  port: FileSystemPort,
+  transcriptPath: string,
+  recordRange: { start: number; end: number },
+): Promise<Turn[]> {
+  const text = await port.readFile(transcriptPath);
+  return blockTurns(scanTranscript(text), recordRange);
+}
+
+/**
+ * Pure core of {@link loadBlockTurns}: slice scanned records to `[start..end]` (inclusive,
+ * clamped) and project each user/assistant record to a {@link Turn}. Exposed for fixture
+ * tests (a slice over scanned records without a port round-trip). NEVER throws.
+ */
+export function blockTurns(
+  scanned: ScannedTranscript,
+  recordRange: { start: number; end: number },
+): Turn[] {
+  const records = scanned.records;
+  // Clamp the requested range to the available records (a stale/oversized range is honest,
+  // not fatal): start ≥ 0, end ≤ last index; an inverted/empty range yields [].
+  const start = Math.max(0, recordRange.start);
+  const end = Math.min(records.length - 1, recordRange.end);
+  const turns: Turn[] = [];
+  for (let i = start; i <= end; i += 1) {
+    const r = records[i]!;
+    if (r.type !== 'user' && r.type !== 'assistant') continue; // only user/assistant are turns
+    const role: TurnRole = r.type === 'assistant' ? 'assistant' : 'user';
+    const projected = projectText(r.content);
+    turns.push({
+      promptId: r.promptId ?? '',
+      timestamp: r.timestamp,
+      role,
+      textPreview: boundedPreview(projected.text, TURN_TEXT_HEADTAIL),
+      toolCalls: projectToolCalls(r),
+    });
+  }
+  return turns;
 }

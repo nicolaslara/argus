@@ -8,9 +8,14 @@ import {
   boundedPreview,
   buildSessionNarrative,
   loadSessionNarrative,
+  summarizeScannedSession,
+  discoverSessions,
+  loadBlockTurns,
+  blockTurns,
   NARRATIVE_FORMAT_ENGINE,
   MAX_LINE_BYTES,
   RESPONSE_HEADTAIL,
+  TURN_TEXT_HEADTAIL,
   resetRedactionStrategy,
   setRedactionStrategy,
   type FileSystemPort,
@@ -422,6 +427,200 @@ describe('loadSessionNarrative (port-injected, no node:fs)', () => {
     expect(nar.sessionId).toBe('sess-port');
     expect(nar.blocks).toHaveLength(1);
     expect(nar.blocks[0]!.promptPreview.text).toContain('via the port');
+  });
+});
+
+// --- discoverSessions (M1: the project session-timeline source) -----------------
+
+describe('discoverSessions (port-injected, no node:fs)', () => {
+  const SLUG = '-Users-nicolas-devel-argus';
+  const HOME = '/home/.claude';
+  const slugDir = `${HOME}/projects/${SLUG}`;
+
+  it('lists SIBLING *.jsonl files over a 2-file fixture, newest-first by end span', async () => {
+    const port = new StatPort();
+    // Session A: older end span; carries a cwd + a Workflow spawn.
+    port.set(
+      `${slugDir}/sess-A.jsonl`,
+      [
+        userPrompt('first session', '2026-06-01T00:00:00Z'),
+        assistant(
+          [{ type: 'tool_use', name: 'Workflow', input: { scriptPath: '/p/.claude/workflows/plan-research.js', args: '{}' } }],
+          '2026-06-01T00:05:00Z',
+        ),
+      ].join('\n'),
+    );
+    // Session B: newer end span; two real prompts, no Workflow spawn.
+    port.set(
+      `${slugDir}/sess-B.jsonl`,
+      [
+        userPrompt('second session', '2026-06-07T09:00:00Z'),
+        assistant([{ type: 'text', text: 'working' }], '2026-06-07T09:01:00Z'),
+        userPrompt('again', '2026-06-07T10:00:00Z'),
+      ].join('\n'),
+    );
+
+    const sessions = await discoverSessions(port, HOME, SLUG);
+    expect(sessions).toHaveLength(2);
+    // Newest end-span first: B (ends 10:00 on the 7th) before A (ends 00:05 on the 1st).
+    expect(sessions.map((s) => s.sessionId)).toEqual(['sess-B', 'sess-A']);
+
+    const a = sessions.find((s) => s.sessionId === 'sess-A')!;
+    expect(a.timeRange).toEqual({ start: '2026-06-01T00:00:00Z', end: '2026-06-01T00:05:00Z' });
+    expect(a.recordCount).toBe(2);
+    expect(a.workflowSpawnCount).toBe(1);
+    expect(a.commitCount).toBe(0); // M0/M1 emit 0 (M2 correlates real commits)
+    expect(a.projectPath).toBe('/Users/nicolas/devel/argus'); // recovered from cwd
+
+    const b = sessions.find((s) => s.sessionId === 'sess-B')!;
+    expect(b.timeRange).toEqual({ start: '2026-06-07T09:00:00Z', end: '2026-06-07T10:00:00Z' });
+    expect(b.recordCount).toBe(3);
+    expect(b.workflowSpawnCount).toBe(0);
+  });
+
+  it('SKIPS directories (incl. the <sessionId>/ run subdir) and non-.jsonl files', async () => {
+    const port = new StatPort();
+    port.set(`${slugDir}/sess-real.jsonl`, userPrompt('real', '2026-06-07T00:00:00Z'));
+    // A run subdir (must be skipped — discoverSessions lists SIBLING .jsonl only).
+    port.set(`${slugDir}/sess-real/workflows/wf_abc.json`, '{}');
+    // A non-transcript file (must be skipped).
+    port.set(`${slugDir}/notes.txt`, 'ignore me');
+    const sessions = await discoverSessions(port, HOME, SLUG);
+    expect(sessions.map((s) => s.sessionId)).toEqual(['sess-real']);
+  });
+
+  it('an absent/unreadable slug dir yields [] (never throws)', async () => {
+    const port = new StatPort();
+    await expect(discoverSessions(port, HOME, SLUG)).resolves.toEqual([]);
+  });
+
+  it('backfills projectPath from the caller when a session carries no cwd', async () => {
+    const port = new StatPort();
+    // A prompt with NO cwd field (StatPort's listDir works; the record has no cwd).
+    port.set(
+      `${slugDir}/sess-nocwd.jsonl`,
+      line({
+        type: 'user',
+        userType: 'external',
+        timestamp: '2026-06-07T00:00:00Z',
+        message: { role: 'user', content: [{ type: 'text', text: 'no cwd here' }] },
+      }),
+    );
+    const sessions = await discoverSessions(port, HOME, SLUG, '/Users/nicolas/devel/argus');
+    expect(sessions[0]!.projectPath).toBe('/Users/nicolas/devel/argus'); // backfilled
+  });
+});
+
+describe('summarizeScannedSession (cheap, no re-segment)', () => {
+  it('derives span + counts WITHOUT segmenting', () => {
+    const text = [
+      userPrompt('a', '2026-06-07T00:00:00Z'),
+      assistant(
+        [{ type: 'tool_use', name: 'Workflow', input: { scriptPath: '/p/.claude/workflows/x.js', args: '{}' } }],
+        '2026-06-07T00:01:00Z',
+      ),
+      toolResultCarrier('ok', '2026-06-07T00:02:00Z'),
+    ].join('\n');
+    const s = summarizeScannedSession(scanTranscript(text), 'sess-sum');
+    expect(s.sessionId).toBe('sess-sum');
+    expect(s.recordCount).toBe(3);
+    expect(s.workflowSpawnCount).toBe(1);
+    expect(s.commitCount).toBe(0);
+    expect(s.timeRange).toEqual({ start: '2026-06-07T00:00:00Z', end: '2026-06-07T00:02:00Z' });
+  });
+});
+
+// --- loadBlockTurns / blockTurns (M1: the lazy click-in view) -------------------
+
+describe('loadBlockTurns / blockTurns — full turns of one block', () => {
+  it('slices the record range and projects each user/assistant record to a Turn', async () => {
+    const port = new StatPort();
+    const path = `/home/.claude/projects/-Users-nicolas-devel-argus/sess-turns.jsonl`;
+    port.set(
+      path,
+      [
+        userPrompt('the prompt', '2026-06-07T00:00:00Z'), // 0
+        assistant(
+          [
+            { type: 'text', text: 'let me read it' },
+            { type: 'tool_use', name: 'Read', input: { file_path: '/a/b/file.ts' } },
+          ],
+          '2026-06-07T00:00:01Z',
+        ), // 1
+        toolResultCarrier('read ok', '2026-06-07T00:00:02Z'), // 2 (a user-type carrier → still a Turn)
+        userPrompt('the NEXT prompt', '2026-06-07T00:00:03Z'), // 3 — outside the range
+      ].join('\n'),
+    );
+
+    // The block covers records [0..2] (prompt + assistant + its carrier).
+    const turns = await loadBlockTurns(port, path, { start: 0, end: 2 });
+    expect(turns).toHaveLength(3);
+
+    expect(turns[0]!.role).toBe('user');
+    expect(turns[0]!.promptId).toBe('p-2026-06-07T00:00:00Z');
+    expect(turns[0]!.textPreview.text).toContain('the prompt');
+    expect(turns[0]!.toolCalls).toEqual([]);
+
+    expect(turns[1]!.role).toBe('assistant');
+    expect(turns[1]!.textPreview.text).toContain('let me read it');
+    expect(turns[1]!.toolCalls).toHaveLength(1);
+    expect(turns[1]!.toolCalls[0]!.name).toBe('Read');
+    expect(turns[1]!.toolCalls[0]!.briefArgs).toContain('file.ts'); // a short args digest
+
+    expect(turns[2]!.role).toBe('user'); // the tool_result carrier
+    expect(turns[2]!.textPreview.text).toContain('read ok');
+
+    // The record OUTSIDE the range (the next prompt) is NOT included.
+    expect(turns.some((t) => t.textPreview.text.includes('the NEXT prompt'))).toBe(false);
+  });
+
+  it('a Turn textPreview is head+tail-bounded + redact()-routed (never a whole body / image byte)', () => {
+    const big = 'HEAD_T ' + 'q'.repeat(TURN_TEXT_HEADTAIL * 3) + ' TAIL_T';
+    const text = [
+      userPrompt('go', '2026-06-07T00:00:00Z'),
+      // An assistant record with a long text block AND an image block (must be dropped).
+      assistant(
+        [
+          { type: 'text', text: big },
+          { type: 'image', source: { type: 'base64', media_type: 'image/png', data: PNG_BYTES } },
+        ],
+        '2026-06-07T00:00:01Z',
+      ),
+    ].join('\n');
+    const turns = blockTurns(scanTranscript(text), { start: 0, end: 1 });
+    const asst = turns.find((t) => t.role === 'assistant')!;
+    expect(asst.textPreview.truncated).toBe(true);
+    expect(Buffer.byteLength(asst.textPreview.text, 'utf8')).toBeLessThanOrEqual(TURN_TEXT_HEADTAIL * 2 + 16);
+    expect(asst.textPreview.text).toContain('HEAD_T');
+    expect(asst.textPreview.text).toContain('TAIL_T');
+    // ZERO image bytes survive into a click-in turn (the load-bearing privacy invariant).
+    expect(JSON.stringify(turns)).not.toContain(PNG_BYTES);
+    expect(JSON.stringify(turns)).not.toContain('iVBOR');
+  });
+
+  it('skips non-user/assistant records and clamps an oversized/inverted range', () => {
+    const text = [
+      line({ type: 'system', timestamp: '2026-06-07T00:00:00Z' }), // 0 — not a turn
+      userPrompt('hi', '2026-06-07T00:00:01Z'), // 1
+      assistant([{ type: 'text', text: 'yo' }], '2026-06-07T00:00:02Z'), // 2
+    ].join('\n');
+    const scanned = scanTranscript(text);
+    // Oversized end clamps to the last record; the system record at 0 is skipped.
+    const turns = blockTurns(scanned, { start: 0, end: 999 });
+    expect(turns.map((t) => t.role)).toEqual(['user', 'assistant']);
+    // An inverted / empty range yields [].
+    expect(blockTurns(scanned, { start: 2, end: 1 })).toEqual([]);
+  });
+
+  it('Turn tool-call briefArgs routes through the redact() seam', () => {
+    setRedactionStrategy({ redact: (t) => t.replace(/SECRET/g, '[R]') });
+    const text = assistant(
+      [{ type: 'tool_use', name: 'Bash', input: { command: 'echo SECRET' } }],
+      '2026-06-07T00:00:00Z',
+    );
+    const turns = blockTurns(scanTranscript(text), { start: 0, end: 0 });
+    expect(turns[0]!.toolCalls[0]!.briefArgs).toContain('[R]');
+    expect(turns[0]!.toolCalls[0]!.briefArgs).not.toContain('SECRET');
   });
 });
 

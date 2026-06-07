@@ -24,11 +24,14 @@ import {
   discoverProjects,
   discoverRuns,
   discoverRunningRunsReport,
+  discoverSessions,
   discoverWorkflowMetas,
+  loadBlockTurns,
   loadLiveModel,
   loadPlan,
   loadRun,
   loadRunPlan,
+  loadSessionNarrative,
   perRunScriptBasename,
   recoverProjectPath,
   type FileSystemPort,
@@ -36,11 +39,16 @@ import {
 } from '@argus/adapter';
 import type {
   ExplanationBatch,
+  NarrativeBlock,
   PlanModel,
   ProjectRef,
+  RecordRange,
   RunModel,
   RunRef,
   RunSummary,
+  SessionNarrative,
+  SessionSummary,
+  Turn,
   WorkflowMeta,
 } from '@argus/contract';
 import {
@@ -50,6 +58,10 @@ import {
   runArtifacts,
   runTargetId,
 } from './explain.ts';
+import {
+  narrativeCacheKey,
+  type NarrativeCacheIO,
+} from './narrative-cache.ts';
 
 /**
  * Strict path-segment charset. Slug dirs are `-Users-...` (alnum + dash), session ids
@@ -177,6 +189,39 @@ export function safeRunScriptsDir(
 }
 
 /**
+ * A session id is a transcript filename STEM (`<sessionId>.jsonl`) — a UUID-shaped token
+ * (alnum + dash). Validated with the SAME strict charset as a path segment (no `/`, `\`,
+ * `.`, `..`, NUL, whitespace), so it can never traverse out of the slug dir nor smuggle a
+ * `.jsonl`/path part into the basename. A dedicated alias of isValidSegment for clarity at
+ * the narrative call sites (the sessionId is the load-bearing untrusted input here).
+ */
+export function isValidSessionId(sessionId: string): boolean {
+  return isValidSegment(sessionId);
+}
+
+/**
+ * Build the absolute SIBLING session transcript path
+ *   `<claudeHome>/projects/<slug>/<sessionId>.jsonl`
+ * and resolve()-verify it stays strictly inside `claudeHome`. This is the file that sits
+ * NEXT TO (not inside) the `<sessionId>/` run subdir, so it needs a DEDICATED guard — the
+ * existing safeRun*Path helpers all build a `<sessionId>/…` SUBDIR path and would never
+ * resolve to this sibling `.jsonl`. The charset of BOTH slug and sessionId is checked first
+ * (the `.jsonl` suffix is appended by us, never taken from input — so the basename cannot be
+ * spoofed), then a prefix + path-separator check rejects any escape. NEVER throws.
+ */
+export function safeSessionTranscriptPath(
+  claudeHome: string,
+  slug: string,
+  sessionId: string,
+): string | null {
+  if (!isValidSegment(slug) || !isValidSessionId(sessionId)) return null;
+  const homeAbs = resolve(claudeHome);
+  const candidate = resolve(homeAbs, 'projects', slug, `${sessionId}.jsonl`);
+  if (candidate !== homeAbs && !candidate.startsWith(homeAbs + sep)) return null;
+  return candidate;
+}
+
+/**
  * A workflow source filename: a `.js` basename of safe charset (alnum + dash +
  * underscore + dot), with NO path separators and NO `..`. Enforced BEFORE any FS read.
  */
@@ -225,6 +270,13 @@ export interface RouteDeps {
    * and the explanations route reads its current batch.
    */
   explain?: ExplanationEngine;
+  /**
+   * The Session Narrative ("Story" view) disk cache (M1). Optional so the M3 routes + their
+   * tests need no cache; when absent, the narrative route recomputes from the transcript on
+   * every call (still correct, just uncached). Content-addressed on (slug + sessionId +
+   * transcript stat + version) — a changed transcript misses + recomputes. See narrative-cache.ts.
+   */
+  narrativeCache?: NarrativeCacheIO;
   /** Injected clock for live-run detection (defaults to Date.now). Tests pin it. */
   now?: () => number;
 }
@@ -893,4 +945,160 @@ export async function handleRunLive(
   } catch {
     return err(404, 'not_found');
   }
+}
+
+// --- Session Narrative ("Story" view) routes (M1) ---------------------------
+//
+// project → sessions-on-a-timeline → per-session topic blocks → (lazy) full turns.
+// All three routes inherit the same security envelope as the run routes: the index.ts
+// token + Host/Origin gate runs FIRST, then each handler charset-validates slug + sessionId
+// and resolve()-verifies the SIBLING transcript path stays inside claudeHome (the dedicated
+// safeSessionTranscriptPath guard — the existing safeRun*Path helpers build SUBDIR paths and
+// do not cover this sibling .jsonl). READ-ONLY; all disk goes through the injected port.
+
+/**
+ * GET /api/projects/:slug/sessions -> { sessions: SessionSummary[] }.
+ * The top of the Story view — a project's sessions as start→end spans + cheap counts
+ * (records · workflow spawns · commits) via the adapter's discoverSessions, which lists the
+ * SIBLING `<slug>/*.jsonl` transcripts and derives each summary from one defensive scan (no
+ * per-block segmentation). Mirrors handleProjectRuns: validate the slug (400), resolve it to
+ * its ProjectRef(s) so the per-session projectPath can be backfilled from the authoritative
+ * recovered cwd, then union the sessions across every ProjectRef sharing the slug (deduped by
+ * sessionId, newest-first preserved). An unknown slug / empty dir -> { sessions: [] }, never
+ * a 500 (discoverSessions swallows a per-file read error and an absent dir).
+ */
+export async function handleProjectSessions(
+  deps: RouteDeps,
+  slug: string,
+): Promise<RouteResult> {
+  if (!isValidSegment(slug)) return err(400, 'bad_request');
+
+  const projects = await discoverProjects(deps.port, deps.claudeHome);
+  const matching = projects.filter((p) => p.slug === slug);
+  // A slug with no recovered ProjectRef can still have sibling transcripts on disk; fall
+  // back to a single projectPath-less discovery so the timeline is never silently empty.
+  const projectPaths: Array<string | undefined> =
+    matching.length > 0 ? matching.map((p) => p.projectPath) : [undefined];
+
+  const byId = new Map<string, SessionSummary>();
+  for (const projectPath of projectPaths) {
+    let summaries: SessionSummary[];
+    try {
+      summaries = await discoverSessions(deps.port, deps.claudeHome, slug, projectPath);
+    } catch {
+      continue; // best-effort; discoverSessions itself never throws, but stay defensive
+    }
+    for (const s of summaries) {
+      if (!byId.has(s.sessionId)) byId.set(s.sessionId, s);
+    }
+  }
+  // discoverSessions returns newest-first; the dedup above preserves first-seen order.
+  return { status: 200, body: { sessions: [...byId.values()] } };
+}
+
+/**
+ * GET /api/projects/:slug/sessions/:sessionId/narrative -> SessionNarrative.
+ * The watch view: the full Stage-1 narrative (real-prompt topic blocks + head/tail-bounded,
+ * redact()-routed previews), server-PRECOMPUTED + DISK-CACHED mirroring explain.ts. The
+ * cache key folds in the transcript's `stat` {size, mtimeMs} (narrativeCacheKey) so a
+ * stat-CHANGED transcript (an append) MISSES + recomputes — appends refresh, an unchanged
+ * session re-opens to an instant hit. Same M1 posture: charset-validate slug + sessionId
+ * (400) + the sibling-path guard; a MISSING transcript is a 404 (never a 500 — loadSession-
+ * Narrative's read failure is the only throw and we map it). The adapter never 500s on parse.
+ */
+export async function handleSessionNarrative(
+  deps: RouteDeps,
+  slug: string,
+  sessionId: string,
+): Promise<RouteResult> {
+  const transcriptPath = safeSessionTranscriptPath(deps.claudeHome, slug, sessionId);
+  if (transcriptPath === null) return err(400, 'bad_request');
+
+  // stat() is the cheap probe BOTH for existence (a null stat → 404 before any read) and for
+  // the cache key. A missing transcript never costs a 67 MB read.
+  const st = await deps.port.stat(transcriptPath);
+  if (st === null) return err(404, 'not_found');
+
+  // 1) Cache hit: keyed by (slug + sessionId + stat + version). An append moves size/mtimeMs
+  //    → a NEW key → a miss → recompute (so the narrative refreshes), with no stale serve.
+  const key = deps.narrativeCache
+    ? narrativeCacheKey(slug, sessionId, { size: st.size, mtimeMs: st.mtimeMs })
+    : null;
+  if (deps.narrativeCache && key !== null) {
+    const cached = await deps.narrativeCache.read(key);
+    if (cached !== null) return { status: 200, body: cached };
+  }
+
+  // 2) Miss → precompute from the transcript THROUGH the port (the adapter is pure / port-
+  //    injected; it never throws on parse — only the readFile can, which is the 404 case).
+  let narrative: SessionNarrative;
+  try {
+    narrative = await loadSessionNarrative(deps.port, transcriptPath, sessionId);
+  } catch {
+    return err(404, 'not_found'); // a vanished/locked transcript → 404, never a 500/leak
+  }
+
+  // 3) Persist (best-effort; a write failure is swallowed by the cache IO — the narrative
+  //    still serves this call). Content-addressed: the same stat re-opens to a hit.
+  if (deps.narrativeCache && key !== null) {
+    await deps.narrativeCache.write(key, narrative);
+  }
+  return { status: 200, body: narrative };
+}
+
+/**
+ * GET /api/projects/:slug/sessions/:sessionId/turns?block=<blockId> -> { turns: Turn[] }.
+ * The lazy click-in view: the full Turns of ONE block, fetched on demand (never inlined in
+ * the narrative). We resolve the opaque `blockId` to its `recordRange` by looking it up in
+ * the session's narrative (a cache hit when the watch view was just rendered; else a recompute
+ * — same stat-keyed cache as the narrative route), then slice the transcript to that range via
+ * the adapter's loadBlockTurns. Same M1 posture: charset-validate slug + sessionId (400) + the
+ * sibling-path guard. A missing `block` param is a 400; an unknown blockId is a 404; a missing
+ * transcript is a 404. NEVER 500s / leaks. The blockId is treated as untrusted (only matched
+ * against the narrative's own ids — never used to build a path).
+ */
+export async function handleSessionTurns(
+  deps: RouteDeps,
+  slug: string,
+  sessionId: string,
+  blockId: string,
+): Promise<RouteResult> {
+  const transcriptPath = safeSessionTranscriptPath(deps.claudeHome, slug, sessionId);
+  if (transcriptPath === null) return err(400, 'bad_request');
+  if (blockId.length === 0) return err(400, 'bad_request');
+
+  const st = await deps.port.stat(transcriptPath);
+  if (st === null) return err(404, 'not_found');
+
+  // Resolve the blockId → recordRange from the (cached or freshly-computed) narrative. We reuse
+  // the SAME stat-keyed cache so a click-in right after a watch render is a hit (no re-scan).
+  const key = deps.narrativeCache
+    ? narrativeCacheKey(slug, sessionId, { size: st.size, mtimeMs: st.mtimeMs })
+    : null;
+  let narrative: SessionNarrative | null = null;
+  if (deps.narrativeCache && key !== null) {
+    narrative = await deps.narrativeCache.read(key);
+  }
+  if (narrative === null) {
+    try {
+      narrative = await loadSessionNarrative(deps.port, transcriptPath, sessionId);
+    } catch {
+      return err(404, 'not_found');
+    }
+    if (deps.narrativeCache && key !== null) {
+      await deps.narrativeCache.write(key, narrative);
+    }
+  }
+
+  const block: NarrativeBlock | undefined = narrative.blocks.find((b) => b.id === blockId);
+  if (block === undefined) return err(404, 'not_found'); // unknown / stale block id
+
+  const recordRange: RecordRange = block.recordRange;
+  let turns: Turn[];
+  try {
+    turns = await loadBlockTurns(deps.port, transcriptPath, recordRange);
+  } catch {
+    return err(404, 'not_found'); // transcript vanished between the stat and the slice → 404
+  }
+  return { status: 200, body: { turns } };
 }

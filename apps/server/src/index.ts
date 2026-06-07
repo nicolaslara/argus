@@ -34,11 +34,15 @@ import {
   handleSubUi,
   handleDescribe,
   handleStream,
+  handleProjectSessions,
+  handleSessionNarrative,
+  handleSessionTurns,
   type RouteDeps,
   type RouteResult,
 } from './routes.ts';
 import { ExplanationEngine, explanationsCacheDir } from './explain.ts';
 import { SubUiEngine, subUiCacheDir } from './subui.ts';
+import { diskNarrativeCacheIO, narrativesCacheDir } from './narrative-cache.ts';
 import { scrubError } from './error-redaction.ts';
 
 const HOST = '127.0.0.1';
@@ -67,8 +71,20 @@ const explain = EXPLAIN_ENABLED
 // EXPLAIN on/off switch (both are `claude -p` features that degrade to a fallback render).
 const subui = EXPLAIN_ENABLED ? new SubUiEngine({ cacheDir: subUiCacheDir(REPO_ROOT) }) : undefined;
 
+// M1: the Session Narrative ("Story" view) disk cache. Content-addressed on
+// (slug + sessionId + transcript stat + NARRATIVE_CACHE_VERSION) under .argus/cache/narratives;
+// a stat-changed transcript (an append) misses + recomputes, an unchanged session is an instant
+// hit. Always on (it carries no model spend — it just memoizes the 67 MB scan + segment pass).
+const narrativeCache = diskNarrativeCacheIO(narrativesCacheDir(REPO_ROOT));
+
 // One shared read-only port + route deps for the process lifetime.
-const deps: RouteDeps = { port: new NodeFileSystemPort(), claudeHome: CLAUDE_HOME, explain, subui };
+const deps: RouteDeps = {
+  port: new NodeFileSystemPort(),
+  claudeHome: CLAUDE_HOME,
+  explain,
+  subui,
+  narrativeCache,
+};
 
 function send(res: ServerResponse, status: number, body: unknown): void {
   const payload = JSON.stringify(body);
@@ -109,6 +125,40 @@ async function dispatchApi(url: URL): Promise<RouteResult | null> {
     const slug = decodeSegment(runsMatch[1]!);
     if (slug === null) return { status: 400, body: { error: 'bad_request' } };
     return handleProjectRuns(deps, slug);
+  }
+
+  // --- Session Narrative ("Story" view) routes (M1) ---
+  // The two :sessionId sub-routes (/narrative, /turns) are MORE specific than the bare
+  // /sessions listing → matched first (mirrors the plan/explanations-before-listing order).
+
+  // GET /api/projects/:slug/sessions/:sessionId/narrative (the watch-view narrative)
+  const sessionNarrativeMatch =
+    /^\/api\/projects\/([^/]+)\/sessions\/([^/]+)\/narrative$/.exec(pathname);
+  if (sessionNarrativeMatch) {
+    const slug = decodeSegment(sessionNarrativeMatch[1]!);
+    const sessionId = decodeSegment(sessionNarrativeMatch[2]!);
+    if (slug === null || sessionId === null) return { status: 400, body: { error: 'bad_request' } };
+    return handleSessionNarrative(deps, slug, sessionId);
+  }
+
+  // GET /api/projects/:slug/sessions/:sessionId/turns?block=<blockId> (the lazy click-in)
+  const sessionTurnsMatch =
+    /^\/api\/projects\/([^/]+)\/sessions\/([^/]+)\/turns$/.exec(pathname);
+  if (sessionTurnsMatch) {
+    const slug = decodeSegment(sessionTurnsMatch[1]!);
+    const sessionId = decodeSegment(sessionTurnsMatch[2]!);
+    if (slug === null || sessionId === null) return { status: 400, body: { error: 'bad_request' } };
+    // `block` is the opaque blockId; resolved against the narrative's own ids, never a path.
+    const blockId = url.searchParams.get('block') ?? '';
+    return handleSessionTurns(deps, slug, sessionId, blockId);
+  }
+
+  // GET /api/projects/:slug/sessions (the project session-timeline spans)
+  const sessionsMatch = /^\/api\/projects\/([^/]+)\/sessions$/.exec(pathname);
+  if (sessionsMatch) {
+    const slug = decodeSegment(sessionsMatch[1]!);
+    if (slug === null) return { status: 400, body: { error: 'bad_request' } };
+    return handleProjectSessions(deps, slug);
   }
 
   // GET /api/projects/:slug/workflows/:file/explanations (PX: the plan poll endpoint).

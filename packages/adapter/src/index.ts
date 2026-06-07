@@ -65,10 +65,15 @@ export {
   segmentTranscript,
   buildSessionNarrative,
   loadSessionNarrative,
+  summarizeScannedSession,
+  discoverSessions,
+  loadBlockTurns,
+  blockTurns,
   NARRATIVE_FORMAT_ENGINE,
   MAX_LINE_BYTES,
   RESPONSE_HEADTAIL,
   PROMPT_HEADTAIL,
+  TURN_TEXT_HEADTAIL,
 } from './transcript.ts';
 export type { ScannedTranscript, ProjectedText, SegmentOptions } from './transcript.ts';
 
