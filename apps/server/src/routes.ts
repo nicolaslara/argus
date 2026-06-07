@@ -16,6 +16,7 @@
 
 import { resolve, sep } from 'node:path';
 import {
+  redactInternalPaths,
   agentActivityFromDir,
   agentResultFromJournal,
   discoverProjects,
@@ -610,11 +611,17 @@ export async function handleAgentResult(
   } catch {
     return err(404, 'not_found');
   }
-  const value = agentResultFromJournal(text, agentId);
+  const raw = agentResultFromJournal(text, agentId);
+  // Defense-in-depth: scrub internal $bunfs paths from the emitted result text (a string result is
+  // the common case; an object result is JSON-redacted at the serialized boundary below).
+  const value = typeof raw === 'string' ? redactInternalPaths(raw) : raw;
   // Cap: measure the serialized size; over the cap → a truncated string form.
   const serialized = typeof value === 'string' ? value : JSON.stringify(value);
   if (typeof serialized === 'string' && serialized.length > RESULT_EMIT_CAP) {
-    return { status: 200, body: { agentId, value: serialized.slice(0, RESULT_EMIT_CAP), truncated: true } };
+    return {
+      status: 200,
+      body: { agentId, value: redactInternalPaths(serialized.slice(0, RESULT_EMIT_CAP)), truncated: true },
+    };
   }
   return { status: 200, body: { agentId, value, truncated: false } };
 }

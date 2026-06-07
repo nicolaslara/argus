@@ -192,6 +192,17 @@ export function leaksInternalPath(text: string): boolean {
   return text.includes(BUNFS_MARKER);
 }
 
+/**
+ * Defense-in-depth: redact internal bundle/abs-path leaks (e.g. a `/$bunfs/root/cli.js:12:3`
+ * frame an agent echoed into its output) from emitted text, replacing the path with `[internal]`.
+ * Gated by {@link leaksInternalPath} so clean text is returned untouched (no needless rewrite).
+ * Applied to the previews + the lazy full result — the surfaces that carry agent-authored text;
+ * `sanitizeError` already routes error stack frames into `internalDetail` deliberately.
+ */
+export function redactInternalPaths(text: string): string {
+  return leaksInternalPath(text) ? text.replace(/\/\$bunfs\/\S*/g, '[internal]') : text;
+}
+
 // --- previews ---------------------------------------------------------------
 
 import type { Preview } from '@argus/contract';
@@ -208,7 +219,9 @@ export function makePreview(rawPreview: unknown): Preview | null {
   if (typeof rawPreview !== 'string') return null;
   const rawLen = rawPreview.length;
   const truncated = rawLen === PREVIEW_TRUNCATED_RAW_LEN; // len 0 => false
-  const text = rawPreview.length > PREVIEW_EMIT_CAP ? rawPreview.slice(0, PREVIEW_EMIT_CAP) : rawPreview;
+  const capped = rawPreview.length > PREVIEW_EMIT_CAP ? rawPreview.slice(0, PREVIEW_EMIT_CAP) : rawPreview;
+  // Defense-in-depth: scrub any internal $bunfs path the agent text may carry before it's emitted.
+  const text = redactInternalPaths(capped);
   return { text, truncated };
 }
 

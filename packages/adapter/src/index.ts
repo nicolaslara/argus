@@ -40,6 +40,8 @@ import {
 
 /** Re-export the observed preview-cap constants for callers/tests. */
 export { PREVIEW_TRUNCATED_RAW_LEN, PREVIEW_EMIT_CAP } from './raw.ts';
+/** Re-export the internal-path redactor so the server can guard the lazy full-result emit too. */
+export { redactInternalPaths } from './raw.ts';
 
 /** Live path (L1/L2): journal parsing, running-run detection, partial live RunModel. */
 export {

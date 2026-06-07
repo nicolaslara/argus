@@ -5,6 +5,7 @@ import {
   deriveAgentState,
   deriveRunStatus,
   leaksInternalPath,
+  redactInternalPaths,
   findFailureLogLines,
   PREVIEW_TRUNCATED_RAW_LEN,
   PREVIEW_EMIT_CAP,
@@ -124,6 +125,24 @@ describe('leaksInternalPath', () => {
     // a similar-but-different path is NOT the marker.
     expect(leaksInternalPath('/usr/local/bin/cli.js')).toBe(false);
     expect(leaksInternalPath('bunfs')).toBe(false);
+  });
+});
+
+describe('redactInternalPaths', () => {
+  it('replaces a $bunfs path (incl. line:col) with [internal]', () => {
+    expect(redactInternalPaths('boom at /$bunfs/root/cli.js:12:3 here')).toBe('boom at [internal] here');
+  });
+  it('redacts every occurrence', () => {
+    expect(redactInternalPaths('/$bunfs/a.js and /$bunfs/b.js')).toBe('[internal] and [internal]');
+  });
+  it('returns clean text byte-unchanged (same reference path is a no-op)', () => {
+    const clean = 'a perfectly normal agent result';
+    expect(redactInternalPaths(clean)).toBe(clean);
+  });
+  it('makePreview scrubs an internal path before emitting', () => {
+    const p = makePreview('result: see /$bunfs/root/cli.js:1:2 for details')!;
+    expect(p.text).toBe('result: see [internal] for details');
+    expect(leaksInternalPath(p.text)).toBe(false);
   });
 });
 
