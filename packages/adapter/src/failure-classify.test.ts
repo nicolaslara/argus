@@ -41,6 +41,12 @@ describe('classifyFailureText', () => {
     expect(classifyFailureText('')).toBeNull();
   });
 
+  it('does NOT misclassify agent PROSE that merely mentions "overloaded" (needs API-error framing)', () => {
+    expect(classifyFailureText('I refactored the overloaded helper into two functions.')).toBeNull();
+    // but the real framed signature still classifies:
+    expect(classifyFailureText('API Error: 529 Overloaded. This is a server-side issue.')!.kind).toBe('overloaded');
+  });
+
   it('classifies the TAIL: a long transcript whose terminal record is a socket error', () => {
     const body = Array.from({ length: 50 }, (_, i) => `{"type":"text","text":"working step ${i}"}`).join('\n');
     const tail = '{"type":"text","text":"API Error: The socket connection was closed unexpectedly"}';

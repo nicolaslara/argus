@@ -42,8 +42,10 @@ export function classifyFailureText(text: string): AgentFailureCause | null {
     };
   }
 
-  // INFRA — the model API was overloaded (429/529).
-  if (/\b(429|529)\b/.test(text) || /\boverloaded\b/i.test(text)) {
+  // INFRA — the model API was overloaded (429/529). Require the API-error framing so a stray
+  // "overloaded" in an agent's PROSE tail can't misclassify a different failure (the real
+  // signature is `API Error: 529 Overloaded. This is a server-side issue`).
+  if (/\b(429|529)\b/.test(text) || /overloaded[^\n]{0,40}(server-side|api|transient|retry)/i.test(text)) {
     return {
       mode: 'infra',
       kind: 'overloaded',
