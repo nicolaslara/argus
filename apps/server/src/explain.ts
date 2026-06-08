@@ -15,8 +15,7 @@
 // OWN local `claude` auth — never copied off-machine. The cache lives under gitignored
 // .argus/. The poll endpoint stays behind the same token gate + path guards as the rest.
 
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { resolve, join } from 'node:path';
+import { join } from 'node:path';
 import type {
   ExplanationBatch,
   ExplanationSource,
@@ -29,6 +28,7 @@ import type {
 // This module is the caption ENGINE (artifact builders + cache I/O + background warming pool) that
 // consumes them. Re-exported below so existing import sites (routes.ts, the engine tests) are unchanged.
 import { type ClaudeRunner, defaultClaudeRunner } from './llm/runner.ts';
+import { DiskCache } from './llm/cache.ts';
 import {
   type NodeArtifact,
   PROMPT_VERSION,
@@ -56,50 +56,30 @@ export interface ExplainCacheIO {
 }
 
 /**
- * The default disk-backed cache under `<cacheDir>/<hash>.json`. The path is built with
- * resolve() and the hash charset is asserted hex (defense-in-depth: a hash can never
- * escape the cache dir). NEVER throws — a read miss/parse error returns null; a write
- * failure is swallowed (the caption still serves from memory this session).
+ * The default disk-backed cache under `<cacheDir>/<hash>.json`. Wraps the shared {@link DiskCache}
+ * (the hex-hash + containment path guard + never-throwing JSON read + swallow-on-failure write live
+ * there, in llm/cache.ts) and layers the explanation-specific typed validation + prompt-version
+ * check on read: a stale `promptVersion` is treated as a miss (bust + regenerate).
  */
 export function diskCacheIO(cacheDir: string): ExplainCacheIO {
-  const dirAbs = resolve(cacheDir);
-  const HEX_RE = /^[0-9a-f]{64}$/;
-  function pathFor(hash: string): string | null {
-    if (!HEX_RE.test(hash)) return null;
-    const p = resolve(dirAbs, `${hash}.json`);
-    if (p !== dirAbs && !p.startsWith(dirAbs + '/')) return null;
-    return p;
-  }
+  const cache = new DiskCache<CachedExplanation>(cacheDir);
   return {
     async read(hash: string): Promise<CachedExplanation | null> {
-      const p = pathFor(hash);
-      if (p === null) return null;
-      try {
-        const text = await readFile(p, 'utf8');
-        const o = JSON.parse(text) as unknown;
-        if (!o || typeof o !== 'object') return null;
-        const c = o as Record<string, unknown>;
-        if (typeof c.caption !== 'string') return null;
-        // Stale prompt-version → treat as a miss (bust + regenerate).
-        if (c.promptVersion !== PROMPT_VERSION) return null;
-        return {
-          caption: c.caption,
-          pattern: typeof c.pattern === 'string' ? c.pattern : null,
-          promptVersion: PROMPT_VERSION,
-        };
-      } catch {
-        return null;
-      }
+      // DiskCache returns the parsed JSON cast to CachedExplanation, but the on-disk content is
+      // untrusted — validate every field at runtime (a malformed entry / stale version → a miss).
+      const c = (await cache.read(hash)) as Record<string, unknown> | null;
+      if (!c || typeof c !== 'object') return null;
+      if (typeof c.caption !== 'string') return null;
+      // Stale prompt-version → treat as a miss (bust + regenerate).
+      if (c.promptVersion !== PROMPT_VERSION) return null;
+      return {
+        caption: c.caption,
+        pattern: typeof c.pattern === 'string' ? c.pattern : null,
+        promptVersion: PROMPT_VERSION,
+      };
     },
     async write(hash: string, entry: CachedExplanation): Promise<void> {
-      const p = pathFor(hash);
-      if (p === null) return;
-      try {
-        await mkdir(dirAbs, { recursive: true });
-        await writeFile(p, JSON.stringify(entry), 'utf8');
-      } catch {
-        // Swallow: a cache-write failure must never crash the server.
-      }
+      await cache.write(hash, entry);
     },
   };
 }

@@ -19,10 +19,10 @@
 // local `claude` auth — never copied off-machine. The cache lives under gitignored .argus/. NEVER
 // throws (a cache read/write failure or a runner error degrades to unavailable/null).
 
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { NarrativeSummary } from '@argus/contract';
 import { defaultClaudeRunner, type ClaudeRunner } from './llm/runner.ts';
+import { DiskCache } from './llm/cache.ts';
 // The summary prompt + its version + the parser live in ./llm/prompts/summary.ts; this module is the
 // ENGINE (cache + runner). Re-exported so existing import sites (routes.ts, the tests) are unchanged.
 import {
@@ -47,22 +47,17 @@ export type NarrativeSummaryStatus = 'ready' | 'unavailable' | 'error';
 /** The on-demand narrative-summary engine: content-addressed disk cache + a `claude -p` runner. */
 export class NarrativeSummaryEngine {
   private readonly runner: ClaudeRunner;
-  private readonly dirAbs: string;
+  private readonly cache: DiskCache<CachedSummary>;
   private readonly mem = new Map<string, NarrativeSummary>();
 
   constructor(opts: { cacheDir: string; runner?: ClaudeRunner }) {
     this.runner = opts.runner ?? defaultClaudeRunner();
-    this.dirAbs = resolve(opts.cacheDir);
+    this.cache = new DiskCache<CachedSummary>(opts.cacheDir);
   }
 
   /** Content-addressed key: sha256(stable input projection + SUMMARY_PROMPT_VERSION). */
   private keyFor(input: SummaryInput): string {
     return hashSummaryInput(input);
-  }
-  private pathFor(hash: string): string | null {
-    if (!/^[0-9a-f]{64}$/.test(hash)) return null;
-    const p = resolve(this.dirAbs, `${hash}.json`);
-    return p === this.dirAbs || p.startsWith(this.dirAbs + '/') ? p : null;
   }
 
   /**
@@ -78,17 +73,10 @@ export class NarrativeSummaryEngine {
     const mem = this.mem.get(hash);
     if (mem) return { status: 'ready', summary: mem };
 
-    const p = this.pathFor(hash);
-    if (p) {
-      try {
-        const c = JSON.parse(await readFile(p, 'utf8')) as CachedSummary;
-        if (c && c.version === SUMMARY_PROMPT_VERSION && c.summary && c.summary.caption) {
-          this.mem.set(hash, c.summary);
-          return { status: 'ready', summary: c.summary };
-        }
-      } catch {
-        /* miss */
-      }
+    const c = await this.cache.read(hash);
+    if (c && c.version === SUMMARY_PROMPT_VERSION && c.summary && c.summary.caption) {
+      this.mem.set(hash, c.summary);
+      return { status: 'ready', summary: c.summary };
     }
 
     let raw: string | null = null;
@@ -101,18 +89,7 @@ export class NarrativeSummaryEngine {
     const summary = parseSummary(raw);
     if (!summary) return { status: 'error', summary: null };
     this.mem.set(hash, summary);
-    if (p) {
-      try {
-        await mkdir(this.dirAbs, { recursive: true });
-        await writeFile(
-          p,
-          JSON.stringify({ summary, version: SUMMARY_PROMPT_VERSION } satisfies CachedSummary),
-          'utf8',
-        );
-      } catch {
-        /* cache-write failure is non-fatal */
-      }
-    }
+    await this.cache.write(hash, { summary, version: SUMMARY_PROMPT_VERSION });
     return { status: 'ready', summary };
   }
 }

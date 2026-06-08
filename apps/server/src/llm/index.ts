@@ -5,6 +5,7 @@
 // M4 narrative-summary engine to come) consume these. Re-exported here for a single import point.
 
 export { LLM_MODEL, CLAUDE_TIMEOUT_MS, defaultClaudeRunner, type ClaudeRunner } from './runner.ts';
+export { DiskCache } from './cache.ts';
 export {
   PROMPT_VERSION as CAPTION_PROMPT_VERSION,
   MAX_CAPTION_LEN,

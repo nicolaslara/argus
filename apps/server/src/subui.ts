@@ -8,10 +8,10 @@
 // `unavailable` when claude is absent (the web falls back to R1's readable result view).
 
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { PanelSpec, SubUiStatus } from '@argus/contract';
 import { defaultClaudeRunner, type ClaudeRunner } from './llm/runner.ts';
+import { DiskCache } from './llm/cache.ts';
 // The panel prompt + its strict validator now live in ./llm/prompts/panel.ts; this module is the
 // ENGINE (cache + runner). Re-exported so existing import sites (routes.ts, the tests) are unchanged.
 import { SUBUI_PROMPT_VERSION, buildSubUiPrompt, parseSubUiSpec } from './llm/prompts/panel.ts';
@@ -25,21 +25,16 @@ interface CachedPanel {
 /** The on-demand sub-UI engine: content-addressed disk cache + a `claude -p` runner. */
 export class SubUiEngine {
   private readonly runner: ClaudeRunner;
-  private readonly dirAbs: string;
+  private readonly cache: DiskCache<CachedPanel>;
   private readonly mem = new Map<string, PanelSpec>();
 
   constructor(opts: { cacheDir: string; runner?: ClaudeRunner }) {
     this.runner = opts.runner ?? defaultClaudeRunner();
-    this.dirAbs = resolve(opts.cacheDir);
+    this.cache = new DiskCache<CachedPanel>(opts.cacheDir);
   }
 
   private keyFor(result: unknown): string {
     return createHash('sha256').update(JSON.stringify(result) + SUBUI_PROMPT_VERSION).digest('hex');
-  }
-  private pathFor(hash: string): string | null {
-    if (!/^[0-9a-f]{64}$/.test(hash)) return null;
-    const p = resolve(this.dirAbs, `${hash}.json`);
-    return p === this.dirAbs || p.startsWith(this.dirAbs + '/') ? p : null;
   }
 
   /** Generate (or cache-hit) the panel for one result. NEVER throws. */
@@ -49,17 +44,10 @@ export class SubUiEngine {
     const mem = this.mem.get(hash);
     if (mem) return { status: 'ready', spec: mem };
 
-    const p = this.pathFor(hash);
-    if (p) {
-      try {
-        const c = JSON.parse(await readFile(p, 'utf8')) as CachedPanel;
-        if (c && c.version === SUBUI_PROMPT_VERSION && c.spec) {
-          this.mem.set(hash, c.spec);
-          return { status: 'ready', spec: c.spec };
-        }
-      } catch {
-        /* miss */
-      }
+    const c = await this.cache.read(hash);
+    if (c && c.version === SUBUI_PROMPT_VERSION && c.spec) {
+      this.mem.set(hash, c.spec);
+      return { status: 'ready', spec: c.spec };
     }
 
     let raw: string | null = null;
@@ -72,14 +60,7 @@ export class SubUiEngine {
     const spec = parseSubUiSpec(raw);
     if (!spec) return { status: 'error', spec: null };
     this.mem.set(hash, spec);
-    if (p) {
-      try {
-        await mkdir(this.dirAbs, { recursive: true });
-        await writeFile(p, JSON.stringify({ spec, version: SUBUI_PROMPT_VERSION } satisfies CachedPanel), 'utf8');
-      } catch {
-        /* cache-write failure is non-fatal */
-      }
-    }
+    await this.cache.write(hash, { spec, version: SUBUI_PROMPT_VERSION });
     return { status: 'ready', spec };
   }
 }
