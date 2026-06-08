@@ -87,7 +87,14 @@ build stack + the redaction/segmentation specs are in `knowledge.md`.
   for back-compat; all gates green). M4's summary prompt = a new `llm/prompts/summary.ts` + a small engine.
   *Follow-up:* dedupe the content-addressed disk cache (explain + subui copies) into `llm/cache.ts`.
 
-- [ ] **M4 — Local-LLM per-block summaries.** *(deferred-additive; small model; **ASYNC, never blocks**)*
+- [x] **M4 — Local-LLM per-block summaries. DONE 2026-06-08** (`52a779c`; smoke-test-timeout fix `d33e5f0`).
+  Built via workflow `wf_757e2c8f-d48`; gate-verified in the main loop (703 tests), both adversarial-review
+  findings addressed (key/prompt topicLabel normalization; word-boundary pattern cap). LIVE on real
+  `d2cfe0e6` (72 blocks): cold ~18.9s → an accurate caption/body/intent/pattern, warm 0.02s cache hit.
+  `llm/prompts/summary.ts` (sum-v1, HEAD+TAIL-only input) + `NarrativeSummaryEngine` (mirrors SubUiEngine;
+  `.argus/cache/narrative-summaries/`) + `GET .../blocks/:blockId/summary` (reuses the stat-keyed narrative
+  cache; optional dep → null when absent) + StoryPage IntersectionObserver-gated lazy fetch. UI renders
+  caption + body (intent/pattern in the contract for later badging).
   **Architecture (locked 2026-06-08, per user):**
   - **LLM never blocks segmentation.** The narrative returns blocks as today (fast + disk-cached);
     summaries are a SEPARATE async layer (mirror the `ExplanationEngine` poll pattern) fetched/polled
@@ -108,6 +115,14 @@ build stack + the redaction/segmentation specs are in `knowledge.md`.
   the `redact()` **noop seam** folds into M0 (placement now, pluggable later).
 
 ## Follow-ups discovered
+- **LLM runner latency (measured 2026-06-08).** `claude -p` for the summaries is ~16s on haiku, and
+  haiku is SLOWER than sonnet (~14s vs ~3.7s api) because it over-generates inside the full CC agent
+  harness (~1400-2035 out-tok vs ~110). Breakdown: ~3.3s fixed spawn/CLI overhead + a ~17-26K-token
+  harness system prompt on every call (MCP-off doesn't help) + output-token-dominated generation. FIX:
+  add an API/SDK-based `ClaudeRunner` (tools off, one-line system prompt, `max_tokens≈150`) → ~1-2s,
+  env-gated behind the existing seam with the CLI runner as the zero-config/subscription fallback.
+  Tradeoff = auth (subscription vs `ANTHROPIC_API_KEY`, ~$0.001/summary). AWAITING user go-ahead.
+  (ACP/persistent-agent amortizes only the ~3.3s, not the harness/output cost.)
 - The `narrative-design-options` synth agent returned a placeholder StructuredOutput (a non-null junk
   payload that `withRetry` doesn't catch) — add a sanity check / re-prompt on suspiciously-empty
   synth output, and fold `withRetry` into the saved `.claude/workflows/*.js`.
