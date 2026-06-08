@@ -188,6 +188,20 @@ describe('refine-plan → loop container + dashed loop-back (max 3)', () => {
   });
 });
 
+describe('parsePlan — a `for (const x of ARR)` loop captures the item count', () => {
+  it('shows "per item · ×N" for a for-of over a known const array (overnight-product shape)', () => {
+    const src = [
+      "export const meta = { name: 'm', description: 'd' }",
+      "const tier1 = [{ name: 'a' }, { name: 'b' }, { name: 'c' }, { name: 'd' }, { name: 'e' }]",
+      "for (const it of tier1) { await agent('impl:' + it.name, { label: 'impl:' + it.name }) }",
+    ].join('\n');
+    const plan = parsePlan(src, 'forof.js');
+    const loop = plan.nodes.find((n): n is LoopNode => n.kind === 'loop');
+    expect(loop, 'the for-of loop node').toBeDefined();
+    expect(loop!.stopCondition).toBe('per item · ×5'); // the 5-element const array
+  });
+});
+
 describe('materialize-workpads → spread-mix → {unbounded, min:n}', () => {
   const plan = parseFixture('materialize-workpads.js');
 

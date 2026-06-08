@@ -404,6 +404,15 @@ export interface Overlay {
   rounds: number | null;
   /** loopNodeId → that loop body's bound instances, split by round. */
   loopRounds?: Record<string, LoopRoundBinding[]>;
+  /**
+   * loopNodeId → agents bound to the loop CONTAINER by phase, NOT to a statically-named body
+   * node. When a loop iterates dynamic-label bodies (`agent('impl:'+item.name')` via a helper),
+   * the static plan can't enumerate the body, so those run agents would otherwise all be
+   * `unplanned` and the loop box would render empty. We instead bind each unplanned agent whose
+   * phase matches a loop's phase to that loop, so the loop shows what actually ran inside it.
+   * Omitted when no agent was container-bound.
+   */
+  loopAgents?: Record<string, LoopRoundInstance[]>;
 }
 
 // ============================================================================

@@ -572,6 +572,10 @@ export function App() {
   const overlayNotRun = overlay?.bindings.filter((b) => b.status === 'not-run').length ?? 0;
   const overlayPartial = overlay?.bindings.filter((b) => b.status === 'partial').length ?? 0;
   const overlayUnplanned = overlay?.unplannedAgentIds.length ?? 0;
+  // Agents bound to a loop CONTAINER by phase (dynamic-body loops the plan couldn't name statically).
+  const overlayInLoops = overlay?.loopAgents
+    ? Object.values(overlay.loopAgents).reduce((sum, a) => sum + a.length, 0)
+    : 0;
   const overlayRounds = overlay?.rounds ?? null;
 
   // STEP 3: the failure banner content (null unless the selected run failed). Drives both the
@@ -882,6 +886,7 @@ export function App() {
           ) : null}
           <span className="run-header-meta">
             {overlayBound} bound
+            {overlayInLoops > 0 ? ` · ${overlayInLoops} in loops` : ''}
             {overlayPartial > 0 ? ` · ${overlayPartial} partial` : ''}
             {overlayNotRun > 0 ? ` · ${overlayNotRun} planned-not-run` : ''}
             {overlayUnplanned > 0 ? ` · ${overlayUnplanned} unplanned` : ''}

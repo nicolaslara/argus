@@ -102,6 +102,8 @@ export function paintOverlay(
     // loop node id) — the data that makes the round axis a clickable → DetailPanel drill.
     if (n.type === 'planLoop') {
       const roundBindings = overlay.loopRounds?.[n.id];
+      // Dynamic-body fallback: agents bound to THIS loop container by phase (no static body node).
+      const containerAgents = overlay.loopAgents?.[n.id];
       return {
         ...n,
         data: {
@@ -111,6 +113,7 @@ export function paintOverlay(
           painted: true,
           bindLive: live,
           ...(roundBindings ? { roundBindings } : {}),
+          ...(containerAgents ? { containerAgents } : {}),
         },
       };
     }

@@ -810,7 +810,22 @@ class PlanBuilder {
   private walkLoop(s: AnyNode, ctx: WalkCtx): void {
     const loopId = this.nextId('loop');
     const maxRounds = readLoopCap(s, this.caps);
-    const stopCondition = describeStopCondition(s, maxRounds);
+    let stopCondition = describeStopCondition(s, maxRounds);
+    // Enrich a `for (const x of items)` loop with its static item COUNT so the box explains the
+    // loop's shape ("per item · ×5") instead of a bare "per item": read `s.right` and, when it's
+    // a known const array (or an inline array literal), use its element count.
+    if ((s.type === 'ForOfStatement' || s.type === 'ForInStatement') && maxRounds === null) {
+      const right = s.right as AnyNode | undefined;
+      let count: number | null = null;
+      if (right?.type === 'Identifier') {
+        count = this.scope.get(String(right.name))?.literalCount ?? null;
+      } else if (right?.type === 'ArrayExpression') {
+        count = (right.elements as unknown[]).filter(
+          (e) => isNode(e as unknown) && (e as AnyNode).type !== 'SpreadElement',
+        ).length;
+      }
+      if (count != null && count > 0) stopCondition = `per item · ×${count}`;
+    }
     const loop: LoopNode = {
       id: loopId,
       kind: 'loop',

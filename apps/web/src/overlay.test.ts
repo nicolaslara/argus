@@ -265,3 +265,39 @@ describe('buildOverlay — §6 three-way tie-break', () => {
     expect(ov.bindings.find((b) => b.planNodeId === 'A')!.agentIds).toEqual(['a1']);
   });
 });
+
+describe('buildOverlay — dynamic-body loop fallback (phase-bound agents)', () => {
+  // A loop CONTAINER in phase 1, NO bindable agent node (the body labels were dynamic, so the
+  // static plan couldn't name them). Run agents in phase 1 should bind to the loop, not unplanned.
+  const loopPlan = () =>
+    mkPlan([
+      planNode({
+        id: 'L',
+        kind: 'loop',
+        title: 'loop',
+        labelTemplate: null,
+        phaseRef: 1,
+        stopCondition: 'per item · ×3',
+        maxRounds: null,
+      } as Partial<PlanModel['nodes'][number]> & { id: string }),
+    ]);
+
+  it('binds unplanned agents whose phase matches a loop to the loop CONTAINER (loopAgents)', () => {
+    const run = mkRun([
+      agentNode({ agentId: 'a1', label: 'impl:custom-types', phaseIndex: 1, state: 'done' }),
+      agentNode({ agentId: 'a2', label: 'review:custom-types', phaseIndex: 1, state: 'done' }),
+    ]);
+    const ov = buildOverlay(loopPlan(), run);
+    expect(ov.unplannedAgentIds).toEqual([]); // absorbed by the loop, not left unplanned
+    expect(ov.loopAgents?.['L']?.map((i) => i.agentId).sort()).toEqual(['a1', 'a2']);
+    expect(ov.loopAgents?.['L']?.every((i) => i.state === 'done')).toBe(true);
+  });
+
+  it('an agent whose phase resolves to NO loop stays unplanned (no false binding)', () => {
+    // phaseIndex 2 has no run phase title (mkRun only declares phase 1) → no loop match.
+    const run = mkRun([agentNode({ agentId: 'b1', label: 'report:final', phaseIndex: 2 })]);
+    const ov = buildOverlay(loopPlan(), run);
+    expect(ov.unplannedAgentIds).toEqual(['b1']);
+    expect(ov.loopAgents).toBeUndefined();
+  });
+});

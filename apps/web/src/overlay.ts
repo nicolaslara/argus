@@ -83,6 +83,19 @@ export function buildOverlay(plan: PlanModel, run: RunModel): Overlay {
     });
   }
 
+  // Loop CONTAINERS that sit in a resolvable phase. When a loop iterates dynamic-label bodies
+  // the static plan has NO bindable body node, so an agent that ran inside the loop matches
+  // nothing above and would go unplanned. We map each such loop to its phase title so an
+  // unplanned agent whose phase matches can be bound to the loop CONTAINER (see fallback below).
+  const phaseLoops: { loopId: string; phaseTitle: string }[] = [];
+  for (const node of plan.nodes) {
+    if (node.kind !== 'loop' || node.phaseRef == null) continue;
+    const phaseTitle = planLaneTitle.get(node.phaseRef);
+    if (phaseTitle) phaseLoops.push({ loopId: node.id, phaseTitle });
+  }
+  // loopId → agents bound to the CONTAINER by phase (the dynamic-body fallback).
+  const loopContainerAgents = new Map<string, AgentNode[]>();
+
   // --- per-agent candidate resolution (§6 tie-break) --------------------------------
   // For each run agent, collect candidate plan nodes; classify each agent into exactly
   // one bucket (exact > prefix-unique > ambiguous), or unplanned if no candidate.
@@ -97,6 +110,18 @@ export function buildOverlay(plan: PlanModel, run: RunModel): Overlay {
     const candidates = candidatesFor(agent, aPhaseTitle, bindables);
 
     if (candidates.length === 0) {
+      // Dynamic-body loop fallback: an agent that matched no plan AGENT node but whose phase
+      // matches a loop CONTAINER's phase ran INSIDE that loop (its body label was dynamic, so
+      // the static plan couldn't name it). Bind it to the loop container instead of unplanned,
+      // so the loop box shows what actually ran. (>1 loop in a phase is not expected; first wins.)
+      if (aPhaseTitle) {
+        const loop = phaseLoops.find((l) => l.phaseTitle === aPhaseTitle);
+        if (loop) {
+          if (!loopContainerAgents.has(loop.loopId)) loopContainerAgents.set(loop.loopId, []);
+          loopContainerAgents.get(loop.loopId)!.push(agent);
+          continue;
+        }
+      }
       unplannedAgentIds.push(agent.agentId);
       continue;
     }
@@ -199,11 +224,21 @@ export function buildOverlay(plan: PlanModel, run: RunModel): Overlay {
       }));
   }
 
+  // Container-bound (dynamic-body) loop agents → LoopRoundInstance[] per loop, label-sorted so
+  // the loop renders a stable summary of what ran inside it.
+  const loopAgents: Record<string, LoopRoundInstance[]> = {};
+  for (const [loopId, agents] of loopContainerAgents) {
+    loopAgents[loopId] = agents
+      .map((a) => ({ agentId: a.agentId, label: a.label, state: a.state }))
+      .sort((x, y) => x.label.localeCompare(y.label));
+  }
+
   return {
     bindings,
     unplannedAgentIds,
     rounds: observeRounds(run),
     ...(Object.keys(loopRounds).length > 0 ? { loopRounds } : {}),
+    ...(Object.keys(loopAgents).length > 0 ? { loopAgents } : {}),
   };
 }
 

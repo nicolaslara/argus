@@ -20,7 +20,7 @@
 
 import { memo } from 'react';
 import { Handle, Position } from '@xyflow/react';
-import type { Confidence, LoopRoundBinding, Multiplicity, PlanBinding } from '@argus/contract';
+import type { Confidence, LoopRoundBinding, LoopRoundInstance, Multiplicity, PlanBinding } from '@argus/contract';
 import { MultiplicityChip, isFanned } from './MultiplicityChip.tsx';
 import {
   AgentCardShell,
@@ -347,6 +347,14 @@ export interface PlanLoopData {
    * loop body's subagents are reached HERE (the round axis), never via a lane-drawer.
    */
   roundBindings?: LoopRoundBinding[];
+  /**
+   * Dynamic-body fallback (overlay.loopAgents): the run agents bound to this loop CONTAINER by
+   * phase because the loop iterates dynamic-label bodies the static plan couldn't name. Rendered
+   * as a compact "N agents · M done · K failed" fill so the loop box shows what actually ran
+   * inside it instead of an empty dashed box. Distinct from `roundBindings` (statically-named
+   * body nodes split by round).
+   */
+  containerAgents?: LoopRoundInstance[];
   [key: string]: unknown;
 }
 
@@ -436,6 +444,37 @@ export const LoopContainer = memo(function LoopContainer({ id, data }: { id: str
           })}
         </div>
       ) : null}
+      {/* Dynamic-body fallback: when the loop iterated dynamic-label bodies (no static body node),
+          show what actually ran inside it — a compact count + done/failed status + a sample of the
+          agent labels — instead of an empty dashed box. (Full per-agent drill lives in the table.) */}
+      {data.containerAgents && data.containerAgents.length > 0 ? (
+        <LoopFill agents={data.containerAgents} />
+      ) : null}
+    </div>
+  );
+});
+
+/** The dynamic-body loop fill: "N agents · M done · K failed" + a sample of the agent labels. */
+const LoopFill = memo(function LoopFill({ agents }: { agents: LoopRoundInstance[] }) {
+  const done = agents.filter((a) => a.state === 'done').length;
+  const failed = agents.filter((a) => a.state === 'error' || a.state === 'interrupted').length;
+  const SAMPLE = 2;
+  const shown = agents.slice(0, SAMPLE);
+  const extra = agents.length - shown.length;
+  return (
+    <div className="plan-loop-fill" aria-label={`${agents.length} agents ran in this loop`}>
+      <div className="plan-loop-fill-summary">
+        {agents.length} agent{agents.length === 1 ? '' : 's'} · {done} done
+        {failed > 0 ? <span className="plan-loop-fill-failed"> · {failed} failed</span> : null}
+      </div>
+      <div className="plan-loop-fill-chips">
+        {shown.map((a) => (
+          <span key={a.agentId} className={`plan-loop-chip plan-loop-chip-${a.state}`} title={a.label}>
+            {a.label}
+          </span>
+        ))}
+        {extra > 0 ? <span className="plan-loop-chip-more">+{extra}</span> : null}
+      </div>
     </div>
   );
 });

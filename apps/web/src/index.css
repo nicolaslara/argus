@@ -990,6 +990,54 @@ body {
   border: 1.5px dashed #d29922;
   border-radius: 12px;
   background: rgba(210, 153, 34, 0.04);
+  overflow: hidden; /* clip the dynamic-body fill so it never spills over neighbouring nodes */
+}
+/* Dynamic-body loop fill: a compact "what ran inside this loop" summary, shown when the loop
+   iterated dynamic-label bodies the static plan couldn't name (overlay.loopAgents). Fits within
+   the loop container's body; the full per-agent drill lives in the agent table. */
+.plan-loop-fill {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 14px 12px;
+  min-width: 0;
+}
+.plan-loop-fill-summary {
+  font-size: 12px;
+  color: var(--argus-fg);
+  font-variant-numeric: tabular-nums;
+}
+.plan-loop-fill-failed {
+  color: #f0883e;
+}
+.plan-loop-fill-chips {
+  display: flex;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.plan-loop-chip {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10.5px;
+  padding: 2px 7px;
+  border-radius: 5px;
+  border: 1px solid #2b2515;
+  background: rgba(210, 153, 34, 0.08);
+  color: var(--argus-dim);
+}
+.plan-loop-chip-done { border-color: rgba(63, 185, 80, 0.35); color: #7ee787; }
+.plan-loop-chip-error,
+.plan-loop-chip-interrupted { border-color: rgba(240, 136, 62, 0.4); color: #f0883e; }
+.plan-loop-chip-more {
+  flex: none;
+  font-size: 10.5px;
+  color: var(--argus-dim);
+  align-self: center;
 }
 .plan-loop-header {
   display: flex;
