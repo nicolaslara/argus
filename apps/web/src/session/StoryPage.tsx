@@ -15,7 +15,7 @@
 // outlined chips) — the story-specific classes live in a `===== Story view (M1b) =====`
 // block appended to index.css.
 
-import { memo, useMemo, useState } from 'react';
+import { createContext, memo, useContext, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type {
   AskQuestion,
@@ -41,7 +41,21 @@ interface StoryPageProps {
   projectName?: string;
   /** Total session count for the project (shown in the header; the list itself lives in the rail). */
   sessionCount?: number;
+  /** M3: true if this spawn resolves to a run → its chip becomes a clickable link to the run. */
+  canOpenSpawn?: (spawn: WorkflowSpawn) => boolean;
+  /** M3: open the run a spawn launched (navigates to the Workflows page with that run selected). */
+  onOpenSpawn?: (spawn: WorkflowSpawn) => void;
 }
+
+/**
+ * M3 spawn navigation, provided by StoryPage (from App's run-resolution handlers) and consumed by
+ * the deep {@link WorkflowSpawnChip} without prop-drilling through the block list. `canOpen`
+ * decides whether a chip is a clickable link; `onOpen` performs the navigation.
+ */
+const SpawnNavContext = createContext<{
+  canOpen: (spawn: WorkflowSpawn) => boolean;
+  onOpen: (spawn: WorkflowSpawn) => void;
+} | null>(null);
 
 // ---- small pure presentation helpers (ISO-aware; the contract carries ISO strings) -----
 
@@ -95,9 +109,26 @@ function topTools(toolCounts: Record<string, number>, limit: number): Array<[str
 // the left rail's Sessions section; App lifts the chosen `sessionId` and passes
 // it down here, so the rail and this narrative never disagree.
 // ============================================================================
-export const StoryPage = memo(function StoryPage({ slug, sessionId, projectName, sessionCount }: StoryPageProps) {
+export const StoryPage = memo(function StoryPage({
+  slug,
+  sessionId,
+  projectName,
+  sessionCount,
+  canOpenSpawn,
+  onOpenSpawn,
+}: StoryPageProps) {
   const shortId = sessionId ? sessionId.split('-')[0] ?? sessionId : null;
+  // Stable nav value so the spawn chips don't re-render on every StoryPage render. A no-op default
+  // keeps the chips inert (non-clickable) when App didn't wire the handlers.
+  const spawnNav = useMemo(
+    () => ({
+      canOpen: (s: WorkflowSpawn) => (canOpenSpawn ? canOpenSpawn(s) : false),
+      onOpen: (s: WorkflowSpawn) => onOpenSpawn?.(s),
+    }),
+    [canOpenSpawn, onOpenSpawn],
+  );
   return (
+    <SpawnNavContext.Provider value={spawnNav}>
     <div className="story" aria-label="session narrative">
       <header className="story-header">
         <span className="story-eyebrow">Story</span>
@@ -125,6 +156,7 @@ export const StoryPage = memo(function StoryPage({ slug, sessionId, projectName,
         </div>
       </div>
     </div>
+    </SpawnNavContext.Provider>
   );
 });
 
@@ -367,15 +399,34 @@ const PreviewLine = memo(function PreviewLine({
 });
 
 const WorkflowSpawnChip = memo(function WorkflowSpawnChip({ spawn }: { spawn: WorkflowSpawn }) {
-  return (
-    <span
-      className="story-chip story-chip-spawn"
-      title={spawn.runId ? `run ${spawn.runId}` : `args ${spawn.argsDigest}`}
-    >
-      <span className="story-chip-glyph" aria-hidden="true">
-        ⧉
-      </span>
+  // M3: when the spawn resolves to a run, the chip is a BUTTON that opens that run in the
+  // Workflows page; otherwise it stays an inert label (no run matched → nothing to open).
+  const nav = useContext(SpawnNavContext);
+  const openable = nav ? nav.canOpen(spawn) : false;
+  const inner = (
+    <>
+      <span className="story-chip-glyph" aria-hidden="true">⧉</span>
       <span className="story-chip-label">{spawn.scriptBasename}</span>
+      {openable ? (
+        <span className="story-chip-open" aria-hidden="true">↗</span>
+      ) : null}
+    </>
+  );
+  if (openable && nav) {
+    return (
+      <button
+        type="button"
+        className="story-chip story-chip-spawn story-chip-spawn-open"
+        title={`open this run in Workflows · ${spawn.scriptBasename}`}
+        onClick={() => nav.onOpen(spawn)}
+      >
+        {inner}
+      </button>
+    );
+  }
+  return (
+    <span className="story-chip story-chip-spawn" title={`args ${spawn.argsDigest}`}>
+      {inner}
     </span>
   );
 });

@@ -10,7 +10,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { useQuery } from '@tanstack/react-query';
-import type { ProjectRef, RunSummary, WorkflowMeta } from '@argus/contract';
+import type { ProjectRef, RunSummary, WorkflowMeta, WorkflowSpawn } from '@argus/contract';
 import {
   fetchProjects,
   fetchProjectRuns,
@@ -23,6 +23,7 @@ import {
   fetchFailureCause,
 } from './api.ts';
 import { orderSessionsByActivity } from './session/session-format.ts';
+import { matchSpawnToRun } from './session/spawn-match.ts';
 import { pickPlanSource } from './plan-correspondence.ts';
 import { ExpandContext, type LoopDrillMode } from './expand-context.ts';
 import { readLoopDrillMode, writeLoopDrillMode } from './loop-drill-setting.ts';
@@ -510,6 +511,25 @@ export function App() {
     if (s === 'explorer' || s === 'projects' || s === 'runs') setTopView('workflows');
     else if (s === 'story') setTopView('story');
   }
+  // Story M3: a workflow-spawn chip jumps straight into the run it launched. Resolve the spawn to
+  // a run by the time window (matchSpawnToRun — zero false positives), select it, and switch to the
+  // Workflows page. useCallback over `runs` so StoryPage's memo stays stable between renders.
+  const canOpenSpawn = useCallback(
+    (spawn: WorkflowSpawn) => matchSpawnToRun(spawn, runs) !== null,
+    [runs],
+  );
+  const handleOpenSpawn = useCallback(
+    (spawn: WorkflowSpawn) => {
+      const run = matchSpawnToRun(spawn, runs);
+      if (!run) return;
+      setSelectedRunId(run.ref.runId);
+      setSelectedWorkflowName(run.workflowName);
+      setView('run');
+      setTopView('workflows');
+      setRailSection('explorer');
+    },
+    [runs],
+  );
   // R2: selection is UNIFIED across both views. Picking a run drives the Run view AND syncs
   // the Plan workflow to the run's workflow, so Plan/Run both describe the SAME workflow
   // (no more "Plan shows X while Run shows Y").
@@ -675,6 +695,8 @@ export function App() {
             sessionId={selectedSessionId}
             projectName={project.name}
             sessionCount={orderedSessions.length}
+            canOpenSpawn={canOpenSpawn}
+            onOpenSpawn={handleOpenSpawn}
           />
         ) : (
           <div className="argus-empty" role="status">

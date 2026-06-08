@@ -97,17 +97,22 @@ build stack + the redaction/segmentation specs are in `knowledge.md`.
   synth output, and fold `withRetry` into the saved `.claude/workflows/*.js`.
 - argus visualizing the session that built argus is the strongest dogfood.
 
-### Story-view UI polish (queued 2026-06-08, user-requested)
-- **Surface `AskUserQuestion` in the narrative.** A turn that is an `AskUserQuestion` tool call (and
-  ideally the user's chosen answer) should render the QUESTION + OPTIONS inline in the Story turns,
-  not a bare/collapsed tool row — these are the decision points of a session. Special-case the
-  tool-call renderer in `StoryPage` (read `input.questions[].{question,header,options[].{label,
-  description}}` from the tool_use; pair with the following user/tool_result answer when resolvable).
-- **Clickable workflow spawns → open the run.** The `WorkflowSpawnChip` (⧉ `<script>.js`) should be a
-  link/button that navigates straight into that run in the Workflows page (select the run + switch
-  `topView` to 'workflows'). Needs the **M3 spawn→run correlation** (Workflow tool_use `{scriptPath,
-  args}` → `wf_*.json` by cached-script basename + startTime window) to resolve the `runId`; until
-  M3 lands, the chip stays inert. This is the concrete payoff that motivates M3.
+### Story-view UI polish (DONE 2026-06-08, user-requested)
+- [x] **Surface `AskUserQuestion` in the narrative.** `TurnToolCall.ask` (adapter `extractAskQuestions`,
+  bounded + redact()-routed) → `StoryPage` `AskBlock` renders the question + header + options inline;
+  the chosen answer shows naturally in the following user turn. Verified on the real rail-design
+  question (`f1f1136`).
+- [x] **Clickable workflow spawns → open the run.** `matchSpawnToRun` (web, `spawn-match.ts`) resolves a
+  spawn → run by the **timestamp window + uniqueness** (run `startTime` === the spawning tool_use ts,
+  observed Δ=0 ms; zero false positives). The `WorkflowSpawnChip` becomes a clickable link (↗) when
+  resolvable → App selects the run + switches to the Workflows page. **15/16 spawns clickable** on the
+  real argus session; navigation verified (lands on the right run).
+  *Note:* this is the **M3** correlation, done CLIENT-SIDE (the web already has the runs with
+  `startTime` + the spawns with `timestamp`) — name-matching is impossible (one template script,
+  differently-named runs), so timestamp is the only reliable join. No adapter/server/cache change.
+
+- [x] ~~**M3 — Workflow-spawn → run correlation**~~ **DONE (client-side)** — see above; supersedes the
+  adapter-side `wf_*.json` basename plan (basenames don't match meta.names; timestamp is exact).
 
 ## Notes — open questions (status)
 

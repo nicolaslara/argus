@@ -3518,6 +3518,26 @@ div.detail-log-fail {
 .story-chip-spawn {
   color: #a371f7;
 }
+/* M3: a spawn chip that resolved to a run — a clickable link into the Workflows page. The chip is
+   a <button>, so reset button chrome and add an affordance (the ↗ glyph + hover fill). */
+.story-chip-spawn-open {
+  appearance: none;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  background: rgba(163, 113, 247, 0.08);
+  transition: background 140ms ease, border-color 140ms ease;
+}
+.story-chip-spawn-open:hover {
+  background: rgba(163, 113, 247, 0.2);
+  border-color: #c29bff;
+}
+.story-chip-open {
+  font-size: 10px;
+  line-height: 1;
+  opacity: 0.8;
+}
 .story-chip-glyph {
   font-size: 11px;
   line-height: 1;
