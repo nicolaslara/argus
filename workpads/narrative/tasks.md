@@ -92,7 +92,12 @@ build stack + the redaction/segmentation specs are in `knowledge.md`.
   `prompts/caption.ts` (node captions) + `prompts/panel.ts` (sub-UI/describe) — each its own file with
   its version + parser. `explain.ts`/`subui.ts` are now thin ENGINES that consume `llm/` (re-exporting
   for back-compat; all gates green). M4's summary prompt = a new `llm/prompts/summary.ts` + a small engine.
-  *Follow-up:* dedupe the content-addressed disk cache (explain + subui copies) into `llm/cache.ts`.
+  *Follow-up: DONE 2026-06-08 (`b270753`).* The content-addressed cache IO (hex-hash + containment
+  pathFor + never-throw JSON read + swallow-on-failure write) is deduped into `llm/cache.ts` as a shared
+  `DiskCache<T>`; explain/subui/narrative-summary consume it (each keeps its own key projection + typed
+  validation). Behavior-preserving (same paths/keys → existing caches hit); 740 tests green. *Remaining:*
+  the subui + narrative-summary `generate()` flow (mem→disk→runner→parse→mem+disk) is also near-identical —
+  a generic `CachedRunner` could fold it, but the validity checks + status enums differ (left for a focused pass).
 
 - [x] **M4 — Local-LLM per-block summaries. DONE 2026-06-08** (`52a779c`; smoke-test-timeout fix `d33e5f0`).
   Built via workflow `wf_757e2c8f-d48`; gate-verified in the main loop (703 tests), both adversarial-review
