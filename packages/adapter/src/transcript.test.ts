@@ -815,5 +815,8 @@ describe.runIf(REAL_PRESENT)('REAL-DATA smoke — the actual ~67 MB transcript',
     );
     // A loose performance gate so a future O(n^2) regression fails the suite.
     expect(tSeg - t0).toBeLessThan(30_000);
-  });
+    // vitest's per-test timeout must exceed that 30 s budget, else the default 5 s wall-clock kills
+    // the test before its own perf gate can evaluate — which it now does, as this live dogfood
+    // transcript has grown past ~67 MB and read+segment crosses 5 s.
+  }, 45_000);
 });
