@@ -590,5 +590,7 @@ export type {
   ProjectSessions,
   TurnRole,
   TurnToolCall,
+  AskOption,
+  AskQuestion,
   Turn,
 } from './narrative.ts';

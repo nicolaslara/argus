@@ -3666,6 +3666,67 @@ a.story-chip-commit:hover {
   min-width: 0;
 }
 
+/* AskUserQuestion decision point — the question + its options, surfaced inline in a turn (a
+   session's branch points). A left accent + outlined option rows; text-node only (no HTML). */
+.story-ask {
+  margin: 4px 0 2px;
+  padding: 10px 12px;
+  border: 1px solid #2a2f44;
+  border-left: 3px solid #7c8cff;
+  border-radius: 8px;
+  background: rgba(124, 140, 255, 0.06);
+}
+.story-ask-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 5px;
+}
+.story-ask-tag {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #9aa6ff;
+}
+.story-ask-header {
+  font-size: 11px;
+  color: var(--argus-dim);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.story-ask-question {
+  font-size: 13px;
+  color: var(--argus-fg);
+  line-height: 1.5;
+}
+.story-ask-options {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.story-ask-option {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 9px;
+  border: 1px solid #232a31;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.015);
+}
+.story-ask-option-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--argus-fg);
+}
+.story-ask-option-desc {
+  font-size: 11.5px;
+  color: var(--argus-dim);
+  line-height: 1.45;
+}
+
 /* empty / loading / error states shared across the three levels. */
 .story-empty,
 .story-muted {

@@ -674,6 +674,42 @@ describe('loadBlockTurns / blockTurns — full turns of one block', () => {
     expect(turns[0]!.toolCalls[0]!.briefArgs).toContain('[R]');
     expect(turns[0]!.toolCalls[0]!.briefArgs).not.toContain('SECRET');
   });
+
+  it('an AskUserQuestion tool_use surfaces its question + options (the decision-point view)', () => {
+    setRedactionStrategy({ redact: (t) => t.replace(/SECRET/g, '[R]') });
+    const text = assistant(
+      [
+        {
+          type: 'tool_use',
+          name: 'AskUserQuestion',
+          input: {
+            questions: [
+              {
+                question: 'Which DB? SECRET',
+                header: 'Database',
+                multiSelect: false,
+                options: [
+                  { label: 'Postgres', description: 'relational SECRET' },
+                  { label: 'SQLite', description: 'embedded' },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+      '2026-06-07T00:00:00Z',
+    );
+    const turns = blockTurns(scanTranscript(text), { start: 0, end: 0 });
+    const tc = turns[0]!.toolCalls[0]!;
+    expect(tc.name).toBe('AskUserQuestion');
+    expect(tc.ask).toHaveLength(1);
+    expect(tc.ask![0]!.question).toBe('Which DB? [R]'); // redact()-routed
+    expect(tc.ask![0]!.header).toBe('Database');
+    expect(tc.ask![0]!.options.map((o) => o.label)).toEqual(['Postgres', 'SQLite']);
+    expect(tc.ask![0]!.options[0]!.description).toBe('relational [R]'); // options redact()-routed too
+    // No raw secret leaks anywhere in the projected turn.
+    expect(JSON.stringify(turns)).not.toContain('SECRET');
+  });
 });
 
 // --- REAL-DATA smoke (guarded: skips when the file is absent) -------------------

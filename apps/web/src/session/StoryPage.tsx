@@ -18,6 +18,7 @@
 import { memo, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type {
+  AskQuestion,
   GitCommitRef,
   NarrativeBlock,
   Preview,
@@ -433,6 +434,10 @@ const TurnsDrawer = memo(function TurnsDrawer({
 });
 
 const TurnRow = memo(function TurnRow({ turn: t }: { turn: Turn }) {
+  // AskUserQuestion turns are DECISION POINTS — render the question + options inline (not a bare
+  // tool chip). The other tool calls render as the usual compact chips.
+  const asks = t.toolCalls.flatMap((tc) => tc.ask ?? []);
+  const plainTools = t.toolCalls.filter((tc) => !tc.ask || tc.ask.length === 0);
   return (
     <li className={`story-turn story-turn-${t.role}`}>
       <div className="story-turn-head">
@@ -445,9 +450,12 @@ const TurnRow = memo(function TurnRow({ turn: t }: { turn: Turn }) {
           {t.textPreview.truncated ? <span className="story-preview-trunc"> …</span> : null}
         </div>
       ) : null}
-      {t.toolCalls.length > 0 ? (
+      {asks.map((q, i) => (
+        <AskBlock key={`ask-${i}`} q={q} />
+      ))}
+      {plainTools.length > 0 ? (
         <div className="story-turn-tools">
-          {t.toolCalls.map((tc, i) => (
+          {plainTools.map((tc, i) => (
             <span className="story-turn-tool" key={`${tc.name}:${i}`} title={tc.briefArgs}>
               <span className="story-turn-tool-name">{tc.name}</span>
               {tc.briefArgs ? <span className="story-turn-tool-args">{tc.briefArgs}</span> : null}
@@ -456,5 +464,28 @@ const TurnRow = memo(function TurnRow({ turn: t }: { turn: Turn }) {
         </div>
       ) : null}
     </li>
+  );
+});
+
+// An AskUserQuestion decision point rendered inline in the turn: the question + its options.
+const AskBlock = memo(function AskBlock({ q }: { q: AskQuestion }) {
+  return (
+    <div className="story-ask" aria-label="question asked of the user">
+      <div className="story-ask-head">
+        <span className="story-ask-tag">asked{q.multiSelect ? ' · multi-select' : ''}</span>
+        {q.header ? <span className="story-ask-header">{q.header}</span> : null}
+      </div>
+      <div className="story-ask-question">{q.question}</div>
+      {q.options.length > 0 ? (
+        <ul className="story-ask-options">
+          {q.options.map((o, i) => (
+            <li className="story-ask-option" key={`${o.label}:${i}`}>
+              <span className="story-ask-option-label">{o.label}</span>
+              {o.description ? <span className="story-ask-option-desc">{o.description}</span> : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
   );
 });

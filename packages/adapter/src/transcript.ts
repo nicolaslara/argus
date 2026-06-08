@@ -34,6 +34,8 @@ import type {
   Turn,
   TurnRole,
   TurnToolCall,
+  AskQuestion,
+  AskOption,
 } from '@argus/contract';
 import { NARRATIVE_FORMAT } from '@argus/contract';
 import { redact } from './redact.ts';
@@ -863,9 +865,56 @@ function projectToolCalls(r: RawRecord): TurnToolCall[] {
     if (asString(b.type) !== 'tool_use') continue;
     const name = asString(b.name);
     if (name === null || name.length === 0) continue;
-    out.push({ name, briefArgs: briefArgs(b.input) });
+    const call: TurnToolCall = { name, briefArgs: briefArgs(b.input) };
+    // AskUserQuestion is a session DECISION POINT — surface its question(s) + options inline in
+    // the Story (not a bare tool row). The full structured ask is extracted (bounded + redacted).
+    if (name === 'AskUserQuestion') {
+      const ask = extractAskQuestions(b.input);
+      if (ask) call.ask = ask;
+    }
+    out.push(call);
   }
   return out;
+}
+
+/** Truncate to `n` chars then route through {@link redact} (mirrors the preview/digest seam). */
+function capRedact(s: string, n: number): string {
+  return redact(s.length > n ? s.slice(0, n) : s);
+}
+
+/**
+ * Extract the question(s) + options from an `AskUserQuestion` tool_use input for the Story
+ * decision-point view. Defensive (unknown shape → undefined), bounded (≤6 questions, ≤8 options,
+ * capped text), and every emitted string is redact()-routed. NEVER throws.
+ */
+function extractAskQuestions(input: unknown): AskQuestion[] | undefined {
+  if (!input || typeof input !== 'object') return undefined;
+  const qs = (input as Record<string, unknown>).questions;
+  if (!Array.isArray(qs)) return undefined;
+  const out: AskQuestion[] = [];
+  for (const q of qs.slice(0, 6)) {
+    if (!q || typeof q !== 'object') continue;
+    const qo = q as Record<string, unknown>;
+    const question = asString(qo.question);
+    if (question === null || question.length === 0) continue;
+    const rawOpts = Array.isArray(qo.options) ? qo.options : [];
+    const options: AskOption[] = [];
+    for (const o of rawOpts.slice(0, 8)) {
+      if (!o || typeof o !== 'object') continue;
+      const oo = o as Record<string, unknown>;
+      const label = asString(oo.label);
+      if (label === null || label.length === 0) continue;
+      options.push({ label: capRedact(label, 120), description: capRedact(asString(oo.description) ?? '', 280) });
+    }
+    const header = asString(qo.header);
+    out.push({
+      question: capRedact(question, 280),
+      header: header && header.length > 0 ? capRedact(header, 40) : null,
+      multiSelect: qo.multiSelect === true,
+      options,
+    });
+  }
+  return out.length > 0 ? out : undefined;
 }
 
 /** A short, redacted args digest for a Turn tool call (never the raw object). */

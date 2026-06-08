@@ -183,10 +183,32 @@ export interface ProjectSessions {
 /** The role of a turn record. Synthetic/system records never become a Turn. */
 export type TurnRole = 'user' | 'assistant';
 
+/** One option offered by an `AskUserQuestion` (label + its explanation). Both redact()-routed. */
+export interface AskOption {
+  label: string;
+  description: string;
+}
+/**
+ * One `AskUserQuestion` question — a session DECISION POINT, surfaced inline in the Story
+ * turns (not a bare tool row). `header` is the short chip label; `options` are the offered
+ * choices. All text is truncated + redact()-routed by the adapter.
+ */
+export interface AskQuestion {
+  question: string;
+  header: string | null;
+  multiSelect: boolean;
+  options: AskOption[];
+}
+
 /** One tool invocation inside a turn (click-in view). `briefArgs` is a short, redacted digest — never the raw args. */
 export interface TurnToolCall {
   name: string;
   briefArgs: string;
+  /**
+   * Present ONLY when `name === 'AskUserQuestion'`: the question(s) + options asked, so the Story
+   * renders the decision point inline instead of an opaque tool row. Truncated + redact()-routed.
+   */
+  ask?: AskQuestion[];
 }
 
 /**
