@@ -36,21 +36,37 @@ build stack + the redaction/segmentation specs are in `knowledge.md`.
   only from the cursor (test: appending N records re-segments only the tail); parse time + peak memory
   recorded as gates; every preview is `redact()`-routed.
 
-- [ ] **M1 — Story view: project session-timeline + per-session watch/click-in (the core experience).**
-  *Proves:* a real project renders as sessions on a timeline; click a session → watch its block
-  narrative; click a block → read its full turns — end-to-end, server-cached, zero spend.
-  *Build:* `GET /api/projects/:slug/sessions` (the spans) + `GET /api/.../narrative` (Stage-1
-  `SessionNarrative`, server pre-computes + disk-caches like `explain.ts`; token+host+path guarded) +
-  lazy `GET /api/.../turns?block=`. **Story is a SEPARATE top-level PAGE** (`apps/web/src/session/`,
-  its own route + a Workflows↔Story top switch) — NOT a third `ViewMode` toggle on the run canvas;
-  it has a wholly different layout. It shows a **session-timeline** (sessions as start→end spans +
-  stats) and, on select, a **DOM vertical spine** of block cards (reuse `.agent-shell` CSS); a card
-  click lazily loads that block's turns into a text view. Block badges: **clickable commits**
-  (→ diff/GitHub) + a **compact, expandable tool-activity** count. Deep-link `?session=<id>&block=<id>`.
-  *Acceptance:* the project's sessions render as spans on real data; selecting one shows its ~120 blocks;
-  click-in shows real turns; an un-tokened/foreign-Origin call 401s before any FS read.
+- [x] **M1 — Story view: project session-timeline + per-session watch/click-in (the core experience). DONE 2026-06-08**
+  Server (`9976b42`/`2266f95`): `GET /api/projects/:slug/sessions` + `GET /api/.../narrative`
+  (disk-cached like `explain.ts`, token+host+path guarded) + lazy `GET /api/.../turns?block=`.
+  Web (M1b, this change): **Story is a SEPARATE top-level PAGE** (`apps/web/src/session/StoryPage.tsx`)
+  behind a **Workflows↔Story top switch** wired into `App.tsx` (`topView` state gates the whole canvas
+  chrome) — NOT a `ViewMode`. Three levels: a **session-timeline** column (start→end spans + stats),
+  a **DOM block spine** (cards: clamped prompt/response previews + tool badges + workflow-spawn chips +
+  commit chips), and a **lazy turns drawer** (click-in). `redact()`-routed, text-node only.
+  *Verified LIVE on the real argus session `d2cfe0e6`* (proxy `:5173` → server `:4317`, token-injected):
+  the 15 argus sessions render as spans; selecting → **64 real-prompt blocks**; clicking block 1 →
+  **133 turns** render with **zero console errors**; switching back to Workflows restores the canvas
+  with no regression. An un-tokened direct `:4317` call 401s (proxy injects the bearer). Screenshots in
+  `.argus/shots/` (gitignored). Tests: 672 green (+3 adapter cases); typecheck + lint + build clean.
 
   **▲ GATE: stop here for user judgment on the proof before M2+.**
+
+  **M1b refinements (found + fixed while verifying on real data — all kept):**
+  - **Synthetic filter widened.** `<task-notification>` (×58 on `d2cfe0e6`), `[Request interrupted…]`
+    (×2), and the compaction handoff summary (×5) leaked past the original `isRealUserPrompt` filter
+    and falsely anchored blocks → added to `SYNTHETIC_PREFIXES`. They're now also dropped from block
+    ACCUMULATION (no preview pollution, no turn-count inflation), and an all-preamble **empty
+    session-start shell is suppressed** → **130 → 64 noise-free blocks**, block 1 = the real first prompt.
+    Cache busted via `NARRATIVE_CACHE_VERSION` `narr-v1`→`narr-v2`.
+  - **Default + sort by ACTIVITY, not start.** A 94 h still-active session that *started* earliest was
+    buried at the list bottom and a trivial 8-record throwaway was the default pick. Now ordered +
+    default-selected by `end ?? start` desc (`sessionActivityMs`) → lands on the meaningful session.
+  - **Turns drawer key bug.** `key={t.promptId}` collided (promptId is the *originating prompt's* id,
+    shared across a block's records) → 131 React "duplicate key" errors, risking omitted rows. Keyed on
+    the positional index → 0 errors, all 133 turns render.
+  - **Watch-view legibility.** The card response preview dumped the full ~16 KB head+tail → CSS
+    line-clamp (prompt 4 / response 3 lines); the full text stays one click away in the turns drawer.
 
 - [ ] **M2 — Git-commit linkage by timestamp (+ message).** *(deferred-additive)*
   *Build:* correlate the repo's REAL `git log` (author time + subject) to blocks/sessions by
@@ -80,6 +96,18 @@ build stack + the redaction/segmentation specs are in `knowledge.md`.
   payload that `withRetry` doesn't catch) — add a sanity check / re-prompt on suspiciously-empty
   synth output, and fold `withRetry` into the saved `.claude/workflows/*.js`.
 - argus visualizing the session that built argus is the strongest dogfood.
+
+### Story-view UI polish (queued 2026-06-08, user-requested)
+- **Surface `AskUserQuestion` in the narrative.** A turn that is an `AskUserQuestion` tool call (and
+  ideally the user's chosen answer) should render the QUESTION + OPTIONS inline in the Story turns,
+  not a bare/collapsed tool row — these are the decision points of a session. Special-case the
+  tool-call renderer in `StoryPage` (read `input.questions[].{question,header,options[].{label,
+  description}}` from the tool_use; pair with the following user/tool_result answer when resolvable).
+- **Clickable workflow spawns → open the run.** The `WorkflowSpawnChip` (⧉ `<script>.js`) should be a
+  link/button that navigates straight into that run in the Workflows page (select the run + switch
+  `topView` to 'workflows'). Needs the **M3 spawn→run correlation** (Workflow tool_use `{scriptPath,
+  args}` → `wf_*.json` by cached-script basename + startTime window) to resolve the `runId`; until
+  M3 lands, the chip stays inert. This is the concrete payoff that motivates M3.
 
 ## Notes — open questions (status)
 

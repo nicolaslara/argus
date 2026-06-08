@@ -16,15 +16,19 @@
 // are React text nodes; consumes ONLY @argus/contract types (no node:* / adapter import).
 
 import { memo, useCallback, useMemo, useState } from 'react';
-import type { ProjectRef, RunSummary, WorkflowMeta } from '@argus/contract';
+import type { ProjectRef, RunSummary, SessionSummary, WorkflowMeta } from '@argus/contract';
 import type { LoopDrillMode } from '../expand-context.ts';
 import { readGroupBy, writeGroupBy } from '../group-by-setting.ts';
 import { readPinnedWorkflows, writePinnedWorkflows, togglePinned } from '../pinned-setting.ts';
 import { filterTree } from '../filter-runs.ts';
+import { isoToMs } from '../session/session-format.ts';
 import { formatDuration, formatRelativeTime, isStale, statusGlyph } from './format.ts';
 
-// 'explorer' is the tree; 'settings' the stub. ('projects'/'runs' accepted for back-compat.)
-export type RailSection = 'explorer' | 'settings' | 'projects' | 'runs';
+// The rail's SECTIONS double as the top-level page nav (rail-as-navigator): 'explorer' is the
+// workflow/run tree (the Workflows page); 'story' is the session list (the Story page); 'settings'
+// is the stub. Selecting explorer/story switches the page; settings is page-neutral. App keeps
+// `railSection` and `topView` in sync. ('projects'/'runs' accepted for back-compat.)
+export type RailSection = 'explorer' | 'story' | 'settings' | 'projects' | 'runs';
 
 // The explorer's group-by LENS: re-buckets the SAME finished runs into different TreeNode[].
 // 'workflow' = the original tree (workflows as folders); 'time' = recency buckets; 'status' =
@@ -36,6 +40,9 @@ interface RailProps {
   onToggleCollapsed: () => void;
   section: RailSection;
   onSelectSection: (s: RailSection) => void;
+  // The active top-level page. Drives the loop-drill setting's relevance (Workflows-only) and is
+  // kept in sync with `section` by App (explorer⇔workflows, story⇔story).
+  topView: 'workflows' | 'story';
 
   projects: ProjectRef[];
   selectedProjectPath: string | undefined;
@@ -46,6 +53,13 @@ interface RailProps {
   selectedRunId: string | undefined;
   onSelectRun: (r: RunSummary) => void;
   runsLoading: boolean;
+
+  // Story navigator: the project's sessions (the list lives HERE now, not on the Story page).
+  // Ordered most-recently-active first by App; clicking one selects it AND enters Story mode.
+  sessions: SessionSummary[];
+  selectedSessionId: string | undefined;
+  onSelectSession: (sessionId: string) => void;
+  sessionsLoading: boolean;
 
   workflows: WorkflowMeta[];
   selectedWorkflowName: string | undefined;
@@ -232,6 +246,7 @@ export const Rail = memo(function Rail(props: RailProps) {
     onToggleCollapsed,
     section,
     onSelectSection,
+    topView,
     projects,
     selectedProjectPath,
     onSelectProject,
@@ -240,6 +255,10 @@ export const Rail = memo(function Rail(props: RailProps) {
     selectedRunId,
     onSelectRun,
     runsLoading,
+    sessions,
+    selectedSessionId,
+    onSelectSession,
+    sessionsLoading,
     workflows,
     selectedWorkflowName,
     onSelectWorkflow,
@@ -315,6 +334,9 @@ export const Rail = memo(function Rail(props: RailProps) {
   }
 
   const anyLive = liveRuns.length > 0;
+  // The explorer (Workflows) section, incl. the back-compat aliases. 'story' and 'settings' are
+  // their own sections; an active explorer icon must NOT light up for them anymore.
+  const inExplorer = section === 'explorer' || section === 'projects' || section === 'runs';
 
   return (
     <aside className={`rail${collapsed ? ' is-collapsed' : ''}`} aria-label="navigation">
@@ -333,16 +355,27 @@ export const Rail = memo(function Rail(props: RailProps) {
         <div className="rail-icon-group">
           <button
             type="button"
-            className={`rail-icon${!collapsed && section !== 'settings' ? ' is-active' : ''}`}
+            className={`rail-icon${!collapsed && inExplorer ? ' is-active' : ''}`}
             onClick={() => openSection('explorer')}
-            aria-label="explorer"
-            aria-pressed={!collapsed && section !== 'settings'}
-            title="Projects · workflows · runs"
+            aria-label="workflows"
+            aria-pressed={!collapsed && inExplorer}
+            title="Workflows — projects · workflows · runs"
           >
             <span className="rail-glyph">▤</span>
             {/* one pulsing dot if ANY run is live AND the panel is collapsed (never concurrent
                 with the LIVE region, which only exists in the expanded panel). */}
             {collapsed && anyLive ? <span className="rail-strip-live" aria-hidden="true" /> : null}
+          </button>
+          {/* Story — the session navigator. Selecting it enters Story mode (App syncs topView). */}
+          <button
+            type="button"
+            className={`rail-icon${!collapsed && section === 'story' ? ' is-active' : ''}`}
+            onClick={() => openSection('story')}
+            aria-label="story"
+            aria-pressed={!collapsed && section === 'story'}
+            title="Story — this project's sessions as a narrative"
+          >
+            <span className="rail-glyph">☰</span>
           </button>
         </div>
 
@@ -362,11 +395,33 @@ export const Rail = memo(function Rail(props: RailProps) {
         <div className="rail-panel">
           <section className="rail-section" aria-label="settings">
             <header className="rail-section-head">Settings</header>
-            <LoopDrillSetting mode={loopDrillMode} onSelect={onSelectLoopDrillMode} drillable={loopDrillable} />
+            {/* Loop drill is a Workflows/run-canvas concept — show it only on that page so it
+                doesn't read as a live control while reading a Story. */}
+            {topView === 'workflows' ? (
+              <LoopDrillSetting mode={loopDrillMode} onSelect={onSelectLoopDrillMode} drillable={loopDrillable} />
+            ) : null}
             <div className="rail-muted rail-settings-stub">
               <p>argus · local-first, read-only</p>
               <p>Dark theme · v1</p>
             </div>
+          </section>
+        </div>
+      ) : section === 'story' ? (
+        <div className="rail-panel">
+          <section className="rail-section rail-explorer" aria-label="sessions">
+            <ProjectSwitcher
+              projects={projects}
+              selectedProjectPath={selectedProjectPath}
+              onSelectProject={onSelectProject}
+              loading={projectsLoading}
+            />
+            <header className="rail-section-head">Sessions</header>
+            <SessionsExplorer
+              sessions={sessions}
+              selectedSessionId={selectedSessionId}
+              onSelectSession={onSelectSession}
+              loading={sessionsLoading}
+            />
           </section>
         </div>
       ) : (
@@ -423,6 +478,71 @@ export const Rail = memo(function Rail(props: RailProps) {
         </div>
       )}
     </aside>
+  );
+});
+
+/**
+ * The Story navigator (the rail's Sessions section): a project's sessions, most-recently-active
+ * first (App owns the order + the default pick). A row click selects that session AND enters Story
+ * mode (App syncs `topView`/`section`), so the rail row and the narrative never disagree. Reuses
+ * the `.story-session*` row visuals; consumes ONLY @argus/contract types.
+ */
+const SessionsExplorer = memo(function SessionsExplorer({
+  sessions,
+  selectedSessionId,
+  onSelectSession,
+  loading,
+}: {
+  sessions: SessionSummary[];
+  selectedSessionId: string | undefined;
+  onSelectSession: (sessionId: string) => void;
+  loading: boolean;
+}) {
+  if (loading && sessions.length === 0) return <div className="rail-muted">loading sessions…</div>;
+  if (sessions.length === 0) return <div className="rail-muted">no sessions for this project</div>;
+  return (
+    <ul className="story-session-list rail-session-list">
+      {sessions.map((s) => {
+        const shortId = s.sessionId.split('-')[0] ?? s.sessionId;
+        const rel = formatRelativeTime(isoToMs(s.timeRange.start));
+        const active = s.sessionId === selectedSessionId;
+        return (
+          <li key={s.sessionId}>
+            <button
+              type="button"
+              className={`story-session${active ? ' is-active' : ''}`}
+              onClick={() => onSelectSession(s.sessionId)}
+              aria-pressed={active}
+              title={s.sessionId}
+            >
+              <span className="story-session-line">
+                <span className="story-session-id">{shortId}</span>
+                {rel ? <span className="story-session-time">{rel}</span> : null}
+              </span>
+              <span className="story-session-meta">
+                <span className="story-session-stat">{s.recordCount} rec</span>
+                {s.workflowSpawnCount > 0 ? (
+                  <>
+                    <span className="story-dot" aria-hidden="true">·</span>
+                    <span className="story-session-stat">
+                      {s.workflowSpawnCount} {s.workflowSpawnCount === 1 ? 'run' : 'runs'}
+                    </span>
+                  </>
+                ) : null}
+                {s.commitCount > 0 ? (
+                  <>
+                    <span className="story-dot" aria-hidden="true">·</span>
+                    <span className="story-session-stat">
+                      {s.commitCount} {s.commitCount === 1 ? 'commit' : 'commits'}
+                    </span>
+                  </>
+                ) : null}
+              </span>
+            </button>
+          </li>
+        );
+      })}
+    </ul>
   );
 });
 

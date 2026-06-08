@@ -27,8 +27,9 @@ import { NARRATIVE_FORMAT } from '@argus/contract';
 //   (a) a 256 KB+ line is SKIPPED with a coded warning (not a throw);
 //   (b) a tool_result.content LIST with an embedded image projects ONLY text — ZERO image
 //       bytes in any record/preview — and is counted;
-//   (c) synthetic user records (isMeta / <command / Caveat / tool_result carrier) are filtered
-//       so they never start a block nor leak into a promptPreview;
+//   (c) synthetic user records (isMeta / <command / Caveat / <task-notification> / [Request
+//       interrupted / compaction summary / tool_result carrier) are filtered so they never start
+//       a block, leak into a preview, inflate a turn count, or open an empty session-start shell;
 //   (d) N real prompts → N blocks, each absorbing the following assistant work;
 //   (e) a long response is bounded to head+tail in responsePreview;
 //   (f) extractWorkflowSpawns finds a Workflow tool_use.
@@ -181,6 +182,19 @@ describe('isRealUserPrompt — the load-bearing synthetic filter (decision 3)', 
     }
   });
 
+  it('REJECTS harness-injected markers: <task-notification>, [Request interrupted, compaction summary', () => {
+    // Observed leaking past the original filter on the real argus session (d2cfe0e6): 58
+    // task-notifications, 2 interrupts, 5 compaction handoffs — none are user prompts.
+    for (const t of [
+      '<task-notification>\n<task-id>w405q7cl8</task-id>',
+      '[Request interrupted by user]',
+      '[Request interrupted by user for tool use]',
+      'This session is being continued from a previous conversation that ran out of context.',
+    ]) {
+      expect(isRealUserPrompt(scan1(userPrompt(t, '2026-06-07T00:00:00Z')))).toBe(false);
+    }
+  });
+
   it('REJECTS a tool_result carrier (it is not a real prompt even though type==user)', () => {
     expect(isRealUserPrompt(scan1(toolResultCarrier('out', '2026-06-07T00:00:00Z')))).toBe(false);
   });
@@ -199,7 +213,8 @@ describe('isRealUserPrompt — the load-bearing synthetic filter (decision 3)', 
     ].join('\n');
 
     const nar = buildSessionNarrative(text, 'sess-syn');
-    // Exactly ONE real-prompt block (the leading synthetics fold into a session-start block).
+    // Exactly ONE real-prompt block. The leading synthetics are dropped entirely (they neither
+    // anchor a block nor open an empty session-start shell), so the real prompt is block 0.
     const promptBlocks = nar.blocks.filter((b) => b.cutReason === 'prompt');
     expect(promptBlocks).toHaveLength(1);
     expect(promptBlocks[0]!.promptPreview.text).toContain('REAL: build the parser');
@@ -262,6 +277,43 @@ describe('segmentTranscript — real-prompt anchored blocks (decision 3)', () =>
     expect(nar.blocks[0]!.cutReason).toBe('session-start');
     expect(nar.blocks[0]!.recordRange).toEqual({ start: 0, end: 1 });
     expect(nar.blocks[1]!.cutReason).toBe('prompt');
+  });
+
+  it('drops synthetic records from accumulation — no preview pollution, no turn inflation', () => {
+    const text = [
+      userPrompt('<command-name>/clear</command-name>', '2026-06-07T00:00:00Z'), // synthetic preamble
+      userPrompt('REAL prompt', '2026-06-07T00:00:01Z'), // the only real anchor
+      assistant([{ type: 'text', text: 'working' }], '2026-06-07T00:00:02Z'),
+      userPrompt('<task-notification>\n<task-id>w1</task-id>', '2026-06-07T00:00:03Z'), // mid-block synthetic
+      assistant([{ type: 'text', text: 'more work' }], '2026-06-07T00:00:04Z'),
+    ].join('\n');
+    const nar = buildSessionNarrative(text, 'sess-acc');
+    // The all-synthetic preamble opened NO session-start block — block 0 is the real prompt.
+    expect(nar.blocks).toHaveLength(1);
+    const b0 = nar.blocks[0]!;
+    expect(b0.cutReason).toBe('prompt');
+    expect(b0.promptPreview.text).toContain('REAL prompt');
+    // The mid-block <task-notification> text never folded into the response preview...
+    expect(b0.responsePreview.text).not.toContain('task-notification');
+    expect(b0.responsePreview.text).toContain('working');
+    expect(b0.responsePreview.text).toContain('more work');
+    // ...and it did not inflate the turn count (prompt + 2 assistants = 3, NOT 4).
+    expect(b0.turnCount).toBe(3);
+  });
+
+  it('SUPPRESSES an empty session-start shell (only synthetic/system preamble, no real turns)', () => {
+    const systemRec = line({ type: 'system', timestamp: '2026-06-07T00:00:00Z', content: 'boot' });
+    const text = [
+      systemRec, // a system record opens a session-start builder but contributes no turn
+      userPrompt('<command-name>/model</command-name>', '2026-06-07T00:00:01Z'), // synthetic, skipped
+      userPrompt('the first real prompt', '2026-06-07T00:00:02Z'),
+      assistant([{ type: 'text', text: 'reply' }], '2026-06-07T00:00:03Z'),
+    ].join('\n');
+    const nar = buildSessionNarrative(text, 'sess-empty-start');
+    // No blank "Session start" card: the empty (turnCount 0) shell is dropped; block 0 is the prompt.
+    expect(nar.blocks).toHaveLength(1);
+    expect(nar.blocks.every((b) => b.cutReason === 'prompt')).toBe(true);
+    expect(nar.blocks[0]!.promptPreview.text).toContain('the first real prompt');
   });
 
   it('stamps the NARRATIVE_FORMAT pin + recovers projectPath from cwd', () => {
@@ -630,7 +682,7 @@ const REAL_PATH = '/Users/nicolas/.claude/projects/-Users-nicolas-devel-argus/d2
 const REAL_PRESENT = existsSync(REAL_PATH);
 
 describe.runIf(REAL_PRESENT)('REAL-DATA smoke — the actual ~67 MB transcript', () => {
-  it('parses + segments without throwing; plausible block count; ZERO image bytes; timed', () => {
+  it('parses + segments without throwing; plausible block count; no image-blob leak; timed', () => {
     const sizeMb = statSync(REAL_PATH).size / 1024 / 1024;
     const t0 = performance.now();
     const text = readFileSync(REAL_PATH, 'utf8');
@@ -651,10 +703,16 @@ describe.runIf(REAL_PRESENT)('REAL-DATA smoke — the actual ~67 MB transcript',
     expect(nar.warnings.find((w) => w.code === 'transcript-image-dropped')).toBeDefined();
     expect(nar.incomplete).toBe(true);
 
-    // ZERO image bytes anywhere in the emitted narrative (the load-bearing privacy invariant).
+    // No image BLOB leaks into the emitted narrative (the load-bearing privacy invariant). The
+    // unit tests above prove image BLOCKS are dropped deterministically (projectContent never even
+    // retains `source`); here on real data we target the actual risk — a multi-KB base64 image
+    // body surviving into a preview. We do NOT substring-match a short marker like 'iVBOR': this
+    // dogfood transcript legitimately contains source code (incl. THIS test's own PNG_BYTES
+    // constant, read during the session) as projected TEXT, which is not a leak. A contiguous
+    // base64 run ≥ 1 KB, however, can only be a real image/blob escaping the allowlist.
     const serialized = JSON.stringify(nar);
-    expect(serialized).not.toContain('/9j/'); // JPEG base64 marker
-    expect(serialized).not.toContain('iVBOR'); // PNG base64 marker
+    const longBase64 = serialized.match(/[A-Za-z0-9+/]{1024,}={0,2}/);
+    expect(longBase64, longBase64 ? `leaked base64 blob: ${longBase64[0].slice(0, 60)}…` : '').toBeNull();
 
     // Every responsePreview is head+tail-bounded — never a multi-MB body on the wire.
     for (const b of nar.blocks) {

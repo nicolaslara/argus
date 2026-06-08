@@ -1,0 +1,460 @@
+// @argus/web — the Story page (M1b): the SESSION NARRATIVE three-level view.
+//
+// project → sessions-on-a-timeline → per-session topic blocks → (lazy) full turns
+// (knowledge.md data model). A SELF-CONTAINED component: it owns its own TanStack
+// Query fetches (sessions / narrative / per-block turns) and does NOT touch App.tsx —
+// App only mounts <StoryPage slug=… /> behind its Workflows⟷Story switch.
+//
+// The web imports ONLY @argus/contract (never the adapter / node:*). All emitted text
+// is the already-truncated, redact()-routed Preview — rendered as React text nodes only
+// (never dangerouslySetInnerHTML): previews/labels can echo secret-bearing content
+// (boundaries.md §4). The wire never carries a full body; long responses are head+tail
+// bounded upstream, so this view just renders what it is handed.
+//
+// Visual language reuses the dark card tokens (panels, mono ids, the 3px left accent,
+// outlined chips) — the story-specific classes live in a `===== Story view (M1b) =====`
+// block appended to index.css.
+
+import { memo, useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import type {
+  GitCommitRef,
+  NarrativeBlock,
+  Preview,
+  SessionNarrative,
+  Turn,
+  WorkflowSpawn,
+} from '@argus/contract';
+import { fetchSessionNarrative, fetchSessionTurns } from '../api.ts';
+import { isoToMs } from './session-format.ts';
+
+interface StoryPageProps {
+  /** On-disk slug dir name — the path key for the narrative/turns fetchers. */
+  slug: string;
+  /**
+   * The session to render, chosen in the rail's Sessions section (lifted to App so the rail
+   * navigator and this narrative never disagree). null = nothing selected yet (loading / empty).
+   */
+  sessionId: string | null;
+  /** Display name (basename of the project cwd); falls back to the slug. */
+  projectName?: string;
+  /** Total session count for the project (shown in the header; the list itself lives in the rail). */
+  sessionCount?: number;
+}
+
+// ---- small pure presentation helpers (ISO-aware; the contract carries ISO strings) -----
+
+/** A compact clock time `14:07` for an ISO timestamp, or em-dash. */
+function clockIso(iso: string | null): string {
+  const ms = isoToMs(iso);
+  if (ms == null) return '—';
+  const d = new Date(ms);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+/** A compact elapsed span between two ISO timestamps (`3m 12s`, `1h 04m`), or null. */
+function spanLabel(start: string | null, end: string | null): string | null {
+  const a = isoToMs(start);
+  const b = isoToMs(end);
+  if (a == null || b == null) return null;
+  const ms = b - a;
+  if (ms <= 0) return null;
+  const totalSec = Math.round(ms / 1000);
+  if (totalSec < 60) return `${totalSec}s`;
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec % 60;
+  if (min < 60) return `${min}m ${String(sec).padStart(2, '0')}s`;
+  const hr = Math.floor(min / 60);
+  const remMin = min % 60;
+  return `${hr}h ${String(remMin).padStart(2, '0')}m`;
+}
+
+/** A topic line for a block: its label, else the first line of the prompt, else a fallback. */
+function blockTopic(block: NarrativeBlock): string {
+  if (block.topicLabel && block.topicLabel.trim() !== '') return block.topicLabel.trim();
+  const firstLine = block.promptPreview.text
+    .split('\n')
+    .map((l) => l.trim())
+    .find((l) => l.length > 0);
+  if (firstLine) return firstLine;
+  return block.cutReason === 'session-start' ? 'Session start' : 'Untitled block';
+}
+
+/** The N largest toolName→count entries, descending (so the noisiest tools lead the badges). */
+function topTools(toolCounts: Record<string, number>, limit: number): Array<[string, number]> {
+  return Object.entries(toolCounts)
+    .filter(([, n]) => n > 0)
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, limit);
+}
+
+// ============================================================================
+// StoryPage — the SELECTED session's narrative (block list + lazy turns), full
+// width. The session NAVIGATOR (the list of a project's sessions) now lives in
+// the left rail's Sessions section; App lifts the chosen `sessionId` and passes
+// it down here, so the rail and this narrative never disagree.
+// ============================================================================
+export const StoryPage = memo(function StoryPage({ slug, sessionId, projectName, sessionCount }: StoryPageProps) {
+  const shortId = sessionId ? sessionId.split('-')[0] ?? sessionId : null;
+  return (
+    <div className="story" aria-label="session narrative">
+      <header className="story-header">
+        <span className="story-eyebrow">Story</span>
+        <h1 className="story-title">{projectName ?? slug}</h1>
+        <span className="story-sub">
+          {shortId ? (
+            <span className="story-sub-session" title={sessionId ?? undefined}>{shortId}</span>
+          ) : null}
+          {typeof sessionCount === 'number' ? (
+            <span className="story-sub-count">
+              {shortId ? ' · ' : ''}
+              {sessionCount} {sessionCount === 1 ? 'session' : 'sessions'}
+            </span>
+          ) : null}
+        </span>
+      </header>
+
+      <div className="story-body">
+        <div className="story-narrative">
+          {sessionId ? (
+            <SessionNarrativeView key={sessionId} slug={slug} sessionId={sessionId} />
+          ) : (
+            <div className="story-empty">pick a session in the rail to read its story</div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+});
+
+// ---- Level 2: the selected session's narrative (the block list) --------------------------
+const SessionNarrativeView = memo(function SessionNarrativeView({
+  slug,
+  sessionId,
+}: {
+  slug: string;
+  sessionId: string;
+}) {
+  const narrativeQ = useQuery({
+    queryKey: ['story-narrative', slug, sessionId],
+    queryFn: () => fetchSessionNarrative(slug, sessionId),
+    enabled: !!slug && !!sessionId,
+    staleTime: 30_000,
+  });
+
+  if (narrativeQ.isPending) {
+    return <div className="story-empty">loading narrative…</div>;
+  }
+  if (narrativeQ.isError || !narrativeQ.data) {
+    return <div className="story-empty">failed to load this session’s narrative</div>;
+  }
+
+  const narrative: SessionNarrative = narrativeQ.data;
+  const span = spanLabel(narrative.timeRange.start, narrative.timeRange.end);
+
+  return (
+    <section className="story-narrative-inner" aria-label="session narrative blocks">
+      <div className="story-narrative-head">
+        <div className="story-narrative-meta">
+          <span className="story-narrative-count">
+            {narrative.blocks.length} {narrative.blocks.length === 1 ? 'block' : 'blocks'}
+          </span>
+          <span className="story-dot" aria-hidden="true">·</span>
+          <span className="story-narrative-stat">{narrative.totalRecords} records</span>
+          {span ? (
+            <>
+              <span className="story-dot" aria-hidden="true">·</span>
+              <span className="story-narrative-stat">{span}</span>
+            </>
+          ) : null}
+          {narrative.projectPath ? (
+            <span className="story-narrative-path" title={narrative.projectPath}>
+              {narrative.projectPath}
+            </span>
+          ) : null}
+        </div>
+        {narrative.incomplete ? (
+          <div className="story-warning" role="status">
+            <span className="story-warning-tag">partial</span>
+            <span className="story-warning-text">
+              this narrative degraded while parsing
+              {narrative.warnings.length > 0
+                ? ` (${narrative.warnings.map((w) => w.code).join(', ')})`
+                : ''}
+            </span>
+          </div>
+        ) : null}
+      </div>
+
+      {narrative.blocks.length === 0 ? (
+        <div className="story-empty">no blocks in this session</div>
+      ) : (
+        <ol className="story-blocks">
+          {narrative.blocks.map((block, i) => (
+            <BlockCard
+              key={block.id}
+              slug={slug}
+              sessionId={sessionId}
+              block={block}
+              ordinal={i + 1}
+            />
+          ))}
+        </ol>
+      )}
+    </section>
+  );
+});
+
+// ---- Level 2 (card) + Level 3 (lazy turns drawer) ----------------------------------------
+const BlockCard = memo(function BlockCard({
+  slug,
+  sessionId,
+  block,
+  ordinal,
+}: {
+  slug: string;
+  sessionId: string;
+  block: NarrativeBlock;
+  ordinal: number;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  // Level 3: full turns are fetched LAZILY — only once a block is expanded, never inlined into
+  // the narrative (so the watch view stays small). Disabled until expanded; cached forever after.
+  const turnsQ = useQuery({
+    queryKey: ['story-turns', slug, sessionId, block.id],
+    queryFn: () => fetchSessionTurns(slug, sessionId, block.id),
+    enabled: expanded,
+    staleTime: Infinity,
+  });
+
+  const topic = blockTopic(block);
+  const tools = useMemo(() => topTools(block.toolCounts, 6), [block.toolCounts]);
+  const start = clockIso(block.timeRange.start);
+  const span = spanLabel(block.timeRange.start, block.timeRange.end);
+  const hasSummary = !!block.summary;
+
+  return (
+    <li className="story-block">
+      <div className="story-block-rail" aria-hidden="true" />
+      <div className="story-block-body">
+        <div className="story-block-head">
+          <span className="story-block-ordinal">{ordinal}</span>
+          <span className="story-block-topic" title={topic}>
+            {topic}
+          </span>
+          <span className="story-block-clock">{start}</span>
+        </div>
+
+        <div className="story-block-stats">
+          <span className="story-block-stat">
+            {block.turnCount} {block.turnCount === 1 ? 'turn' : 'turns'}
+          </span>
+          <span className="story-dot" aria-hidden="true">·</span>
+          <span className="story-block-stat" title="record range">
+            #{block.recordRange.start}–{block.recordRange.end}
+          </span>
+          {span ? (
+            <>
+              <span className="story-dot" aria-hidden="true">·</span>
+              <span className="story-block-stat">{span}</span>
+            </>
+          ) : null}
+          {block.cutReason === 'session-start' ? (
+            <span className="story-chip story-chip-cut">session start</span>
+          ) : null}
+        </div>
+
+        {/* The LLM caption (M4; null while baseline). A 3px accent left-tick marks an enriched
+            summary — mirrors the agent-caption treatment from the Execution view. */}
+        {hasSummary ? (
+          <div className="story-block-summary">
+            {block.summary!.caption ? (
+              <div className="story-block-summary-caption">{block.summary!.caption}</div>
+            ) : null}
+            {block.summary!.body ? (
+              <div className="story-block-summary-body">{block.summary!.body}</div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {/* Prompt → response previews (the watch-view text; head+tail bounded upstream). */}
+        <PreviewLine kind="prompt" preview={block.promptPreview} />
+        <PreviewLine kind="response" preview={block.responsePreview} />
+
+        {/* Tool badges + workflow spawns + commits + files — the at-a-glance facts. */}
+        {tools.length > 0 ? (
+          <div className="story-badges" aria-label="tool counts">
+            {tools.map(([name, count]) => (
+              <span className="story-tool" key={name}>
+                <span className="story-tool-name">{name}</span>
+                <span className="story-tool-count">{count}</span>
+              </span>
+            ))}
+          </div>
+        ) : null}
+
+        {block.workflowSpawns.length > 0 ? (
+          <div className="story-spawns" aria-label="workflow spawns">
+            {block.workflowSpawns.map((sp, i) => (
+              <WorkflowSpawnChip key={`${sp.scriptBasename}:${sp.argsDigest}:${i}`} spawn={sp} />
+            ))}
+          </div>
+        ) : null}
+
+        {block.gitCommits.length > 0 ? (
+          <div className="story-commits" aria-label="git commits">
+            {block.gitCommits.map((c, i) => (
+              <CommitChip key={`${c.shortSha}:${i}`} commit={c} />
+            ))}
+          </div>
+        ) : null}
+
+        {block.filesTouched.length > 0 ? (
+          <div className="story-files" aria-label="files touched">
+            {block.filesTouched.map((f, i) => (
+              <span className="story-file" key={`${f}:${i}`}>
+                {f}
+              </span>
+            ))}
+          </div>
+        ) : null}
+
+        {/* Level 3 toggle: lazily open the full-turns drawer for this block. */}
+        <button
+          type="button"
+          className="story-turns-toggle"
+          onClick={() => setExpanded((v) => !v)}
+          aria-expanded={expanded}
+        >
+          <span className="story-turns-caret" aria-hidden="true">
+            {expanded ? '▾' : '▸'}
+          </span>
+          {expanded ? 'Hide turns' : `Show ${block.turnCount} ${block.turnCount === 1 ? 'turn' : 'turns'}`}
+        </button>
+
+        {expanded ? (
+          <TurnsDrawer
+            loading={turnsQ.isPending}
+            error={turnsQ.isError}
+            turns={turnsQ.data ?? []}
+          />
+        ) : null}
+      </div>
+    </li>
+  );
+});
+
+// ---- a prompt/response preview line (text-node only; truncation shows an ellipsis cue) ----
+const PreviewLine = memo(function PreviewLine({
+  kind,
+  preview,
+}: {
+  kind: 'prompt' | 'response';
+  preview: Preview;
+}) {
+  if (!preview.text || preview.text.trim() === '') return null;
+  return (
+    <div className={`story-preview story-preview-${kind}`}>
+      <span className="story-preview-role">{kind === 'prompt' ? 'prompt' : 'response'}</span>
+      <span className="story-preview-text">
+        {preview.text}
+        {preview.truncated ? <span className="story-preview-trunc"> …</span> : null}
+      </span>
+    </div>
+  );
+});
+
+const WorkflowSpawnChip = memo(function WorkflowSpawnChip({ spawn }: { spawn: WorkflowSpawn }) {
+  return (
+    <span
+      className="story-chip story-chip-spawn"
+      title={spawn.runId ? `run ${spawn.runId}` : `args ${spawn.argsDigest}`}
+    >
+      <span className="story-chip-glyph" aria-hidden="true">
+        ⧉
+      </span>
+      <span className="story-chip-label">{spawn.scriptBasename}</span>
+    </span>
+  );
+});
+
+const CommitChip = memo(function CommitChip({ commit }: { commit: GitCommitRef }) {
+  // The subject is always a TEXT node; the link is built only from a validated github.com URL
+  // (the adapter validates the SHA + fixes the host — no free-form remote parsing reaches here).
+  const inner = (
+    <>
+      <span className="story-commit-sha">{commit.shortSha.slice(0, 7)}</span>
+      <span className="story-commit-subject">{commit.subject}</span>
+    </>
+  );
+  if (commit.githubUrl) {
+    return (
+      <a
+        className="story-chip story-chip-commit"
+        href={commit.githubUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        title={commit.subject}
+      >
+        {inner}
+      </a>
+    );
+  }
+  return (
+    <span className="story-chip story-chip-commit" title={commit.subject}>
+      {inner}
+    </span>
+  );
+});
+
+// ---- Level 3: the full-turns drawer (rendered only while a block is expanded) -------------
+const TurnsDrawer = memo(function TurnsDrawer({
+  loading,
+  error,
+  turns,
+}: {
+  loading: boolean;
+  error: boolean;
+  turns: Turn[];
+}) {
+  if (loading) return <div className="story-turns story-turns-muted">loading turns…</div>;
+  if (error) return <div className="story-turns story-turns-muted">failed to load turns</div>;
+  if (turns.length === 0) return <div className="story-turns story-turns-muted">no turns</div>;
+  return (
+    <ul className="story-turns" aria-label="turns">
+      {/* `promptId` is the ORIGINATING prompt's id — shared across every record in a block, so
+          it is NOT unique per turn. Key on the positional index (the slice never reorders). */}
+      {turns.map((t, i) => (
+        <TurnRow key={`${i}:${t.promptId}`} turn={t} />
+      ))}
+    </ul>
+  );
+});
+
+const TurnRow = memo(function TurnRow({ turn: t }: { turn: Turn }) {
+  return (
+    <li className={`story-turn story-turn-${t.role}`}>
+      <div className="story-turn-head">
+        <span className="story-turn-role">{t.role}</span>
+        {t.timestamp ? <span className="story-turn-time">{clockIso(t.timestamp)}</span> : null}
+      </div>
+      {t.textPreview.text && t.textPreview.text.trim() !== '' ? (
+        <div className="story-turn-text">
+          {t.textPreview.text}
+          {t.textPreview.truncated ? <span className="story-preview-trunc"> …</span> : null}
+        </div>
+      ) : null}
+      {t.toolCalls.length > 0 ? (
+        <div className="story-turn-tools">
+          {t.toolCalls.map((tc, i) => (
+            <span className="story-turn-tool" key={`${tc.name}:${i}`} title={tc.briefArgs}>
+              <span className="story-turn-tool-name">{tc.name}</span>
+              {tc.briefArgs ? <span className="story-turn-tool-args">{tc.briefArgs}</span> : null}
+            </span>
+          ))}
+        </div>
+      ) : null}
+    </li>
+  );
+});

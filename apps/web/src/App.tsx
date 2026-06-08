@@ -16,11 +16,13 @@ import {
   fetchProjectRuns,
   fetchProjectWorkflows,
   fetchProjectPlan,
+  fetchProjectSessions,
   fetchRunModel,
   fetchRunLive,
   fetchRunPlan,
   fetchFailureCause,
 } from './api.ts';
+import { orderSessionsByActivity } from './session/session-format.ts';
 import { pickPlanSource } from './plan-correspondence.ts';
 import { ExpandContext, type LoopDrillMode } from './expand-context.ts';
 import { readLoopDrillMode, writeLoopDrillMode } from './loop-drill-setting.ts';
@@ -63,6 +65,7 @@ import { FailureBanner } from './run-view/FailureBanner.tsx';
 import { RunObjective } from './run-view/RunObjective.tsx';
 import { useLiveStream } from './hooks/useLiveStream.ts';
 import { useChromeFit } from './hooks/useChromeFit.ts';
+import { StoryPage } from './session/StoryPage.tsx';
 
 // Stable identity (a fresh object each render would make React Flow warn + re-mount).
 // Execution-view types (M3, unchanged) + the P1b Plan-AST types — one shared registry.
@@ -113,6 +116,10 @@ const EXPAND_BUDGET = 24;
 // the Run-view chrome components (FailureBanner, RunObjective) live in ./run-view/.
 
 export function App() {
+  // Story M1b: the TOP-LEVEL page switch. 'workflows' is the run/plan graph (the whole
+  // canvas + chrome below); 'story' is the SEPARATE session-narrative page (its own layout
+  // and data, `apps/web/src/session/`). Not a ViewMode — the canvas chrome is gated behind it.
+  const [topView, setTopView] = useState<'workflows' | 'story'>('workflows');
   const [view, setView] = useState<ViewMode>('run');
 
   // --- M4: selection lifted into shared app state. Each is null until the user
@@ -131,6 +138,9 @@ export function App() {
   const [selectedProjectPath, setSelectedProjectPath] = useState<string | null>(null);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [selectedWorkflowName, setSelectedWorkflowName] = useState<string | null>(null);
+  // Story M1b: the user's session pick (null = fall back to the most-recently-active session).
+  // Resolved to `selectedSessionId` below once the project's sessions land.
+  const [pickedSessionId, setPickedSessionId] = useState<string | null>(null);
   // P2: the folded↔unrolled MODE switch for loop rounds (default folded).
   const [unrolled, setUnrolled] = useState(false);
   // I1: the node whose detail panel is open (by id; null = closed). Resolved against the
@@ -244,6 +254,28 @@ export function App() {
   const projects = projectsQ.data;
   const project =
     projects?.find((p) => p.projectPath === selectedProjectPath) ?? defaultProject(projects);
+
+  // --- Story M1b: the project's sessions (the rail's Story navigator + the StoryPage). Fetched
+  //     only while the Story page is active (a cheap HEAD/TAIL read per session, but no need on
+  //     the Workflows page). Ordered most-recently-active first; the default selection is the
+  //     first row (the freshest session), overridable by a pick. selectedSessionId is DERIVED so a
+  //     late-arriving list never needs a setState pass. ---
+  const sessionsQ = useQuery({
+    queryKey: ['story-sessions', project?.slug],
+    queryFn: () => fetchProjectSessions(project!.slug),
+    enabled: !!project && topView === 'story',
+    staleTime: 30_000,
+  });
+  const orderedSessions = useMemo(
+    () => orderSessionsByActivity(sessionsQ.data ?? []),
+    [sessionsQ.data],
+  );
+  const selectedSessionId = useMemo(() => {
+    if (pickedSessionId && orderedSessions.some((s) => s.sessionId === pickedSessionId)) {
+      return pickedSessionId;
+    }
+    return orderedSessions[0]?.sessionId ?? null;
+  }, [pickedSessionId, orderedSessions]);
 
   // --- Runs for the SELECTED project (queries already key on project.slug, so a new
   //     project re-scopes its runs/workflows automatically). ---
@@ -462,6 +494,21 @@ export function App() {
     setSelectedProjectPath(p.projectPath);
     setSelectedRunId(null);
     setSelectedWorkflowName(null);
+    setPickedSessionId(null); // the new project's sessions get their own most-active default
+  }
+  // Story M1b: picking a session in the rail selects it AND enters Story mode (the rail-as-
+  // navigator contract the user asked for — clicking a session takes you to its story).
+  function handleSelectSession(sessionId: string) {
+    setPickedSessionId(sessionId);
+    setTopView('story');
+    setRailSection('story');
+  }
+  // The rail's SECTION strip doubles as the top-level page nav: explorer ⇒ Workflows, story ⇒
+  // Story (so the page and the open rail section never disagree); settings is page-neutral.
+  function handleSelectSection(s: RailSection) {
+    setRailSection(s);
+    if (s === 'explorer' || s === 'projects' || s === 'runs') setTopView('workflows');
+    else if (s === 'story') setTopView('story');
   }
   // R2: selection is UNIFIED across both views. Picking a run drives the Run view AND syncs
   // the Plan workflow to the run's workflow, so Plan/Run both describe the SAME workflow
@@ -587,7 +634,8 @@ export function App() {
         collapsed={railCollapsed}
         onToggleCollapsed={() => setRailCollapsed((c) => !c)}
         section={railSection}
-        onSelectSection={setRailSection}
+        onSelectSection={handleSelectSection}
+        topView={topView}
         projects={projects ?? []}
         selectedProjectPath={project?.projectPath}
         onSelectProject={handleSelectProject}
@@ -596,6 +644,10 @@ export function App() {
         selectedRunId={summary?.ref.runId}
         onSelectRun={handleSelectRun}
         runsLoading={!!project && runsQ.isPending}
+        sessions={orderedSessions}
+        selectedSessionId={selectedSessionId ?? undefined}
+        onSelectSession={handleSelectSession}
+        sessionsLoading={!!project && topView === 'story' && sessionsQ.isPending}
         workflows={workflows}
         selectedWorkflowName={workflow?.name}
         onSelectWorkflow={handleSelectWorkflow}
@@ -608,6 +660,29 @@ export function App() {
       />
       {/* everything right of the rail lives here so overlays center on the CANVAS, not the viewport */}
       <div className="argus-main">
+      {/* TWO top-level pages (Story M1b): Workflows (the run/plan canvas) and Story (the
+          session-narrative page). The page nav is the LEFT RAIL's section strip (▤ Workflows /
+          ☰ Story) — rail-as-navigator — so there's no floating top switch to collide with the
+          run-header chrome; `topView` is driven by the rail (handleSelectSection/Session). */}
+      {topView === 'story' ? (
+        project ? (
+          <StoryPage
+            slug={project.slug}
+            sessionId={selectedSessionId}
+            projectName={project.name}
+            sessionCount={orderedSessions.length}
+          />
+        ) : (
+          <div className="argus-empty" role="status">
+            <div className="argus-wordmark">argus</div>
+            <div className="argus-tagline">Claude Code session narrative</div>
+            <div className="argus-hint">
+              {projectsQ.isPending ? 'loading…' : 'no project found in ~/.claude'}
+            </div>
+          </div>
+        )
+      ) : (
+        <>
       {/* Merged Run view: the expand caret on a fanned PlanAgentNode reaches `toggle(id)`
           through this provider (NOT a fn on node.data, which would break memo). */}
       <ExpandContext.Provider value={expandContextValue}>
@@ -955,6 +1030,8 @@ export function App() {
           onClose={() => setOverviewOpen(false)}
         />
       ) : null}
+        </>
+      )}
       </div>
     </div>
   );

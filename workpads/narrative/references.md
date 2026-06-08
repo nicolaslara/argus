@@ -41,3 +41,21 @@ exact artifact inspected + the observed field.
 Findings + design + adversarial verdicts + synthesis captured in `knowledge.md` (decisions) +
 `tasks.md` (roadmap). The raw run result is in the run journal under
 `<sessionId>/subagents/workflows/wf_4e4d6d47-f83/` (ephemeral task output not committed).
+
+## M1b verification evidence (2026-06-08, real data)
+- **Live stack:** `npm run dev` (server `127.0.0.1:4317`, web `:5173` Vite proxy injecting the
+  per-launch bearer). Direct un-tokened `:4317/api/projects` → **401**; via proxy → **200**.
+- **Endpoints (argus slug `-Users-nicolas-devel-argus`, session `d2cfe0e6`):**
+  - `/sessions` → 15 sessions; `d2cfe0e6` = 13 784 rec, 94 h span, 16 workflow spawns, 0 commits (M2).
+  - `/narrative` (cache MISS precompute ≈ 1.9 s; HIT instant) → **64 blocks** after the synthetic-filter
+    fix (was 130 with `<task-notification>`/interrupt/continuation noise). 16 blocks carry workflow
+    spawns; block 1 = the real first prompt "I love the claude workflows feature…".
+  - `/turns?block=` → 133 real turns for block 1 (user prompt + assistant Bash work), 0 console errors.
+- **Synthetic leakage measured** (replicated the filter in python over the raw `.jsonl`): 58
+  `<task-notification>`, 5 `This session is being continued…`, 2 `[Request interrupted…]` — all now filtered.
+- **Screenshots** (`.argus/shots/`, gitignored): `story-final-watch2.png` (watch view, clamped cards),
+  `story-rich.png` (130-block pre-fix), `workflows-pageswitch.png` (the Workflows↔Story top switch + canvas intact).
+- **Playwright-MCP gotcha:** `browser_take_screenshot` only persists to disk when given an ABSOLUTE path
+  inside an allowed root (`.../argus` or `.../argus/.playwright-mcp`); a bare relative name returns a
+  link but writes nothing findable. Console `all:true` accumulates across navigations — query without
+  `all` to scope errors to the last reload.

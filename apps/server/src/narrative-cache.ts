@@ -27,7 +27,11 @@ import type { SessionNarrative } from '@argus/contract';
  * Folded into the cache key so a regenerated entry never collides with a stale-format one.
  * Distinct from NARRATIVE_FORMAT (the on-disk transcript pin) — this versions OUR output.
  */
-export const NARRATIVE_CACHE_VERSION = 'narr-v1';
+// narr-v2: the synthetic filter now drops `<task-notification>` / `[Request interrupted…]` /
+// the compaction handoff summary — both as block ANCHORS and as response-preview/turn-count
+// contributors — so a session re-segments to fewer, real-prompt-anchored, noise-free blocks.
+// Every prior cached narrative is stale-shaped.
+export const NARRATIVE_CACHE_VERSION = 'narr-v2';
 
 /** The transcript's filesystem identity used to detect an append (a changed file misses). */
 export interface TranscriptStat {

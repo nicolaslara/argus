@@ -51,6 +51,40 @@ design's "verified" premises — those corrections are baked into the locked dec
 below. Confidence: **high** on the data facts (probed on real records); **medium** on
 segmentation *quality* (the one genuine product risk — validate in M0, judge after M1).
 
+> ## ⟐ M1b build decisions (verified on real data, 2026-06-08)
+> Segmentation *quality* (the flagged product risk) was validated against the live `d2cfe0e6`
+> session and these became locked engine rules:
+> - **`SYNTHETIC_PREFIXES` is the load-bearing denylist** and must cover ALL harness-injected
+>   user-role records, not just slash-command echoes: `<task-notification>`, `[Request interrupted`,
+>   and `This session is being continued from a previous conversation` were each falsely anchoring
+>   blocks (58 / 2 / 5 occurrences). They are filtered as anchors AND skipped from accumulation
+>   (so their text never pollutes a response preview or inflates a turn count). Result on `d2cfe0e6`:
+>   **130 → 64** real-prompt blocks. Any logic change here MUST bump `NARRATIVE_CACHE_VERSION`.
+> - **An empty (turnCount 0) session-start block is suppressed** — once the synthetic preamble is
+>   filtered the implicit pre-first-prompt block is usually empty; dropping it makes block 1 the real
+>   first prompt instead of a blank "Session start" card.
+> - **Order + default-select sessions by ACTIVITY (`end ?? start` desc), never by start** — else a
+>   long-running still-active session (started earliest) is buried and a throwaway is the default.
+> - **`Turn.promptId` is the originating prompt's id — NOT unique per turn**; never use it as a render
+>   key (it collides across a block's records). The wire preview is head+tail-bounded (~16 KB) for the
+>   click-in; the WATCH card line-clamps it (full text lives in the lazy turns drawer).
+>
+> ## ⟐ IA CORRECTION — rail-as-navigator (2026-06-08, supersedes "top switch")
+> The page nav is the **left rail's section strip**, not a floating top switch. The rail has three
+> sections — **▤ Workflows** (the workflow/run tree), **☰ Story** (the session list), **⚙ Settings** —
+> and `railSection` is kept in **sync with `topView`** in App (explorer⇔workflows, story⇔story;
+> settings is page-neutral). Selecting the Story section enters Story mode; **clicking a session row
+> selects it AND navigates** to its narrative. Consequences:
+> - The session LIST lives in the rail (the navigator), NOT inside the Story page. `StoryPage` is just
+>   the selected session's narrative, **full width**; App lifts `selectedSessionId` (default = most-
+>   recently-active) and passes it to both the rail and the page so they never disagree.
+> - The earlier floating "Workflows ⟷ Story" top switch was **removed**: it duplicated the rail nav and
+>   its top-center position collided with the run-header chip strip (the ▦ table button slid under it).
+>   With it gone, the run-header / view-toggle return to their original positions.
+> - In Story mode the rail shows ONLY project + sessions (the Workflows tree/group-by/filter and the
+>   loop-drill setting are gated to `topView==='workflows'`), fixing the "a workflow is still selected
+>   while reading a Story" hierarchy bug.
+
 ---
 
 ## Verified data facts (probed on the real transcript)

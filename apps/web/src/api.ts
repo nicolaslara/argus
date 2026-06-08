@@ -15,7 +15,10 @@ import type {
   RunModel,
   RunRef,
   RunSummary,
+  SessionNarrative,
+  SessionSummary,
   SubUiResponse,
+  Turn,
   WorkflowMeta,
 } from '@argus/contract';
 
@@ -186,6 +189,42 @@ export function fetchRunExplanations(
   return getJson<ExplanationBatch>(
     `/api/runs/${encodeURIComponent(slug)}/${encodeURIComponent(sessionId)}/${encodeURIComponent(runId)}/explanations`,
   );
+}
+
+/**
+ * M1 (Story): a project's sessions on a timeline (the top level of the Story view).
+ * Built from a cheap HEAD/TAIL read per session — NOT a full segment pass. Unwraps the
+ * server envelope `{ sessions }`. Ordered by start time (ascending) by convention.
+ */
+export function fetchProjectSessions(slug: string): Promise<SessionSummary[]> {
+  return getJson<{ sessions: SessionSummary[] }>(
+    `/api/projects/${encodeURIComponent(slug)}/sessions`,
+  ).then((r) => r.sessions);
+}
+
+/**
+ * M1 (Story): the facts-only Stage-1 narrative for ONE session — the per-session topic
+ * blocks (prompt-bounded), server-pre-computed + disk-cached, zero LLM. The block list is
+ * the watch view; full turns are fetched lazily via {@link fetchSessionTurns}.
+ */
+export function fetchSessionNarrative(slug: string, sessionId: string): Promise<SessionNarrative> {
+  return getJson<SessionNarrative>(
+    `/api/projects/${encodeURIComponent(slug)}/sessions/${encodeURIComponent(sessionId)}/narrative`,
+  );
+}
+
+/**
+ * M1 (Story): the lazy CLICK-IN full turns for ONE block, fetched only when a block is
+ * expanded (never inlined into the narrative). Unwraps the server envelope `{ turns }`.
+ */
+export function fetchSessionTurns(
+  slug: string,
+  sessionId: string,
+  blockId: string,
+): Promise<Turn[]> {
+  return getJson<{ turns: Turn[] }>(
+    `/api/projects/${encodeURIComponent(slug)}/sessions/${encodeURIComponent(sessionId)}/turns?block=${encodeURIComponent(blockId)}`,
+  ).then((r) => r.turns);
 }
 
 export { ApiError };

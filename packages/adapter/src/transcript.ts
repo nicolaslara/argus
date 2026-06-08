@@ -16,8 +16,9 @@
 //     Preview, the wire, or an LLM prompt.
 //   - A block opens on a REAL user prompt and runs until the NEXT real user prompt. The
 //     single most load-bearing parse rule is FILTERING synthetic user records (isMeta /
-//     `<command` / `<local-command` / `Caveat` / tool_result carriers) so they never
-//     start a block nor leak into a promptPreview.
+//     tool_result carriers / the SYNTHETIC_PREFIXES markers — slash-command echoes, the
+//     `<task-notification>` background events, `[Request interrupted…]`, and the compaction
+//     handoff summary) so they never start a block nor leak into a promptPreview.
 //   - Long assistant responses are BOUNDED to head+tail (first + last RESPONSE_HEADTAIL
 //     bytes) in the preview — we never hold or emit a whole multi-MB response.
 
@@ -253,7 +254,20 @@ export function projectText(content: string | RawBlock[] | null): ProjectedText 
 
 // --- real-user-prompt detection (THE load-bearing filter) -------------------
 
-const SYNTHETIC_PREFIXES = ['<command', '<local-command', 'Caveat'];
+// HARNESS-injected user-role records that are NOT user prompts. They all arrive as
+// type:'user' / role:'user' / userType:'external' / non-meta (so no structural flag
+// separates them) — only their leading text betrays them. Observed on the real argus
+// session (d2cfe0e6): `<task-notification>` ×58 (background-task events), the compaction
+// handoff summary ×5, `[Request interrupted…]` ×2. Without these, each would falsely
+// anchor a topic block (knowledge.md decision 3 — the load-bearing synthetic filter).
+const SYNTHETIC_PREFIXES = [
+  '<command',
+  '<local-command',
+  'Caveat',
+  '<task-notification>', // background-task lifecycle events injected mid-session
+  '[Request interrupted', // a user-interrupt marker (variants: "…by user", "…for tool use")
+  'This session is being continued from a previous conversation', // the compaction handoff summary
+];
 
 /** True if a content block list carries a `tool_result` block (a tool_result CARRIER). */
 function hasToolResult(content: string | RawBlock[] | null): boolean {
@@ -280,10 +294,11 @@ function firstText(content: string | RawBlock[] | null): string | null {
  *   - `type === 'user'` && `role === 'user'` && `userType === 'external'`, and
  *   - NOT `isMeta`, and
  *   - NOT a tool_result carrier (its content has a tool_result block), and
- *   - whose FIRST content text is a non-empty string NOT starting with `<command` /
- *     `<local-command` / `Caveat`.
- * Everything else among the 2,721 user records (2,600 tool_result carriers + ~13 synthetic)
- * is filtered: it never starts a block and never leaks into a promptPreview.
+ *   - whose FIRST content text is a non-empty string NOT starting with any
+ *     {@link SYNTHETIC_PREFIXES} marker (`<command` / `<local-command` / `Caveat` /
+ *     `<task-notification>` / `[Request interrupted` / the compaction handoff summary).
+ * Everything else among the user records (tool_result carriers + ~67 harness-injected
+ * synthetic markers) is filtered: it never starts a block and never leaks into a promptPreview.
  */
 export function isRealUserPrompt(r: RawRecord): boolean {
   if (r.type !== 'user' || r.role !== 'user' || r.userType !== 'external') return false;
@@ -292,6 +307,21 @@ export function isRealUserPrompt(r: RawRecord): boolean {
   const text = firstText(r.content);
   if (text === null || text.length === 0) return false;
   return !SYNTHETIC_PREFIXES.some((p) => text.startsWith(p));
+}
+
+/**
+ * A HARNESS-INJECTED user record (a slash-command echo, the `<task-notification>` events, an
+ * interrupt marker, the compaction handoff summary) that is NOT a real prompt. Beyond never
+ * ANCHORING a block (that's {@link isRealUserPrompt}), such a record must not contribute its
+ * synthetic text — `<task-notification>…`, `<local-command-caveat>Caveat:…` — to a block's
+ * response preview or its turn count either. Detected by the same {@link SYNTHETIC_PREFIXES}.
+ * (tool_result carriers project to empty text, so they need no special handling here.)
+ */
+function isSyntheticUserRecord(r: RawRecord): boolean {
+  if (r.type !== 'user') return false;
+  const text = firstText(r.content);
+  if (text === null) return false;
+  return SYNTHETIC_PREFIXES.some((p) => text.startsWith(p));
 }
 
 // --- per-block extractors ---------------------------------------------------
@@ -519,6 +549,20 @@ function finishBlock(b: BlockBuilder, end: number): NarrativeBlock {
   };
 }
 
+/**
+ * Emit a finished block UNLESS it is an empty session-start shell. A transcript opens with a
+ * synthetic/system preamble (slash-command echoes, `<task-notification>` events, system records)
+ * before the first real prompt; once those are filtered, the implicit session-start block can end
+ * up with zero turns and no content — it would render as a blank "Session start" card. A 'prompt'
+ * block always carries its prompt, so `turnCount === 0` uniquely identifies the empty preamble
+ * (no turns ⟹ no previews/tools/spawns/files, since those only come from counted user/assistant
+ * records). Dropping it loses nothing real.
+ */
+function pushBlock(blocks: NarrativeBlock[], block: NarrativeBlock): void {
+  if (block.cutReason === 'session-start' && block.turnCount === 0) return;
+  blocks.push(block);
+}
+
 /** Append response text to an open builder, keeping only head+tail-worth of bytes (memory bound). */
 function appendResponse(b: BlockBuilder, text: string): void {
   if (text.length === 0) return;
@@ -583,7 +627,7 @@ export function segmentTranscript(
       // Close the open block (its end is the line BEFORE this prompt). A real prompt ALWAYS
       // opens a 'prompt' block — including the first one. The only 'session-start' block is the
       // implicit one that absorbs records preceding the first real prompt (see below).
-      if (builder !== null) blocks.push(finishBlock(builder, i - 1));
+      if (builder !== null) pushBlock(blocks, finishBlock(builder, i - 1));
       builder = newBuilder(i, 'prompt');
       const ptext = firstText(r.content) ?? '';
       builder.promptText = ptext;
@@ -591,6 +635,13 @@ export function segmentTranscript(
       noteTime(builder, r.timestamp);
       continue;
     }
+
+    // Drop harness-injected synthetic user records (task-notification / caveat / command /
+    // interrupt / compaction summary): they never anchor a block AND must not pollute its
+    // response preview or turn count. Skipping them before the session-start builder is created
+    // means a transcript that opens with the synthetic startup preamble has NO noise
+    // session-start block — block 1 is the first real prompt.
+    if (isSyntheticUserRecord(r)) continue;
 
     // Pre-first-prompt records open an implicit session-start block so nothing is lost.
     if (builder === null) {
@@ -612,7 +663,7 @@ export function segmentTranscript(
   }
 
   if (builder !== null) {
-    blocks.push(finishBlock(builder, records.length - 1));
+    pushBlock(blocks, finishBlock(builder, records.length - 1));
   }
 
   if (droppedImages > 0) warnings.push({ code: 'transcript-image-dropped', detail: String(droppedImages) });
