@@ -10,6 +10,7 @@ import type {
   AgentActivity,
   AgentFailureCause,
   ExplanationBatch,
+  NarrativeSummary,
   PlanModel,
   ProjectRef,
   RunModel,
@@ -225,6 +226,23 @@ export function fetchSessionTurns(
   return getJson<{ turns: Turn[] }>(
     `/api/projects/${encodeURIComponent(slug)}/sessions/${encodeURIComponent(sessionId)}/turns?block=${encodeURIComponent(blockId)}`,
   ).then((r) => r.turns);
+}
+
+/**
+ * M4 (Story): the LAZY, ASYNC per-block narrative summary — a concise caption + body + intent +
+ * pattern, generated on demand by the local model from the block's bounded head+tail previews and
+ * cached server-side (one-time). Fetched ON-DEMAND per block (when it scrolls into view), NEVER
+ * eagerly for every block. Unwraps the `{ summary }` envelope; returns null when no summary is
+ * available (engine absent / claude absent / errored) → the Story view keeps its facts-only baseline.
+ */
+export function fetchBlockSummary(
+  slug: string,
+  sessionId: string,
+  blockId: string,
+): Promise<NarrativeSummary | null> {
+  return getJson<{ summary: NarrativeSummary | null }>(
+    `/api/projects/${encodeURIComponent(slug)}/sessions/${encodeURIComponent(sessionId)}/blocks/${encodeURIComponent(blockId)}/summary`,
+  ).then((r) => r.summary);
 }
 
 export { ApiError };

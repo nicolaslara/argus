@@ -40,6 +40,7 @@ import {
 import type {
   ExplanationBatch,
   NarrativeBlock,
+  NarrativeSummary,
   PlanModel,
   ProjectRef,
   RecordRange,
@@ -62,6 +63,7 @@ import {
   narrativeCacheKey,
   type NarrativeCacheIO,
 } from './narrative-cache.ts';
+import type { SummaryInput } from './narrative-summary.ts';
 
 /**
  * Strict path-segment charset. Slug dirs are `-Users-...` (alnum + dash), session ids
@@ -277,6 +279,13 @@ export interface RouteDeps {
    * transcript stat + version) — a changed transcript misses + recomputes. See narrative-cache.ts.
    */
   narrativeCache?: NarrativeCacheIO;
+  /**
+   * M4: the on-demand per-block narrative-summary engine (claude → a NarrativeSummary, cached).
+   * Optional so the M1/M3 routes + their tests need no engine; when absent, the summary route
+   * returns `{ summary: null }` and the Story view keeps its facts-only baseline. LAZY — only
+   * the requested block is summarized, NEVER eager-warmed. See narrative-summary.ts.
+   */
+  narrativeSummary?: import('./narrative-summary.ts').NarrativeSummaryEngine;
   /** Injected clock for live-run detection (defaults to Date.now). Tests pin it. */
   now?: () => number;
 }
@@ -1101,4 +1110,85 @@ export async function handleSessionTurns(
     return err(404, 'not_found'); // transcript vanished between the stat and the slice → 404
   }
   return { status: 200, body: { turns } };
+}
+
+/**
+ * Project ONE narrative block onto the HEAD+TAIL-ONLY summary input — the block's already-bounded
+ * previews + topic + tool counts. NEVER the full turns / raw transcript (the wire never carried a
+ * full body upstream; this just forwards what the segmenter already bounded + redact()-routed).
+ */
+function blockSummaryInput(block: NarrativeBlock): SummaryInput {
+  return {
+    topicLabel: block.topicLabel,
+    promptText: block.promptPreview.text,
+    responseText: block.responsePreview.text,
+    toolCounts: block.toolCounts,
+  };
+}
+
+/**
+ * GET /api/projects/:slug/sessions/:sessionId/blocks/:blockId/summary -> { summary: NarrativeSummary | null }.
+ * The M4 LAZY, ASYNC per-block narrative summary: claude reads ONLY the block's bounded head+tail
+ * previews (built by {@link blockSummaryInput}) and returns a concise caption + body + intent +
+ * pattern, content-addressed cached so a re-request is one-time. ON-DEMAND only (the FE asks per
+ * block when it scrolls into view) — never eager-warmed across a session's ~60 blocks, and it NEVER
+ * blocks the narrative endpoint (the blocks render facts-only first).
+ *
+ * REUSES the SAME cached-narrative path as handleSessionNarrative (stat-keyed cache → a click-in
+ * right after a watch render is a hit, no re-scan) to resolve the opaque blockId → the block, and
+ * the SAME M1 security posture: charset-validate slug + sessionId (400) + the sibling-path guard.
+ * The blockId is untrusted (only matched against the narrative's own ids — never used to build a
+ * path). A missing block param / unknown blockId → 404; a missing transcript → 404. The engine is
+ * OPTIONAL: when absent (or claude is absent/errs) → `{ summary: null }` and the FE keeps the
+ * baseline. NEVER 500s / leaks.
+ */
+export async function handleSessionBlockSummary(
+  deps: RouteDeps,
+  slug: string,
+  sessionId: string,
+  blockId: string,
+): Promise<RouteResult> {
+  const transcriptPath = safeSessionTranscriptPath(deps.claudeHome, slug, sessionId);
+  if (transcriptPath === null) return err(400, 'bad_request');
+  if (blockId.length === 0) return err(400, 'bad_request');
+
+  // No engine wired (or claude disabled) → the Story view keeps its facts-only baseline. We still
+  // validate + 404 the missing-transcript / unknown-block cases below, but skip the FS read here
+  // only when nothing could produce a summary anyway.
+  if (!deps.narrativeSummary) return { status: 200, body: { summary: null } };
+
+  const st = await deps.port.stat(transcriptPath);
+  if (st === null) return err(404, 'not_found');
+
+  // Resolve the blockId → its NarrativeBlock from the (cached or freshly-computed) narrative.
+  // We REUSE the SAME stat-keyed cache as handleSessionNarrative so the lookup is a hit when the
+  // watch view was just rendered (no re-scan of the 67 MB transcript).
+  const key = deps.narrativeCache
+    ? narrativeCacheKey(slug, sessionId, { size: st.size, mtimeMs: st.mtimeMs })
+    : null;
+  let narrative: SessionNarrative | null = null;
+  if (deps.narrativeCache && key !== null) {
+    narrative = await deps.narrativeCache.read(key);
+  }
+  if (narrative === null) {
+    try {
+      narrative = await loadSessionNarrative(deps.port, transcriptPath, sessionId);
+    } catch {
+      return err(404, 'not_found');
+    }
+    if (deps.narrativeCache && key !== null) {
+      await deps.narrativeCache.write(key, narrative);
+    }
+  }
+
+  const block: NarrativeBlock | undefined = narrative.blocks.find((b) => b.id === blockId);
+  if (block === undefined) return err(404, 'not_found'); // unknown / stale block id
+
+  // ON-DEMAND: summarize ONLY this requested block from its bounded head+tail input. The engine
+  // caches (content-addressed) so a re-request is a one-time hit; it NEVER throws (claude absent/
+  // errs → summary:null → the FE keeps the baseline).
+  const { summary }: { summary: NarrativeSummary | null } = await deps.narrativeSummary.generate(
+    blockSummaryInput(block),
+  );
+  return { status: 200, body: { summary } };
 }

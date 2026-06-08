@@ -15,18 +15,19 @@
 // outlined chips) — the story-specific classes live in a `===== Story view (M1b) =====`
 // block appended to index.css.
 
-import { createContext, memo, useContext, useMemo, useState } from 'react';
+import { createContext, memo, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type {
   AskQuestion,
   GitCommitRef,
   NarrativeBlock,
+  NarrativeSummary,
   Preview,
   SessionNarrative,
   Turn,
   WorkflowSpawn,
 } from '@argus/contract';
-import { fetchSessionNarrative, fetchSessionTurns } from '../api.ts';
+import { fetchBlockSummary, fetchSessionNarrative, fetchSessionTurns } from '../api.ts';
 import { isoToMs } from './session-format.ts';
 
 interface StoryPageProps {
@@ -253,6 +254,35 @@ const BlockCard = memo(function BlockCard({
   const [expanded, setExpanded] = useState(false);
   const [asksOpen, setAsksOpen] = useState(false);
 
+  // M4: the per-block LLM summary is fetched LAZILY + ASYNC — only once the card scrolls INTO VIEW
+  // (an IntersectionObserver flips `inView`), never eagerly for every block (a session has ~60+).
+  // Cached forever after (staleTime Infinity, content-addressed server-side → a one-time generate).
+  const cardRef = useRef<HTMLLIElement | null>(null);
+  const [inView, setInView] = useState(false);
+  useEffect(() => {
+    const el = cardRef.current;
+    if (!el || inView) return;
+    // No IntersectionObserver (jsdom / old env) → never auto-trigger (the baseline still renders).
+    if (typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) setInView(true);
+      },
+      { rootMargin: '120px' },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [inView]);
+
+  // Lazy summary: enabled ONLY once the block is triggered (in view). Returns null when unavailable
+  // (engine/claude absent) → the baseline stands. Keyed per block so each is generated independently.
+  const summaryQ = useQuery({
+    queryKey: ['story-summary', slug, sessionId, block.id],
+    queryFn: () => fetchBlockSummary(slug, sessionId, block.id),
+    enabled: inView,
+    staleTime: Infinity,
+  });
+
   // Level 3: full turns are fetched LAZILY — only once a block is expanded, never inlined into
   // the narrative (so the watch view stays small). Disabled until expanded; cached forever after.
   const turnsQ = useQuery({
@@ -272,10 +302,12 @@ const BlockCard = memo(function BlockCard({
   const askCount = block.asks.length;
   const start = clockIso(block.timeRange.start);
   const span = spanLabel(block.timeRange.start, block.timeRange.end);
-  const hasSummary = !!block.summary;
+  // Prefer the LAZILY-fetched M4 summary over any baked-in block.summary (M0-M3 emit null).
+  const summary: NarrativeSummary | null = summaryQ.data ?? block.summary;
+  const hasSummary = !!summary && (!!summary.caption || !!summary.body);
 
   return (
-    <li className="story-block">
+    <li className="story-block" ref={cardRef}>
       <div className="story-block-rail" aria-hidden="true" />
       <div className="story-block-body">
         <div className="story-block-head">
@@ -309,11 +341,11 @@ const BlockCard = memo(function BlockCard({
             summary — mirrors the agent-caption treatment from the Execution view. */}
         {hasSummary ? (
           <div className="story-block-summary">
-            {block.summary!.caption ? (
-              <div className="story-block-summary-caption">{block.summary!.caption}</div>
+            {summary!.caption ? (
+              <div className="story-block-summary-caption">{summary!.caption}</div>
             ) : null}
-            {block.summary!.body ? (
-              <div className="story-block-summary-body">{block.summary!.body}</div>
+            {summary!.body ? (
+              <div className="story-block-summary-body">{summary!.body}</div>
             ) : null}
           </div>
         ) : null}

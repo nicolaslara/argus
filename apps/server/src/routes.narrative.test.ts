@@ -3,6 +3,7 @@ import {
   handleProjectSessions,
   handleSessionNarrative,
   handleSessionTurns,
+  handleSessionBlockSummary,
   isValidSessionId,
   safeSessionTranscriptPath,
   type RouteDeps,
@@ -14,8 +15,9 @@ import {
   NARRATIVE_CACHE_VERSION,
   type NarrativeCacheIO,
 } from './narrative-cache.ts';
+import { NarrativeSummaryEngine } from './narrative-summary.ts';
 import type { FileSystemPort } from '@argus/adapter';
-import type { SessionNarrative, SessionSummary, Turn } from '@argus/contract';
+import type { NarrativeSummary, SessionNarrative, SessionSummary, Turn } from '@argus/contract';
 
 // M1 Session Narrative server-route test (boundaries.md §4 pattern, mirrors routes.test.ts's
 // in-memory fake-port approach): exercise the three Story-view routes over a tiny but REAL
@@ -363,6 +365,106 @@ describe('handleSessionTurns (M1 lazy click-in)', () => {
     const deps: RouteDeps = { port, claudeHome: CLAUDE_HOME };
     const res = await handleSessionTurns(deps, SLUG, 'sess-nope', 'deadbeef');
     expect(res.status).toBe(404);
+  });
+});
+
+// --- GET /sessions/:sessionId/blocks/:blockId/summary (M4 lazy per-block summary) ----------
+
+describe('handleSessionBlockSummary (M4 lazy, async per-block summary)', () => {
+  /** A stub summary engine over an injected `claude` runner (no real spawn). */
+  function engineWith(runner: (prompt: string) => Promise<string | null>): NarrativeSummaryEngine {
+    return new NarrativeSummaryEngine({ cacheDir: '/nonexistent-readonly', runner });
+  }
+  const GOOD_REPLY = [
+    'caption: Wires the M1 server routes',
+    'body: Implemented the Story-view server routes.',
+    'intent: build the M1 narrative API',
+    'pattern: feature implementation',
+  ].join('\n');
+
+  it('rejects a bad slug / sessionId / missing block with 400 (before any summary)', async () => {
+    const { port } = makeFakePort();
+    const deps: RouteDeps = { port, claudeHome: CLAUDE_HOME };
+    expect((await handleSessionBlockSummary(deps, '../etc', SESSION, 'b')).status).toBe(400);
+    expect((await handleSessionBlockSummary(deps, SLUG, '../../secret', 'b')).status).toBe(400);
+    expect((await handleSessionBlockSummary(deps, SLUG, SESSION, '')).status).toBe(400);
+  });
+
+  it('returns { summary: null } when NO engine is wired (the Story view keeps its baseline)', async () => {
+    const { port } = makeFakePort();
+    const deps: RouteDeps = { port, claudeHome: CLAUDE_HOME };
+    const res = await handleSessionBlockSummary(deps, SLUG, SESSION, 'anything');
+    expect(res.status).toBe(200);
+    expect(bodyOf<{ summary: NarrativeSummary | null }>(res).summary).toBeNull();
+  });
+
+  it('404s a missing transcript (never a 500)', async () => {
+    const { port } = makeFakePort();
+    const deps: RouteDeps = {
+      port,
+      claudeHome: CLAUDE_HOME,
+      narrativeSummary: engineWith(async () => GOOD_REPLY),
+    };
+    const res = await handleSessionBlockSummary(deps, SLUG, 'sess-does-not-exist', 'b');
+    expect(res.status).toBe(404);
+  });
+
+  it('404s an unknown blockId (the blockId is matched against the narrative, never a path)', async () => {
+    const { port } = makeFakePort();
+    const cache = makeMemCache();
+    const deps: RouteDeps = {
+      port,
+      claudeHome: CLAUDE_HOME,
+      narrativeCache: cache,
+      narrativeSummary: engineWith(async () => GOOD_REPLY),
+    };
+    const res = await handleSessionBlockSummary(deps, SLUG, SESSION, 'deadbeef-not-a-block');
+    expect(res.status).toBe(404);
+  });
+
+  it('resolves a real blockId → a NarrativeSummary (lazy, on-demand, cached one-time)', async () => {
+    let calls = 0;
+    const { port } = makeFakePort();
+    const cache = makeMemCache();
+    const deps: RouteDeps = {
+      port,
+      claudeHome: CLAUDE_HOME,
+      narrativeCache: cache,
+      narrativeSummary: engineWith(async () => {
+        calls += 1;
+        return GOOD_REPLY;
+      }),
+    };
+    // Compute the narrative first so the blockId is a cache HIT for the summary lookup (no re-scan).
+    const nar = await handleSessionNarrative(deps, SLUG, SESSION);
+    const blockId = bodyOf<SessionNarrative>(nar).blocks[0]!.id;
+
+    const a = await handleSessionBlockSummary(deps, SLUG, SESSION, blockId);
+    expect(a.status).toBe(200);
+    const sa = bodyOf<{ summary: NarrativeSummary | null }>(a).summary!;
+    expect(sa.caption).toBe('Wires the M1 server routes');
+    expect(sa.pattern).toBe('feature implementation');
+
+    // 2nd request for the SAME block → engine memory cache hit → no re-spawn (the one-time invariant).
+    const b = await handleSessionBlockSummary(deps, SLUG, SESSION, blockId);
+    expect(bodyOf<{ summary: NarrativeSummary | null }>(b).summary!.caption).toBe(sa.caption);
+    expect(calls).toBe(1);
+  });
+
+  it('degrades to { summary: null } when claude is absent (runner null)', async () => {
+    const { port } = makeFakePort();
+    const cache = makeMemCache();
+    const deps: RouteDeps = {
+      port,
+      claudeHome: CLAUDE_HOME,
+      narrativeCache: cache,
+      narrativeSummary: engineWith(async () => null),
+    };
+    const nar = await handleSessionNarrative(deps, SLUG, SESSION);
+    const blockId = bodyOf<SessionNarrative>(nar).blocks[0]!.id;
+    const res = await handleSessionBlockSummary(deps, SLUG, SESSION, blockId);
+    expect(res.status).toBe(200);
+    expect(bodyOf<{ summary: NarrativeSummary | null }>(res).summary).toBeNull();
   });
 });
 

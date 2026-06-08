@@ -37,11 +37,13 @@ import {
   handleProjectSessions,
   handleSessionNarrative,
   handleSessionTurns,
+  handleSessionBlockSummary,
   type RouteDeps,
   type RouteResult,
 } from './routes.ts';
 import { ExplanationEngine, explanationsCacheDir } from './explain.ts';
 import { SubUiEngine, subUiCacheDir } from './subui.ts';
+import { NarrativeSummaryEngine, narrativeSummaryCacheDir } from './narrative-summary.ts';
 import { diskNarrativeCacheIO, narrativesCacheDir } from './narrative-cache.ts';
 import { scrubError } from './error-redaction.ts';
 
@@ -77,6 +79,14 @@ const subui = EXPLAIN_ENABLED ? new SubUiEngine({ cacheDir: subUiCacheDir(REPO_R
 // hit. Always on (it carries no model spend — it just memoizes the 67 MB scan + segment pass).
 const narrativeCache = diskNarrativeCacheIO(narrativesCacheDir(REPO_ROOT));
 
+// M4: the on-demand per-block narrative-summary engine (claude → a NarrativeSummary, cached under
+// .argus/cache/narrative-summaries). Shares the EXPLAIN on/off switch (it is a `claude -p` feature
+// that degrades to the facts-only Story baseline when claude is absent). LAZY — only a block the FE
+// requests is summarized, never eager-warmed; it never blocks the narrative endpoint.
+const narrativeSummary = EXPLAIN_ENABLED
+  ? new NarrativeSummaryEngine({ cacheDir: narrativeSummaryCacheDir(REPO_ROOT) })
+  : undefined;
+
 // One shared read-only port + route deps for the process lifetime.
 const deps: RouteDeps = {
   port: new NodeFileSystemPort(),
@@ -84,6 +94,7 @@ const deps: RouteDeps = {
   explain,
   subui,
   narrativeCache,
+  narrativeSummary,
 };
 
 function send(res: ServerResponse, status: number, body: unknown): void {
@@ -127,9 +138,23 @@ async function dispatchApi(url: URL): Promise<RouteResult | null> {
     return handleProjectRuns(deps, slug);
   }
 
-  // --- Session Narrative ("Story" view) routes (M1) ---
-  // The two :sessionId sub-routes (/narrative, /turns) are MORE specific than the bare
-  // /sessions listing → matched first (mirrors the plan/explanations-before-listing order).
+  // --- Session Narrative ("Story" view) routes (M1 + M4) ---
+  // The :sessionId sub-routes (/blocks/:id/summary, /narrative, /turns) are MORE specific than the
+  // bare /sessions listing → matched first (mirrors the plan/explanations-before-listing order).
+  // The /blocks/:blockId/summary route is the MOST specific (an extra segment pair) → matched first.
+
+  // GET /api/projects/:slug/sessions/:sessionId/blocks/:blockId/summary (M4 lazy per-block summary)
+  const blockSummaryMatch =
+    /^\/api\/projects\/([^/]+)\/sessions\/([^/]+)\/blocks\/([^/]+)\/summary$/.exec(pathname);
+  if (blockSummaryMatch) {
+    const slug = decodeSegment(blockSummaryMatch[1]!);
+    const sessionId = decodeSegment(blockSummaryMatch[2]!);
+    const blockId = decodeSegment(blockSummaryMatch[3]!);
+    if (slug === null || sessionId === null || blockId === null) {
+      return { status: 400, body: { error: 'bad_request' } };
+    }
+    return handleSessionBlockSummary(deps, slug, sessionId, blockId);
+  }
 
   // GET /api/projects/:slug/sessions/:sessionId/narrative (the watch-view narrative)
   const sessionNarrativeMatch =
