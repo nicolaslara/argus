@@ -49,6 +49,16 @@ body {
   background: var(--argus-bg);
 }
 
+/* The Story page host — fills .argus-main, and is display:none under Workflows (the `hidden`
+   attribute) so the Story stays MOUNTED (scroll + expanded turns preserved) for a clean return. */
+.story-host {
+  height: 100%;
+  width: 100%;
+}
+.story-host[hidden] {
+  display: none;
+}
+
 /* Centered empty-state overlay; non-interactive so the canvas stays pannable. */
 .argus-empty {
   position: absolute;
@@ -1310,6 +1320,38 @@ body {
   border-right: 1px solid #1c2128;
   backdrop-filter: blur(8px);
   overflow: hidden;
+}
+/* Story M3: the "← Back to Story" banner at the top of the rail panel — shown only after a spawn
+   chip jumped to a run, so the user can return to the narrative they came from. */
+.rail-back {
+  pointer-events: auto;
+  appearance: none;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 264px;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 9px 14px;
+  border: none;
+  border-right: 1px solid #1c2128;
+  border-bottom: 1px solid #1c2128;
+  background: rgba(124, 140, 255, 0.12);
+  color: var(--argus-fg);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+.rail-back:hover {
+  background: rgba(124, 140, 255, 0.22);
+}
+.rail-back-arrow {
+  font-size: 14px;
+  color: #9aa6ff;
 }
 .rail-section {
   display: flex;

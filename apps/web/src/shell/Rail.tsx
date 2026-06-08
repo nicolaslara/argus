@@ -43,6 +43,9 @@ interface RailProps {
   // The active top-level page. Drives the loop-drill setting's relevance (Workflows-only) and is
   // kept in sync with `section` by App (explorer⇔workflows, story⇔story).
   topView: 'workflows' | 'story';
+  // Story M3: set ONLY after a spawn chip jumped from the Story to a run — renders a "← Back to
+  // Story" banner so the user can return to the session narrative they came from. Undefined otherwise.
+  onBackToStory?: () => void;
 
   projects: ProjectRef[];
   selectedProjectPath: string | undefined;
@@ -247,6 +250,7 @@ export const Rail = memo(function Rail(props: RailProps) {
     section,
     onSelectSection,
     topView,
+    onBackToStory,
     projects,
     selectedProjectPath,
     onSelectProject,
@@ -390,6 +394,15 @@ export const Rail = memo(function Rail(props: RailProps) {
           <span className="rail-glyph">⚙</span>
         </button>
       </nav>
+
+      {/* Story M3: a "← Back to Story" banner shown only after a spawn chip jumped to a run, so the
+          user can return to the narrative they came from (restored to their exact place). */}
+      {!collapsed && onBackToStory ? (
+        <button type="button" className="rail-back" onClick={onBackToStory}>
+          <span className="rail-back-arrow" aria-hidden="true">←</span>
+          Back to Story
+        </button>
+      ) : null}
 
       {collapsed ? null : section === 'settings' ? (
         <div className="rail-panel">

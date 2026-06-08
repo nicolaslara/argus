@@ -121,6 +121,11 @@ export function App() {
   // canvas + chrome below); 'story' is the SEPARATE session-narrative page (its own layout
   // and data, `apps/web/src/session/`). Not a ViewMode — the canvas chrome is gated behind it.
   const [topView, setTopView] = useState<'workflows' | 'story'>('workflows');
+  // Story M3: true after a spawn chip jumped from Story → a run, so we show a "← Back to Story"
+  // affordance. The Story page stays MOUNTED (hidden) under Workflows, so going back restores the
+  // exact scroll + expanded state. Cleared on return, on switching to Story by other means, or on
+  // a project change.
+  const [cameFromStory, setCameFromStory] = useState(false);
   const [view, setView] = useState<ViewMode>('run');
 
   // --- M4: selection lifted into shared app state. Each is null until the user
@@ -496,6 +501,7 @@ export function App() {
     setSelectedRunId(null);
     setSelectedWorkflowName(null);
     setPickedSessionId(null); // the new project's sessions get their own most-active default
+    setCameFromStory(false); // a different project drops the prior story-return context
   }
   // Story M1b: picking a session in the rail selects it AND enters Story mode (the rail-as-
   // navigator contract the user asked for — clicking a session takes you to its story).
@@ -509,7 +515,10 @@ export function App() {
   function handleSelectSection(s: RailSection) {
     setRailSection(s);
     if (s === 'explorer' || s === 'projects' || s === 'runs') setTopView('workflows');
-    else if (s === 'story') setTopView('story');
+    else if (s === 'story') {
+      setTopView('story');
+      setCameFromStory(false); // arriving at Story via the rail clears the chip-return affordance
+    }
   }
   // Story M3: a workflow-spawn chip jumps straight into the run it launched. Resolve the spawn to
   // a run by the time window (matchSpawnToRun — zero false positives), select it, and switch to the
@@ -527,9 +536,17 @@ export function App() {
       setView('run');
       setTopView('workflows');
       setRailSection('explorer');
+      setCameFromStory(true); // show "← Back to Story"; the Story page stays mounted underneath
     },
     [runs],
   );
+  // Return to the Story page you jumped FROM. The Story page was never unmounted (just hidden),
+  // so this restores the exact session + scroll + expanded turns. Clears the back affordance.
+  const handleBackToStory = useCallback(() => {
+    setTopView('story');
+    setRailSection('story');
+    setCameFromStory(false);
+  }, []);
   // R2: selection is UNIFIED across both views. Picking a run drives the Run view AND syncs
   // the Plan workflow to the run's workflow, so Plan/Run both describe the SAME workflow
   // (no more "Plan shows X while Run shows Y").
@@ -660,6 +677,7 @@ export function App() {
         section={railSection}
         onSelectSection={handleSelectSection}
         topView={topView}
+        onBackToStory={cameFromStory ? handleBackToStory : undefined}
         projects={projects ?? []}
         selectedProjectPath={project?.projectPath}
         onSelectProject={handleSelectProject}
@@ -688,8 +706,11 @@ export function App() {
           session-narrative page). The page nav is the LEFT RAIL's section strip (▤ Workflows /
           ☰ Story) — rail-as-navigator — so there's no floating top switch to collide with the
           run-header chrome; `topView` is driven by the rail (handleSelectSection/Session). */}
-      {topView === 'story' ? (
-        project ? (
+      {/* The Story page stays MOUNTED (just hidden) under Workflows so a spawn-chip jump to a run
+          can return to EXACTLY where you were — scroll + expanded turns preserved natively. The
+          heavy run/plan canvas is the part that mounts/unmounts on the page switch. */}
+      <div className="story-host" hidden={topView !== 'story'}>
+        {project ? (
           <StoryPage
             slug={project.slug}
             sessionId={selectedSessionId}
@@ -706,8 +727,9 @@ export function App() {
               {projectsQ.isPending ? 'loading…' : 'no project found in ~/.claude'}
             </div>
           </div>
-        )
-      ) : (
+        )}
+      </div>
+      {topView === 'workflows' ? (
         <>
       {/* Merged Run view: the expand caret on a fanned PlanAgentNode reaches `toggle(id)`
           through this provider (NOT a fn on node.data, which would break memo). */}
@@ -1058,7 +1080,7 @@ export function App() {
         />
       ) : null}
         </>
-      )}
+      ) : null}
       </div>
     </div>
   );
