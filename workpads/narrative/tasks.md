@@ -68,12 +68,19 @@ build stack + the redaction/segmentation specs are in `knowledge.md`.
   - **Watch-view legibility.** The card response preview dumped the full ~16 KB head+tail → CSS
     line-clamp (prompt 4 / response 3 lines); the full text stays one click away in the turns drawer.
 
-- [ ] **M2 — Git-commit linkage by timestamp (+ message).** *(deferred-additive)*
-  *Build:* correlate the repo's REAL `git log` (author time + subject) to blocks/sessions by
-  time-window + message match (more reliable than `git commit -q` stdout, which carries no SHA);
-  GitHub URL only from a fixed `github.com` host + `/commit/<validated-sha>`; subsystem chips by path
-  prefix. *Acceptance:* commits map to the right blocks by time; a poisoned-remote fixture yields no
-  foreign-host link.
+- [x] **M2 — Git-commit linkage by timestamp. DONE 2026-06-08** (`a11be1a`).
+  Built via workflow `wf_4071c870-538` (the workflow hit the StructuredOutput-finalization gotcha after
+  the impl agent finished — recovered in the main loop: work landed on disk, gate-verified, then a
+  FOCUSED adversarial review agent run by hand since the workflow's review phase never fired).
+  `apps/server/src/git-commits.ts` — git is a SERVER concern (process spawn mirroring llm/runner.ts;
+  injected GitLogReader/GitRemoteReader, never-throw/degrade, bounded log). `correlateCommits` is pure +
+  deterministic (author-time ∈ block.timeRange; outside-all dropped; per-block/total caps). SECURITY:
+  shortSha `/^[0-9a-f]{7,40}$/`; githubUrl ONLY from a host EXACTLY github.com (URL API + anchored scp
+  regex; conservative owner/repo charset) → poisoned/foreign remote → null. Correlated on the way OUT of
+  handleSessionNarrative (optional dep; LIVE, never baked into the stat-keyed cache); ARGUS_GIT=0 disables.
+  Adapter untouched, cache version not bumped, web unchanged (CommitChip already rendered gitCommits).
+  Tests +37 (incl. the poisoned-remote set); 740 green. LIVE on real d2cfe0e6: 46/72 blocks, 138 commits,
+  all `https://github.com/nicolaslara/argus/commit/<sha>`. Adversarial review (25 vectors + 200k fuzz): SOUND.
 
 - [ ] **M3 — Workflow-spawn → run correlation (time-window, zero false positives).** *(deferred-additive)*
   *Build:* `Workflow` tool_use `{scriptPath,args}` → `recoverProjectPath` on the TRANSCRIPT scriptPath →
