@@ -13,11 +13,22 @@ fullscreen graph of phases, agents, tokens, tools, and results.
 > run journals end-to-end and renders them, but both the UI and the undocumented
 > on-disk format it observes are still moving — not yet stable to build on.
 
-![argus — the Run view: a workflow's plan painted with a run; fan-outs expanded into agent instance cards with result previews, plus the run's objective band](docs/screenshots/run-view.png)
+<p align="center">
+  <img src="docs/screenshots/run-view.png" width="100%" alt="argus — the Run view: a workflow's plan painted with a run; fan-outs expanded into agent instance cards with result previews, plus the run's objective band" />
+  <br/>
+  <sub><em>The <strong>Run view</strong> — a workflow's plan painted with one run: left→right phase lanes, fan-outs expanded into agent instance cards with result previews, and the run's objective band. <strong>Click any screenshot to enlarge.</strong></em></sub>
+</p>
 
 <p align="center">
-  <img src="docs/screenshots/plan-overview.png" width="49%" alt="Plan view — a workflow's intended DAG parsed from its code: left→right phase lanes (Research → Design → Review → Synthesize) with dashed plan nodes and fan-out markers" />
-  <img src="docs/screenshots/loop-drill.png" width="49%" alt="a loop workflow's plan — the critique → decision → revise cycle with its dashed back-edge and an exit-loop branch (runs until the condition holds, max 3 rounds)" />
+  <img src="docs/screenshots/plan-overview.png" width="100%" alt="Plan view — a workflow's intended DAG parsed from its code: left→right phase lanes (Research → Design → Review → Synthesize) with dashed plan nodes and fan-out markers" />
+  <br/>
+  <sub><em>The <strong>Plan view</strong> — a workflow's intended DAG parsed from its <code>.js</code>: phase lanes (Ground → Design → Review → Synthesize) with dashed plan nodes and fan-out markers. Renders run-free.</em></sub>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/loop-drill.png" width="100%" alt="a loop workflow's plan — the critique → decision → revise cycle with its dashed back-edge and an exit-loop branch (runs until the condition holds, max 3 rounds)" />
+  <br/>
+  <sub><em>A <strong>loop workflow's plan</strong> — the critique → decision → revise cycle with its dashed back-edge and exit-loop branch (runs until the condition holds).</em></sub>
 </p>
 
 ## Status
@@ -83,12 +94,16 @@ error, and the elapsed-to-failure; the failing step is ringed red instead of rea
 clean "done"; clicking it drills into the agent's prompt + activity timeline — here, the API
 socket-close that actually killed the run (the root cause behind a generic "didn't finalize").
 
-![failure inspector — banner "run failed at implement:I1" plus the failing agent's prompt + activity](docs/screenshots/failure-inspector.png)
+<p align="center">
+  <img src="docs/screenshots/failure-inspector.png" width="100%" alt="failure inspector — a red banner names the failing step, the error, and the elapsed-to-failure; the failing step is ringed and the agent's prompt + activity timeline are drilled in the side panel" />
+</p>
 
 **Read any agent end to end.** "Open full" turns the detail panel into a transcript reader:
 the verbatim prompt, the ordered tool timeline, and the readable result, top to bottom.
 
-![transcript reader — one agent read top-to-bottom: prompt, tool timeline, result](docs/screenshots/transcript-reader.png)
+<p align="center">
+  <img src="docs/screenshots/transcript-reader.png" width="100%" alt="transcript reader — one agent read top-to-bottom: the verbatim prompt, the ordered tool timeline, and the readable result" />
+</p>
 
 **The whole surface at once — scan the table, read any agent, never lose the graph.** The
 bottom panel lists every agent with cost / time / tools / status columns (sortable, filterable,
@@ -97,7 +112,9 @@ siblings indented). Clicking a row opens that agent's full detail on the right �
 prompt, result, activity timeline — even when its fan is collapsed on the canvas; hovering
 cross-highlights its node on the graph above. Graph, table, and detail panel, one view.
 
-![argus showing everything at once — the run graph with expanded agent fans, the sortable agent table along the bottom, and a selected agent's detail panel (state · tokens · prompt · result · activity) on the right](docs/screenshots/agent-table.png)
+<p align="center">
+  <img src="docs/screenshots/agent-table.png" width="100%" alt="argus showing everything at once — the run graph with expanded agent fans, the sortable agent table along the bottom, and a selected agent's detail panel (state · tokens · prompt · result · activity) on the right" />
+</p>
 
 ## How it works
 
