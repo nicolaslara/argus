@@ -80,12 +80,28 @@ build stack + the redaction/segmentation specs are in `knowledge.md`.
   correlate to `wf_*.json` by cached-script basename + `startTime` window; null on ambiguity.
   *Acceptance:* ≥1 block deep-links into its spawned Run view; zero mis-links.
 
-- [ ] **M4 — Local-LLM summaries (flat per-block, NarrativeEngine).** *(deferred-additive; ON by default; small model)*
-  *Build:* mirror `ExplanationEngine` but a **small/fast model**; one call per block on **head+tail**
-  input only (the prompt + top/bottom of a long answer — minimize what's sent); cache key =
-  `sha256(boundary projection + SEGMENT_PROMPT_VERSION)`; eager background warming, **on by default**
-  (privacy is not a gate). *Acceptance:* reload = cache hit; input is bounded head+tail (verified);
-  `claude`-absent degrades to the Stage-1 baseline.
+- [~] **M4-prep — the `llm/` module (DONE 2026-06-08).** All model-facing code consolidated into
+  `apps/server/src/llm/`: `runner.ts` (the ONE place to swap model/flags/timeout — `LLM_MODEL`),
+  `prompts/caption.ts` (node captions) + `prompts/panel.ts` (sub-UI/describe) — each its own file with
+  its version + parser. `explain.ts`/`subui.ts` are now thin ENGINES that consume `llm/` (re-exporting
+  for back-compat; all gates green). M4's summary prompt = a new `llm/prompts/summary.ts` + a small engine.
+  *Follow-up:* dedupe the content-addressed disk cache (explain + subui copies) into `llm/cache.ts`.
+
+- [ ] **M4 — Local-LLM per-block summaries.** *(deferred-additive; small model; **ASYNC, never blocks**)*
+  **Architecture (locked 2026-06-08, per user):**
+  - **LLM never blocks segmentation.** The narrative returns blocks as today (fast + disk-cached);
+    summaries are a SEPARATE async layer (mirror the `ExplanationEngine` poll pattern) fetched/polled
+    after the blocks render. Parse and LLM are decoupled.
+  - **Trigger = LAZY / on-demand (FE-driven), NOT eager-all.** Generate a block's summary when the FE
+    asks (block in view, or a "✨ summarize" affordance), cached so it's one-time. A session has ~60+
+    blocks; eagerly summarizing all (most never read) is the slow/costly path to avoid. (Supersedes the
+    earlier "on by default / eager warming" framing.)
+  - *Related (separate):* the LIVE session re-segments the whole file on each append — the deferred M0
+    cursor-resume (incremental parse) — so a growing session isn't re-parsed wholesale. Not a blocker for M4.
+  *Build:* `llm/prompts/summary.ts` (head+tail input only — the prompt + top/bottom of a long answer);
+  a small summary engine (lazy, cached, content-addressed); a poll/per-block endpoint. *Acceptance:*
+  blocks render instantly (no LLM wait); a requested summary caches (reload = hit); input is bounded
+  head+tail (verified); `claude`-absent degrades to the Stage-1 baseline.
 
 - [x] ~~M5 — architectural diffs~~ **CUT** (needs its own opt-in + cache; out of scope).
 - [x] ~~M0.5 privacy redactor HARD GATE~~ **REFRAMED** — privacy is not a gate (full-access local tool);
