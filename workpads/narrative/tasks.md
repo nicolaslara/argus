@@ -127,6 +127,16 @@ build stack + the redaction/segmentation specs are in `knowledge.md`.
   the `redact()` **noop seam** folds into M0 (placement now, pluggable later).
 
 ## Follow-ups discovered
+- **M4 summary trigger fires on scroll-PAST, not just dwell (found 2026-06-08; user-decision).** The
+  `BlockCard` `inView` latch flips true with a 120px pre-margin and NEVER resets, so scrolling through a
+  session enables the summary `useQuery` for EVERY block scrolled past → up to ~72 `claude` generations
+  (browser-capped to ~6 concurrent). With the slow ~16s runner this is effectively the eager-summarize-all
+  path the locked M4 architecture said to AVOID. The locked decision named two triggers — "block in view"
+  (current) vs a "✨ summarize" affordance. PROPER FIX is a product/UX call (the user's): either (a) switch
+  to explicit click-to-summarize (truly on-demand), or (b) keep auto-on-view but only fire after a short
+  DWELL (e.g. block ≥50% visible for ~400ms) so a fast scroll-past doesn't trigger. Optionally also (c) a
+  small server-side concurrency cap on `NarrativeSummaryEngine` (defensive; browser already bounds to ~6).
+  Tied to the runner decision below — both shape M4's real cost/UX. AWAITING user direction.
 - **LLM runner latency (measured 2026-06-08).** `claude -p` for the summaries is ~16s on haiku, and
   haiku is SLOWER than sonnet (~14s vs ~3.7s api) because it over-generates inside the full CC agent
   harness (~1400-2035 out-tok vs ~110). Breakdown: ~3.3s fixed spawn/CLI overhead + a ~17-26K-token
