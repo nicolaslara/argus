@@ -64,6 +64,7 @@ import {
   type NarrativeCacheIO,
 } from './narrative-cache.ts';
 import type { SummaryInput } from './narrative-summary.ts';
+import { correlateCommits } from './git-commits.ts';
 
 /**
  * Strict path-segment charset. Slug dirs are `-Users-...` (alnum + dash), session ids
@@ -286,6 +287,16 @@ export interface RouteDeps {
    * the requested block is summarized, NEVER eager-warmed. See narrative-summary.ts.
    */
   narrativeSummary?: import('./narrative-summary.ts').NarrativeSummaryEngine;
+  /**
+   * M2: the git-commit linkage engine (the repo's REAL `git log` + `git remote get-url origin`,
+   * read via injected, never-throwing process spawns — git is a SERVER concern, never the adapter).
+   * Optional so the M1/M3 routes + their tests need no engine; when absent (or narrative.projectPath
+   * is null) the narrative route behaves exactly as today (every block's gitCommits stays []). When
+   * present, handleSessionNarrative reads the bounded git log + remote and correlates commits to
+   * blocks by author-time AFTER the (cached or fresh) narrative loads — commits are LIVE and are
+   * NEVER baked into the stat-keyed disk cache. See git-commits.ts.
+   */
+  gitCommits?: import('./git-commits.ts').GitCommitEngine;
   /** Injected clock for live-run detection (defaults to Date.now). Tests pin it. */
   now?: () => number;
 }
@@ -1035,7 +1046,9 @@ export async function handleSessionNarrative(
     : null;
   if (deps.narrativeCache && key !== null) {
     const cached = await deps.narrativeCache.read(key);
-    if (cached !== null) return { status: 200, body: cached };
+    // M2: the cache holds the SEGMENTATION (no commits — commits are live). Fill gitCommits as a
+    // cheap post-step on the cached blocks before returning; the cached entry is left untouched.
+    if (cached !== null) return { status: 200, body: await withGitCommits(deps, cached) };
   }
 
   // 2) Miss → precompute from the transcript THROUGH the port (the adapter is pure / port-
@@ -1048,11 +1061,43 @@ export async function handleSessionNarrative(
   }
 
   // 3) Persist (best-effort; a write failure is swallowed by the cache IO — the narrative
-  //    still serves this call). Content-addressed: the same stat re-opens to a hit.
+  //    still serves this call). Content-addressed: the same stat re-opens to a hit. We persist the
+  //    COMMIT-FREE segmentation (gitCommits is still [] here) — commits are LIVE and are correlated
+  //    only on the way OUT, never baked into the stat-keyed cache.
   if (deps.narrativeCache && key !== null) {
     await deps.narrativeCache.write(key, narrative);
   }
-  return { status: 200, body: narrative };
+  return { status: 200, body: await withGitCommits(deps, narrative) };
+}
+
+/**
+ * M2 git-commit linkage (a cheap POST-step on the cached-or-fresh narrative — NEVER baked into the
+ * stat-keyed segmentation cache, because commits are LIVE). When the `gitCommits` engine is wired AND
+ * `narrative.projectPath` is non-null, read the repo's REAL bounded `git log` + `origin` remote and
+ * correlate each commit to the block whose timeRange contains its author-time, filling block.git-
+ * Commits (commits outside every block are dropped — never force-fit; the SHA is validated + the
+ * github URL is built ONLY from a fixed github.com host). When the engine is absent OR projectPath is
+ * null → returns the narrative UNCHANGED (every block's gitCommits stays [] — exactly today's
+ * behavior). The readers NEVER throw (git-absent / not-a-repo → [] / null), so this never 500s; a
+ * defensive catch keeps the narrative serving even if correlation somehow throws.
+ */
+async function withGitCommits(
+  deps: RouteDeps,
+  narrative: SessionNarrative,
+): Promise<SessionNarrative> {
+  const engine = deps.gitCommits;
+  if (!engine || narrative.projectPath === null) return narrative;
+  try {
+    const projectPath = narrative.projectPath;
+    const [commits, remote] = await Promise.all([
+      engine.log(projectPath, { timeRange: narrative.timeRange }),
+      engine.remote(projectPath),
+    ]);
+    if (commits.length === 0) return narrative; // nothing to correlate → unchanged
+    return { ...narrative, blocks: correlateCommits(narrative.blocks, commits, remote) };
+  } catch {
+    return narrative; // belt-and-suspenders: never let commit linkage break the narrative
+  }
 }
 
 /**

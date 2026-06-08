@@ -16,6 +16,7 @@ import {
   type NarrativeCacheIO,
 } from './narrative-cache.ts';
 import { NarrativeSummaryEngine } from './narrative-summary.ts';
+import type { GitCommitEngine, RawCommit } from './git-commits.ts';
 import type { FileSystemPort } from '@argus/adapter';
 import type { NarrativeSummary, SessionNarrative, SessionSummary, Turn } from '@argus/contract';
 
@@ -497,5 +498,115 @@ describe('narrativeCacheKey + diskNarrativeCacheIO', () => {
     // pin is a non-empty stable string (the actual bust is exercised by changing the const).
     expect(typeof NARRATIVE_CACHE_VERSION).toBe('string');
     expect(NARRATIVE_CACHE_VERSION.length).toBeGreaterThan(0);
+  });
+});
+
+// --- M2: git-commit linkage on the narrative route --------------------------
+//
+// With a STUB gitCommits dep, the narrative route fills the right block's gitCommits by author-time;
+// with NO dep (or a null projectPath) the gitCommits stay [] exactly as today. Commits are LIVE — the
+// segmentation cache must NOT carry them (the cached entry stays commit-free; correlation runs on the
+// way OUT every call).
+
+describe('handleSessionNarrative + M2 git-commit linkage', () => {
+  /** A stub engine returning canned commits + a remote (no real git spawn). */
+  function stubGit(commits: RawCommit[], remote: string | null): GitCommitEngine {
+    return {
+      async log() {
+        return commits;
+      },
+      async remote() {
+        return remote;
+      },
+    };
+  }
+
+  // The single block of buildTranscript() spans 10:00:00 → 10:00:09 (first prompt → last assistant
+  // record). A commit at 10:00:05 lands INSIDE it; one at 09:00:00 falls OUTSIDE (must be dropped).
+  const INSIDE = '2026-06-07T10:00:05.000Z';
+  const OUTSIDE = '2026-06-07T09:00:00.000Z';
+  const SHA = 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0';
+
+  it('fills the right block gitCommits by author-time + a github URL from the origin remote', async () => {
+    const { port } = makeFakePort();
+    const deps: RouteDeps = {
+      port,
+      claudeHome: CLAUDE_HOME,
+      gitCommits: stubGit(
+        [
+          { sha: SHA, subject: 'feat: wire M2', authorIso: INSIDE },
+          { sha: 'b'.repeat(40), subject: 'unrelated', authorIso: OUTSIDE }, // outside → dropped
+        ],
+        'git@github.com:nicolaslara/argus.git',
+      ),
+    };
+    const res = await handleSessionNarrative(deps, SLUG, SESSION);
+    expect(res.status).toBe(200);
+    const narrative = bodyOf<SessionNarrative>(res);
+    const block = narrative.blocks[0]!;
+    expect(block.gitCommits).toHaveLength(1);
+    expect(block.gitCommits[0]!.shortSha).toBe(SHA);
+    expect(block.gitCommits[0]!.subject).toBe('feat: wire M2');
+    expect(block.gitCommits[0]!.githubUrl).toBe(`https://github.com/nicolaslara/argus/commit/${SHA}`);
+  });
+
+  it('a POISONED origin remote yields NO foreign-host link (githubUrl null) — the chip still renders', async () => {
+    const { port } = makeFakePort();
+    const deps: RouteDeps = {
+      port,
+      claudeHome: CLAUDE_HOME,
+      gitCommits: stubGit([{ sha: SHA, subject: 'feat', authorIso: INSIDE }], 'https://evil.com/o/r'),
+    };
+    const res = await handleSessionNarrative(deps, SLUG, SESSION);
+    const block = bodyOf<SessionNarrative>(res).blocks[0]!;
+    expect(block.gitCommits).toHaveLength(1);
+    expect(block.gitCommits[0]!.githubUrl).toBeNull();
+  });
+
+  it('with NO gitCommits dep, gitCommits stays [] (exactly today)', async () => {
+    const { port } = makeFakePort();
+    const deps: RouteDeps = { port, claudeHome: CLAUDE_HOME };
+    const res = await handleSessionNarrative(deps, SLUG, SESSION);
+    expect(bodyOf<SessionNarrative>(res).blocks[0]!.gitCommits).toEqual([]);
+  });
+
+  it('does NOT bake commits into the disk cache (cached entry stays commit-free; correlation re-runs)', async () => {
+    const { port } = makeFakePort();
+    const cache = makeMemCache();
+    const deps: RouteDeps = {
+      port,
+      claudeHome: CLAUDE_HOME,
+      narrativeCache: cache,
+      gitCommits: stubGit([{ sha: SHA, subject: 'feat', authorIso: INSIDE }], null),
+    };
+    // First call: miss → segment → cache the COMMIT-FREE narrative, correlate on the way out.
+    const first = await handleSessionNarrative(deps, SLUG, SESSION);
+    expect(bodyOf<SessionNarrative>(first).blocks[0]!.gitCommits).toHaveLength(1);
+    // The cached entry itself must carry NO commits (commits are live, never cached).
+    const cachedEntry = [...cache.store.values()][0]!;
+    expect(cachedEntry.blocks[0]!.gitCommits).toEqual([]);
+    // Second call: cache HIT (no re-write) but commits are STILL filled (correlation ran again).
+    const second = await handleSessionNarrative(deps, SLUG, SESSION);
+    expect(cache.writes).toBe(1);
+    expect(bodyOf<SessionNarrative>(second).blocks[0]!.gitCommits).toHaveLength(1);
+  });
+
+  it('the narrative still serves if the git readers throw (never a 500)', async () => {
+    const { port } = makeFakePort();
+    const deps: RouteDeps = {
+      port,
+      claudeHome: CLAUDE_HOME,
+      gitCommits: {
+        async log() {
+          throw new Error('git blew up');
+        },
+        async remote() {
+          throw new Error('git blew up');
+        },
+      },
+    };
+    const res = await handleSessionNarrative(deps, SLUG, SESSION);
+    expect(res.status).toBe(200);
+    expect(bodyOf<SessionNarrative>(res).blocks[0]!.gitCommits).toEqual([]);
   });
 });

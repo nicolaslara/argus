@@ -45,6 +45,7 @@ import { ExplanationEngine, explanationsCacheDir } from './explain.ts';
 import { SubUiEngine, subUiCacheDir } from './subui.ts';
 import { NarrativeSummaryEngine, narrativeSummaryCacheDir } from './narrative-summary.ts';
 import { diskNarrativeCacheIO, narrativesCacheDir } from './narrative-cache.ts';
+import { defaultGitCommitEngine } from './git-commits.ts';
 import { scrubError } from './error-redaction.ts';
 
 const HOST = '127.0.0.1';
@@ -87,6 +88,13 @@ const narrativeSummary = EXPLAIN_ENABLED
   ? new NarrativeSummaryEngine({ cacheDir: narrativeSummaryCacheDir(REPO_ROOT) })
   : undefined;
 
+// M2: the git-commit linkage engine. Reads the repo's REAL `git log` + `origin` remote via injected,
+// read-only, never-throwing process spawns (git is a SERVER concern — never the adapter). Correlated
+// to blocks by author-time on the way out of the narrative route; LIVE (never cached). Always on (no
+// model spend); it degrades to no commits when git is absent / the dir is not a repo. Disable via
+// ARGUS_GIT=0 (e.g. a sandbox with no `git`), in which case gitCommits stays [] exactly like today.
+const gitCommits = process.env.ARGUS_GIT !== '0' ? defaultGitCommitEngine() : undefined;
+
 // One shared read-only port + route deps for the process lifetime.
 const deps: RouteDeps = {
   port: new NodeFileSystemPort(),
@@ -95,6 +103,7 @@ const deps: RouteDeps = {
   subui,
   narrativeCache,
   narrativeSummary,
+  gitCommits,
 };
 
 function send(res: ServerResponse, status: number, body: unknown): void {
