@@ -251,6 +251,7 @@ const BlockCard = memo(function BlockCard({
   ordinal: number;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [asksOpen, setAsksOpen] = useState(false);
 
   // Level 3: full turns are fetched LAZILY — only once a block is expanded, never inlined into
   // the narrative (so the watch view stays small). Disabled until expanded; cached forever after.
@@ -262,7 +263,13 @@ const BlockCard = memo(function BlockCard({
   });
 
   const topic = blockTopic(block);
-  const tools = useMemo(() => topTools(block.toolCounts, 6), [block.toolCounts]);
+  // AskUserQuestion gets its OWN expandable treatment below, so drop it from the generic badges.
+  const tools = useMemo(() => {
+    const rest = Object.fromEntries(Object.entries(block.toolCounts).filter(([n]) => n !== 'AskUserQuestion'));
+    return topTools(rest, 6);
+  }, [block.toolCounts]);
+  // Count QUESTIONS (one AskUserQuestion call can carry several), so the label matches what expands.
+  const askCount = block.asks.length;
   const start = clockIso(block.timeRange.start);
   const span = spanLabel(block.timeRange.start, block.timeRange.end);
   const hasSummary = !!block.summary;
@@ -314,6 +321,24 @@ const BlockCard = memo(function BlockCard({
         {/* Prompt → response previews (the watch-view text; head+tail bounded upstream). */}
         <PreviewLine kind="prompt" preview={block.promptPreview} />
         <PreviewLine kind="response" preview={block.responsePreview} />
+
+        {/* AskUserQuestion decision points — a clickable chip that EXPANDS to the question(s) +
+            options right here in the watch view (no need to click into the turns). */}
+        {block.asks.length > 0 ? (
+          <div className="story-block-asks">
+            <button
+              type="button"
+              className="story-asks-toggle"
+              onClick={() => setAsksOpen((v) => !v)}
+              aria-expanded={asksOpen}
+            >
+              <span className="story-asks-caret" aria-hidden="true">{asksOpen ? '▾' : '▸'}</span>
+              <span className="story-asks-glyph" aria-hidden="true">❓</span>
+              {askCount} {askCount === 1 ? 'question asked' : 'questions asked'}
+            </button>
+            {asksOpen ? block.asks.map((q, i) => <AskBlock key={`ask-${i}`} q={q} />) : null}
+          </div>
+        ) : null}
 
         {/* Tool badges + workflow spawns + commits + files — the at-a-glance facts. */}
         {tools.length > 0 ? (

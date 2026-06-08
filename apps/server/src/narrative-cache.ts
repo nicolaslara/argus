@@ -30,8 +30,9 @@ import type { SessionNarrative } from '@argus/contract';
 // narr-v2: the synthetic filter now drops `<task-notification>` / `[Request interrupted…]` /
 // the compaction handoff summary — both as block ANCHORS and as response-preview/turn-count
 // contributors — so a session re-segments to fewer, real-prompt-anchored, noise-free blocks.
-// Every prior cached narrative is stale-shaped.
-export const NARRATIVE_CACHE_VERSION = 'narr-v2';
+// narr-v3: each block now carries its AskUserQuestion decision points (`asks`) for the watch-view
+// expand. Both add fields to the cached block shape — every prior cached narrative is stale.
+export const NARRATIVE_CACHE_VERSION = 'narr-v3';
 
 /** The transcript's filesystem identity used to detect an append (a changed file misses). */
 export interface TranscriptStat {

@@ -419,6 +419,41 @@ describe('extractWorkflowSpawns — Workflow tool_use launches', () => {
     expect(nar.blocks[0]!.workflowSpawns[0]!.scriptBasename).toBe('refine-plan.js');
     expect(nar.blocks[0]!.toolCounts).toEqual({ Workflow: 1 });
   });
+
+  it('a block surfaces its AskUserQuestion decision points in block.asks (watch-view expand)', () => {
+    const text = [
+      userPrompt('decide the db', '2026-06-07T00:00:00Z'),
+      assistant(
+        [
+          {
+            type: 'tool_use',
+            name: 'AskUserQuestion',
+            input: {
+              questions: [
+                {
+                  question: 'Which DB?',
+                  header: 'DB',
+                  multiSelect: false,
+                  options: [
+                    { label: 'Postgres', description: 'relational' },
+                    { label: 'SQLite', description: 'embedded' },
+                  ],
+                },
+              ],
+            },
+          },
+        ],
+        '2026-06-07T00:00:01Z',
+      ),
+    ].join('\n');
+    const nar = buildSessionNarrative(text, 'sess-asks');
+    const block = nar.blocks.find((b) => b.cutReason === 'prompt')!;
+    expect(block.asks).toHaveLength(1);
+    expect(block.asks[0]!.question).toBe('Which DB?');
+    expect(block.asks[0]!.header).toBe('DB');
+    expect(block.asks[0]!.options.map((o) => o.label)).toEqual(['Postgres', 'SQLite']);
+    expect(block.toolCounts['AskUserQuestion']).toBe(1);
+  });
 });
 
 // --- loadSessionNarrative through a FileSystemPort (StatPort fixture style) ------

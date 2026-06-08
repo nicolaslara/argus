@@ -497,9 +497,13 @@ interface BlockBuilder {
   timeEnd: string | null;
   turnCount: number;
   toolCounts: Record<string, number>;
+  asks: AskQuestion[];
   workflowSpawns: WorkflowSpawn[];
   files: Set<string>;
 }
+
+/** Cap on the AskUserQuestion decision points retained per block (the watch-view expand). */
+const BLOCK_ASKS_CAP = 12;
 
 /**
  * Cap on the response bytes we retain WHILE a block is open. Even before close we never let a
@@ -519,9 +523,24 @@ function newBuilder(start: number, cutReason: CutReason): BlockBuilder {
     timeEnd: null,
     turnCount: 0,
     toolCounts: {},
+    asks: [],
     workflowSpawns: [],
     files: new Set<string>(),
   };
+}
+
+/** Collect AskUserQuestion decision points from an assistant record into a block (capped). */
+function collectAsks(r: RawRecord, into: AskQuestion[]): void {
+  if (r.type !== 'assistant' || !Array.isArray(r.content)) return;
+  for (const b of r.content) {
+    if (asString(b.type) !== 'tool_use' || asString(b.name) !== 'AskUserQuestion') continue;
+    if (into.length >= BLOCK_ASKS_CAP) return;
+    const asks = extractAskQuestions(b.input);
+    if (asks) for (const q of asks) {
+      if (into.length >= BLOCK_ASKS_CAP) break;
+      into.push(q);
+    }
+  }
 }
 
 function finishBlock(b: BlockBuilder, end: number): NarrativeBlock {
@@ -542,6 +561,7 @@ function finishBlock(b: BlockBuilder, end: number): NarrativeBlock {
     cutReason: b.cutReason,
     turnCount: b.turnCount,
     toolCounts: b.toolCounts,
+    asks: b.asks,
     workflowSpawns: b.workflowSpawns,
     gitCommits: [], // M0 emits []; M2 correlates by timestamp.
     filesTouched: [...b.files],
@@ -658,6 +678,7 @@ export function segmentTranscript(
       droppedOther += projected.droppedOther;
       if (projected.text.length > 0) appendResponse(builder, projected.text);
       countTools(r, builder.toolCounts);
+      collectAsks(r, builder.asks);
       for (const s of extractWorkflowSpawns(r)) builder.workflowSpawns.push(s);
       collectFilesTouched(r, builder.files);
     }

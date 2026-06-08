@@ -3730,6 +3730,40 @@ a.story-chip-commit:hover {
 
 /* AskUserQuestion decision point — the question + its options, surfaced inline in a turn (a
    session's branch points). A left accent + outlined option rows; text-node only (no HTML). */
+/* Block-level AskUserQuestion: a clickable chip that expands the question(s) inline in the watch
+   view. The expanded questions reuse the .story-ask treatment below. */
+.story-block-asks {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.story-asks-toggle {
+  appearance: none;
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border: 1px solid #2a2f44;
+  border-radius: 999px;
+  background: rgba(124, 140, 255, 0.08);
+  color: #9aa6ff;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+.story-asks-toggle:hover {
+  background: rgba(124, 140, 255, 0.18);
+}
+.story-asks-caret {
+  font-size: 9px;
+}
+.story-asks-glyph {
+  font-size: 11px;
+}
+
 .story-ask {
   margin: 4px 0 2px;
   padding: 10px 12px;

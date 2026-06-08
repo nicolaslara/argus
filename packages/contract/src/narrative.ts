@@ -110,6 +110,12 @@ export interface NarrativeBlock {
   turnCount: number;
   /** toolName → invocation count across the block. */
   toolCounts: Record<string, number>;
+  /**
+   * AskUserQuestion decision points in this block (question + options), surfaced in the WATCH view
+   * so the user can expand them without clicking into every turn. Bounded + redact()-routed by the
+   * segmenter; `toolCounts['AskUserQuestion']` is the authoritative count if more were asked.
+   */
+  asks: AskQuestion[];
   workflowSpawns: WorkflowSpawn[];
   /** Best-effort commit refs (M2); M0 emits []. */
   gitCommits: GitCommitRef[];
