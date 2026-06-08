@@ -3685,6 +3685,26 @@ a.story-chip-commit:hover {
 .story-turn-user .story-turn-role {
   color: var(--argus-accent);
 }
+/* A PROGRAM drove this prompt (headless / subagent) — the conductor, not a human. Purple, like
+   the workflow-spawn chips, to read as orchestration. */
+.story-turn-conductor {
+  border-left-color: #a371f7;
+}
+.story-turn-conductor .story-turn-role {
+  color: #a371f7;
+}
+/* A tool_result fed back to the agent (the agent's own loop, not a human). Recessed so it reads
+   as background — the human prompts + assistant replies stay foreground. */
+.story-turn-result {
+  border-left-color: #262b33;
+  background: rgba(255, 255, 255, 0.006);
+}
+.story-turn-result .story-turn-role {
+  color: #6e7681;
+}
+.story-turn-result .story-turn-text {
+  color: var(--argus-dim);
+}
 .story-turn-time {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 10px;

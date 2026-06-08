@@ -509,6 +509,15 @@ const TurnsDrawer = memo(function TurnsDrawer({
   );
 });
 
+// A clear label per turn role — 'result'/'conductor' are NOT the human (the agent's tool loop /
+// a program driving the session), so they read distinctly from a human 'user' prompt.
+const TURN_ROLE_LABEL: Record<Turn['role'], string> = {
+  user: 'user',
+  assistant: 'assistant',
+  conductor: 'conductor',
+  result: 'tool result',
+};
+
 const TurnRow = memo(function TurnRow({ turn: t }: { turn: Turn }) {
   // AskUserQuestion turns are DECISION POINTS — render the question + options inline (not a bare
   // tool chip). The other tool calls render as the usual compact chips.
@@ -517,7 +526,7 @@ const TurnRow = memo(function TurnRow({ turn: t }: { turn: Turn }) {
   return (
     <li className={`story-turn story-turn-${t.role}`}>
       <div className="story-turn-head">
-        <span className="story-turn-role">{t.role}</span>
+        <span className="story-turn-role">{TURN_ROLE_LABEL[t.role]}</span>
         {t.timestamp ? <span className="story-turn-time">{clockIso(t.timestamp)}</span> : null}
       </div>
       {t.textPreview.text && t.textPreview.text.trim() !== '' ? (

@@ -91,6 +91,12 @@ interface RawRecord {
   promptId: string | null;
   userType: string | null;
   isMeta: boolean;
+  /**
+   * How a user prompt entered the session: 'typed'/'queued' = a human; 'sdk' = a PROGRAM drove it
+   * (a headless `claude -p` / subagent — the CONDUCTOR, not a human); 'system' = harness-injected.
+   * Drives the turn-role labeling so conductor/tool turns aren't mistaken for the human.
+   */
+  promptSource: string | null;
   /** Recovered cwd, when the record carries one (used for projectPath). */
   cwd: string | null;
 }
@@ -191,6 +197,7 @@ export function scanTranscript(text: string): ScannedTranscript {
       promptId: asString(rec.promptId),
       userType: asString(rec.userType),
       isMeta: rec.isMeta === true,
+      promptSource: asString(rec.promptSource),
       cwd: asString(rec.cwd),
     });
   }
@@ -985,7 +992,18 @@ export function blockTurns(
   for (let i = start; i <= end; i += 1) {
     const r = records[i]!;
     if (r.type !== 'user' && r.type !== 'assistant') continue; // only user/assistant are turns
-    const role: TurnRole = r.type === 'assistant' ? 'assistant' : 'user';
+    // Classify the turn so the Story doesn't read agent self-talk as a human. A 'user'-role
+    // record is: a tool_result fed back to the agent ('result' — the harness/agent loop, e.g. a
+    // Bash output), a PROGRAM-driven prompt ('conductor' — promptSource 'sdk', a headless/subagent
+    // driver), or an actual human ('user'). Assistant records are always 'assistant'.
+    const role: TurnRole =
+      r.type === 'assistant'
+        ? 'assistant'
+        : hasToolResult(r.content)
+          ? 'result'
+          : r.promptSource === 'sdk'
+            ? 'conductor'
+            : 'user';
     const projected = projectText(r.content);
     turns.push({
       promptId: r.promptId ?? '',

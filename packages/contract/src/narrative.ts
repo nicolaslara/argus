@@ -186,8 +186,15 @@ export interface ProjectSessions {
   sessions: SessionSummary[];
 }
 
-/** The role of a turn record. Synthetic/system records never become a Turn. */
-export type TurnRole = 'user' | 'assistant';
+/**
+ * The role of a turn record. Beyond the human 'user' and the 'assistant', we distinguish the
+ * non-human "user"-role records so the Story doesn't read agent self-talk as a human:
+ *   - 'conductor' — a PROGRAM drove this prompt (a headless `claude -p` / subagent; promptSource
+ *     'sdk'). The driver is the orchestrator, not a person.
+ *   - 'result' — a tool_result fed back to the agent (role 'user' on disk, but it's the tool
+ *     harness, i.e. the agent's own loop), e.g. a Bash command's output.
+ */
+export type TurnRole = 'user' | 'assistant' | 'conductor' | 'result';
 
 /** One option offered by an `AskUserQuestion` (label + its explanation). Both redact()-routed. */
 export interface AskOption {

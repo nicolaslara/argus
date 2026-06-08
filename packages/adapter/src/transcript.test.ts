@@ -654,7 +654,7 @@ describe('loadBlockTurns / blockTurns — full turns of one block', () => {
     expect(turns[1]!.toolCalls[0]!.name).toBe('Read');
     expect(turns[1]!.toolCalls[0]!.briefArgs).toContain('file.ts'); // a short args digest
 
-    expect(turns[2]!.role).toBe('user'); // the tool_result carrier
+    expect(turns[2]!.role).toBe('result'); // a tool_result carrier is the agent's loop, NOT a human 'user'
     expect(turns[2]!.textPreview.text).toContain('read ok');
 
     // The record OUTSIDE the range (the next prompt) is NOT included.
@@ -708,6 +708,19 @@ describe('loadBlockTurns / blockTurns — full turns of one block', () => {
     const turns = blockTurns(scanTranscript(text), { start: 0, end: 0 });
     expect(turns[0]!.toolCalls[0]!.briefArgs).toContain('[R]');
     expect(turns[0]!.toolCalls[0]!.briefArgs).not.toContain('SECRET');
+  });
+
+  it('labels non-human "user" records: tool_result → "result", sdk-driven → "conductor"', () => {
+    const text = [
+      userPrompt('a human prompt', '2026-06-07T00:00:00Z'), // typed → user (human)
+      assistant([{ type: 'text', text: 'on it' }], '2026-06-07T00:00:01Z'),
+      toolResultCarrier('OK opened', '2026-06-07T00:00:02Z'), // tool feedback → result (agent loop)
+      userPrompt('You are labeling a node', '2026-06-07T00:00:03Z', { promptSource: 'sdk' }), // driver → conductor
+    ].join('\n');
+    const turns = blockTurns(scanTranscript(text), { start: 0, end: 3 });
+    expect(turns.map((t) => t.role)).toEqual(['user', 'assistant', 'result', 'conductor']);
+    // the tool_result's TEXT is still surfaced (not dropped) — just under the 'result' role.
+    expect(turns[2]!.textPreview.text).toContain('OK opened');
   });
 
   it('an AskUserQuestion tool_use surfaces its question + options (the decision-point view)', () => {
